@@ -11,6 +11,7 @@ WORKDIR /app
 COPY console /app/console
 COPY src/qwenpaw/plugins/frontend /app/src/qwenpaw/plugins/frontend
 COPY plugins/bundle/qwenpaw-run-center/ui /app/run-center-ui
+COPY plugins/bundle/qwenpaw-openui /app/plugins/bundle/qwenpaw-openui
 # The console tests/build resolve shared UGSci sources through aliases and
 # relative imports outside the console directory. Keep those sources in the
 # Docker build context so pnpm build (including typecheck/tests) matches the
@@ -24,7 +25,9 @@ RUN npm install --global --force corepack@0.34.6 \
  && pnpm install --frozen-lockfile \
  && pnpm run build \
  && npm --prefix /app/run-center-ui ci \
- && npm --prefix /app/run-center-ui run build
+ && npm --prefix /app/run-center-ui run build \
+ && npm --prefix /app/plugins/bundle/qwenpaw-openui/frontend ci \
+ && npm --prefix /app/plugins/bundle/qwenpaw-openui/frontend run build
 
 # Alias for uv binary so COPY --from can reference a build-arg image.
 FROM ${UV_IMAGE} AS uv-src
@@ -143,6 +146,8 @@ COPY website/public/docs/ ./src/qwenpaw/docs/
 # Inject console dist from build stage (repo does not commit dist).
 COPY --from=console-builder /app/console/dist/ ./src/qwenpaw/console/
 COPY --from=console-builder /app/run-center-ui/dist/ ./src/qwenpaw/plugins_bundle/qwenpaw-run-center/ui/dist/
+COPY --from=console-builder /app/plugins/bundle/qwenpaw-openui/dist/ ./src/qwenpaw/plugins_bundle/qwenpaw-openui/dist/
+COPY --from=console-builder /app/plugins/bundle/qwenpaw-openui/plugin.json ./src/qwenpaw/plugins_bundle/qwenpaw-openui/plugin.json
 # Speed up Python package installation with uv.
 COPY --from=uv-src /uv /bin/uv
 # Validate the binary, including when UV_IMAGE points at an internal mirror.

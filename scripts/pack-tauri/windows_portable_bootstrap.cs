@@ -1022,6 +1022,7 @@ internal static class PortableSetup
             clock = new System.Windows.Forms.Timer { Interval = 1000 };
             clock.Tick += delegate { if (pageIndex == 1) RenderProgress(); };
             FormClosed += delegate { clock.Dispose(); };
+            foreach (Panel page in pages) page.Layout += UpdatePageScrollBounds;
             ShowPage(0);
             Shown += delegate {
                 FitToWorkingArea(Screen.FromControl(this).WorkingArea);
@@ -1059,6 +1060,19 @@ internal static class PortableSetup
             Size = new Size(Math.Min(Width, workingArea.Width), Math.Min(Height, workingArea.Height));
             Location = new Point(Math.Max(workingArea.Left, Math.Min(Left, workingArea.Right - Width)),
                 Math.Max(workingArea.Top, Math.Min(Top, workingArea.Bottom - Height)));
+        }
+        private void UpdatePageScrollBounds(object sender, LayoutEventArgs e)
+        {
+            var page = (Panel)sender;
+            int right = 0, bottom = 0;
+            foreach (Control child in page.Controls)
+            {
+                if (child == details && !detailsExpanded) continue;
+                right = Math.Max(right, child.Right - page.AutoScrollPosition.X);
+                bottom = Math.Max(bottom, child.Bottom - page.AutoScrollPosition.Y);
+            }
+            var required = new Size(right, bottom);
+            if (page.AutoScrollMinSize != required) page.AutoScrollMinSize = required;
         }
         private void BrowseClicked(object sender, EventArgs e)
         {

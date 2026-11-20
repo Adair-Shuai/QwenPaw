@@ -1,0 +1,24 @@
+{
+  "schema_version": "expert-recipe.v1",
+  "release": {
+    "schema_version": 1,
+    "id": "ugsci.version-demo",
+    "version": "0.1.0",
+    "name": "版本比较演示专家",
+    "description": "演示带技能、离线方法库和实际 MCP 自检的专家发行流程。",
+    "core_min": "2.2.2b9",
+    "instructions": "AGENTS.md",
+    "skills": ["skills/version-comparison"],
+    "mcp": {
+      "entrypoint": "server.py",
+      "tools": ["compare_versions"],
+      "smoke": [{"tool": "compare_versions", "arguments": {"left": "1.10", "right": "1.9"}, "expected": {"comparison": 1}}]
+    },
+    "optional_setup": []
+  },
+  "variants": [
+    {"target": "windows-x86_64", "python": "3.11", "lock": "requirements.lock"},
+    {"target": "macos-aarch64", "python": "3.11", "lock": "requirements.lock"},
+    {"target": "macos-x86_64", "python": "3.11", "lock": "requirements.lock"}
+  ]
+}

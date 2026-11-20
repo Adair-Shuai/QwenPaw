@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from qwenpaw.agents.skill_system import registry as skill_registry
+from qwenpaw.agents.skill_system import pool_service
 from qwenpaw.agents.skill_system import store as skill_store
 from qwenpaw.app import migration
 from qwenpaw.config.config import AgentProfileRef, Config
@@ -110,24 +112,33 @@ def _changed_leaf_paths(before: dict, after: dict) -> set:
 
 @pytest.fixture()
 def migrated_env(tmp_path, monkeypatch):
-    """Point every WORKING_DIR-derived path at ``tmp_path``.
-
-    ``skill_store.get_pool_skill_manifest_path`` reads ``WORKING_DIR`` from
-    inside the function body, so patching ``migration.WORKING_DIR`` alone
-    leaves it pointing at the real pool: patch the getter instead.
-    """
+    """Use a real temporary pool, independent of test order and user data."""
     wd = tmp_path / "wd"
     (wd / "workspaces").mkdir(parents=True)
     monkeypatch.setattr(migration, "WORKING_DIR", str(wd))
-    monkeypatch.setattr(
-        skill_store,
-        "get_pool_skill_manifest_path",
-        lambda: wd / "skill_pool" / "skill.json",
-    )
+    monkeypatch.setattr("qwenpaw.constant.WORKING_DIR", wd)
+    packaged = wd / "packaged_skills"
+    packaged.mkdir()
+    # The copy-pipeline tests already assume pool initialization is complete.
+    # Patch both imported initializer aliases, so SkillPoolService cannot
+    # seed real packaged skills as a side effect of the first selected test.
+    # All shared path getters must also agree on the isolated working root.
     monkeypatch.setattr(
         "qwenpaw.agents.skill_system.ensure_skill_pool_initialized",
         lambda: True,
     )
+    monkeypatch.setattr(
+        pool_service,
+        "ensure_skill_pool_initialized",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        skill_registry,
+        "get_builtin_skills_dir",
+        lambda: packaged,
+    )
+    monkeypatch.setattr(skill_registry, "_builtin_cache", {})
+    assert skill_store.get_skill_pool_dir() == wd / "skill_pool"
     return wd
 
 
@@ -147,6 +158,39 @@ def single_default_workspace(migrated_env, monkeypatch):
 
 
 class TestLegacySkillsCopyPipeline:
+    def test_real_pool_bootstrap_preserves_migrated_skill_choices(
+        self,
+        migrated_env,
+        single_default_workspace,
+        monkeypatch,
+    ):
+        # Exercise the actual initializer and bootstrap with a packaged
+        # fixture, including its idempotence marker and copied skill bytes.
+        monkeypatch.setattr(
+            "qwenpaw.agents.skill_system.ensure_skill_pool_initialized",
+            skill_registry.ensure_skill_pool_initialized,
+        )
+        monkeypatch.setattr(
+            pool_service,
+            "ensure_skill_pool_initialized",
+            skill_registry.ensure_skill_pool_initialized,
+        )
+        _write_skill(migrated_env / "packaged_skills", "starter-zh", "builtin")
+        _write_skill(migrated_env / "active_skills", "live", "active")
+        _write_skill(migrated_env / "customized_skills", "mine", "custom")
+
+        assert migration._do_migrate_legacy_skills() is True
+        assert _enabled_map(single_default_workspace) == {
+            "starter": True,
+            "live": True,
+            "mine": False,
+        }
+        assert (migrated_env / "skill_pool" / "starter" / "SKILL.md").is_file()
+        assert "builtin" in (
+            single_default_workspace / "skills" / "starter" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert migration._do_migrate_legacy_skills() is False
+
     def test_customized_only_skill_is_copied_and_stays_disabled(
         self,
         migrated_env,

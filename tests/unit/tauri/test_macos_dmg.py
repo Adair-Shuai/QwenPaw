@@ -67,7 +67,7 @@ def test_dmg_settings_keep_live_icons_and_retina_instruction_artwork(tmp_path):
     }
     assert settings["window_rect"] == ((200, 120), (640, 400))
     assert settings["files"] == [str(app.resolve())]
-    assert settings["hide_extensions"] == ["UGSci.app"]
+    assert settings["hide_extensions"] == []
     for name, size in (
         ("dmg-background.png", (640, 400)),
         ("dmg-background@2x.png", (1280, 800)),
@@ -109,6 +109,26 @@ def test_dmg_payload_comparison_detects_missing_changed_and_empty_paths(
     assert DMG.app_inventory(app) != expected
 
 
+def test_dmg_capacity_accounts_for_allocation_and_empty_directories(tmp_path):
+    app = tmp_path / "UGSci.app"
+    contents = app / "Contents"
+    contents.mkdir(parents=True)
+    (contents / "Info.plist").write_bytes(
+        plistlib.dumps({"CFBundleName": "UGSci"}),
+    )
+    initial = int(DMG.settings(app)["size"][:-1])
+    for number in range(512):
+        (contents / f"small-{number}").write_bytes(b"x")
+        (contents / f"empty-{number}").mkdir()
+    with_entries = int(DMG.settings(app)["size"][:-1])
+    assert with_entries >= initial + 16
+    large_file = contents / "runtime.bin"
+    large_file.write_bytes(b"x" * (2 * 1024 * 1024 + 1))
+    with_runtime = int(DMG.settings(app)["size"][:-1])
+    assert with_runtime >= with_entries + 2
+    assert DMG.settings(app)["size"].endswith("m")
+
+
 def test_dmg_notary_credentials_and_failures_do_not_expose_secrets(
     monkeypatch,
 ):
@@ -132,11 +152,34 @@ def test_dmg_notary_credentials_and_failures_do_not_expose_secrets(
     monkeypatch.setattr(
         DMG.subprocess,
         "run",
-        lambda *a, **k: subprocess.CompletedProcess(a, 1, b"", b""),
+        lambda *a, **k: subprocess.CompletedProcess(
+            a,
+            1,
+            b"",
+            secret.encode(),
+        ),
     )
     with pytest.raises(RuntimeError) as failure:
         DMG.run_tool(["xcrun", "notarytool", *args])
     assert secret not in str(failure.value)
+
+
+def test_dmg_codesign_errors_preserve_signature_diagnostics(monkeypatch):
+    detail = b"UGSci.app: a sealed resource is missing or invalid"
+    monkeypatch.setattr(
+        DMG.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args,
+            1,
+            b"",
+            detail,
+        ),
+    )
+    with pytest.raises(RuntimeError, match="sealed resource is missing"):
+        DMG.run_tool(
+            ["codesign", "--verify", "--deep", "--strict", "UGSci.app"],
+        )
 
 
 @pytest.mark.parametrize(

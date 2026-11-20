@@ -1,17 +1,10 @@
 name: Document Forms App Release
 
 on:
-  push:
-    branches: [codex/document-forms-release]
-    paths:
-      - 'plugins/apps/document-forms/**'
-      - 'console/src/plugins/documentForms.test.tsx'
-      - '.github/workflows/document-forms-release.yml'
-      - 'scripts/pack/publish_document_forms.py'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: oss-production-metadata
@@ -48,6 +41,21 @@ jobs:
         run: npx vitest run src/plugins/documentForms.test.tsx --maxWorkers=1
       - name: Package only document forms
         run: python scripts/pack/generate_plugin_metadata.py --plugins-root plugins --dist dist/document-forms --cdn-prefix /files/plugins --only document-forms
+      - name: Prepare independent application version
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = branch
+          python -m pip install 'oss2==2.19.1' packaging
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python scripts/pack/prepare_plugin_versions.py --repo . --dist dist/document-forms --bucket "$OSS_BUCKET" --sdk --commit --branch "$RELEASE_BRANCH" --repack
+
       - name: Publish immutable application and preserve existing catalog entries
         env:
           OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}

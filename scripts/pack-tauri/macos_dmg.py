@@ -72,9 +72,25 @@ def validate_app_name(app: Path) -> None:
 
 def settings(app: Path) -> dict:
     validate_app_name(app)
+    # HFS+ allocation and catalog metadata exceed logical file sizes for the
+    # many small files in the Python runtime. Reserve space per entry as well
+    # as proportional filesystem headroom before copying the signed bundle.
+    allocation_unit = 16 * 1024
+    allocated_bytes = 0
+    for path in app.rglob("*"):
+        size = path.lstat().st_size
+        blocks = max(1, (size + allocation_unit - 1) // allocation_unit)
+        allocated_bytes += blocks * allocation_unit
+    image_bytes = allocated_bytes + max(
+        256 * 1024 * 1024,
+        allocated_bytes // 4,
+    )
+    mebibyte = 1024 * 1024
+    image_mebibytes = (image_bytes + mebibyte - 1) // mebibyte
     return {
         "format": "UDZO",
         "filesystem": "HFS+",
+        "size": f"{image_mebibytes}m",
         "files": [str(app.resolve())],
         "symlinks": {APPLICATIONS: "/Applications"},
         "icon": str(ASSETS / "icon.icns"),
@@ -92,7 +108,8 @@ def settings(app: Path) -> dict:
         "show_pathbar": False,
         "show_tab_view": False,
         "show_icon_preview": False,
-        "hide_extensions": [APP_NAME],
+        # SetFile extension flags add forbidden FinderInfo to a signed bundle.
+        "hide_extensions": [],
     }
 
 
@@ -141,8 +158,12 @@ def run_tool(arguments: list[str]) -> bytes:
         raise RuntimeError(f"{Path(arguments[0]).name} timed out") from None
     if result.returncode:
         # Notary credentials may be command arguments. Keep them out of errors.
+        detail = ""
+        if Path(arguments[0]).name == "codesign":
+            detail = result.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(
-            f"{Path(arguments[0]).name} failed with exit code {result.returncode}",
+            f"{Path(arguments[0]).name} failed with exit code {result.returncode}"
+            + (f"\n{detail}" if detail else ""),
         )
     return result.stdout
 
@@ -376,6 +397,10 @@ def build(app: Path, output: Path) -> None:
     if output == app or app in output.parents or output.suffix != ".dmg":
         raise ValueError("DMG output must be a separate .dmg file")
     options = settings(app)
+    print(
+        f"Creating DMG with {options['size']} of filesystem capacity",
+        flush=True,
+    )
     run_tool(["codesign", "--verify", "--deep", "--strict", str(app)])
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(

@@ -106,6 +106,7 @@ def stage(
                     )
                 shutil.rmtree(destination)
             shutil.move(str(staged / canonical.name), destination)
+        verify(output)
 
 
 def main() -> None:

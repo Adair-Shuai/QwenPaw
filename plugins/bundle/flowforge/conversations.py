@@ -164,21 +164,8 @@ class Conversations:
             )
         return record_id
 
-    # pylint: disable-next=R0912,R0915
-    async def send(self, chat_id, owner, agent_id, payload):
-        chat = self.chat(chat_id, owner)
-        draft = payload["flow"]
-        if draft.get("id") != chat["flow_id"]:
-            raise ValueError("草稿与会话工作流不匹配。")
-        references = [
-            {
-                "id": node_id,
-                "label": str(draft["nodes"][node_id].get("label") or node_id),
-            }
-            for node_id in payload.get("selected_node_ids") or []
-            if isinstance(node_id, str)
-            and isinstance(draft.get("nodes", {}).get(node_id), dict)
-        ]
+    def _reserve_turn(self, chat, payload, references):
+        chat_id = chat["id"]
         turn_id = payload["request_id"]
         now = time.time()
         with self.repository.transaction() as db:
@@ -243,7 +230,24 @@ class Conversations:
                         chat_id,
                     ),
                 )
-        if existing:
+        return bool(existing)
+
+    async def send(self, chat_id, owner, agent_id, payload):
+        chat = self.chat(chat_id, owner)
+        draft = payload["flow"]
+        if draft.get("id") != chat["flow_id"]:
+            raise ValueError("草稿与会话工作流不匹配。")
+        references = [
+            {
+                "id": node_id,
+                "label": str(draft["nodes"][node_id].get("label") or node_id),
+            }
+            for node_id in payload.get("selected_node_ids") or []
+            if isinstance(node_id, str)
+            and isinstance(draft.get("nodes", {}).get(node_id), dict)
+        ]
+        turn_id = payload["request_id"]
+        if self._reserve_turn(chat, payload, references):
             return self.chat(chat_id, owner)
         try:
             evidence = None

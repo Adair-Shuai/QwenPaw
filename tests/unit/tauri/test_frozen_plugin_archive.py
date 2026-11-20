@@ -103,14 +103,14 @@ def test_accepts_directory_name_that_differs_from_manifest_id(
 ) -> None:
     verifier = _load_verifier()
     root = _plugin_tree(tmp_path)
-    alias = root / "thinking_log_middleware"
+    alias = root / "genui-runtime"
     (alias / "ui").mkdir(parents=True)
     (alias / "plugin.py").write_text("VALUE = 1\n", encoding="utf-8")
     (alias / "ui" / "index.js").write_text("export {};\n", encoding="utf-8")
     (alias / "plugin.json").write_text(
         json.dumps(
             {
-                "id": "middleware-demo-thinking-log",
+                "id": "qwenpaw-openui",
                 "entry": {
                     "backend": "plugin.py",
                     "frontend": "ui/index.js",
@@ -230,3 +230,41 @@ def test_ignores_macos_appledouble_metadata(tmp_path: Path) -> None:
 
     assert plugin_root.is_dir()
     verifier.verify_archive(zip_path)
+
+
+@pytest.mark.parametrize("packaged", [False, True])
+@pytest.mark.parametrize(
+    "kind,identifier,error",
+    [
+        ("app", "application", "independent release"),
+        ("general", "qwenpaw-pet", "Optional plugin"),
+    ],
+)
+def test_desktop_publication_rejects_application_payloads(
+    tmp_path,
+    packaged,
+    kind,
+    identifier,
+    error,
+):
+    verifier = _load_verifier()
+    plugin_root = _plugin_tree(tmp_path)
+    application = plugin_root / "application"
+    application.mkdir()
+    (application / "plugin.json").write_text(
+        json.dumps({"id": identifier, "type": kind, "entry": {}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=error):
+        if packaged:
+            output = tmp_path / "desktop.zip"
+            with zipfile.ZipFile(output, "w") as archive:
+                for path in (tmp_path / "UGSci Desktop.app").rglob("*"):
+                    if path.is_file():
+                        archive.write(
+                            path,
+                            path.relative_to(tmp_path).as_posix(),
+                        )
+            verifier.verify_archive(output)
+        else:
+            verifier.verify(plugin_root)

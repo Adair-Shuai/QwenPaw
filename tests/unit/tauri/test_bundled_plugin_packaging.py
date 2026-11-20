@@ -42,13 +42,21 @@ def test_default_discovery_uses_desktop_managed_roots_and_denylist():
         "qwenpaw-creator",
         "azure-bot",
     }
-    assert selected_ids == all_ids - helper.PLUGIN_DENYLIST
+    assert selected_ids == all_ids & helper.BUNDLED_PLUGIN_IDS
     assert {
-        "agent-kanban",
-        "chrome",
+        "ugsci",
         "flowforge",
-        "omp-workflows",
+        "qwenpaw-openui",
     } <= selected_ids
+    assert selected_ids.isdisjoint(
+        {"qwenpaw-pet", "chrome", "computer-use", "omp-workflows"},
+    )
+    app_ids = {
+        _manifest_id(path)
+        for path in (REPO_ROOT / "plugins/apps").glob("*/plugin.json")
+    }
+    assert app_ids
+    assert selected_ids.isdisjoint(app_ids)
     assert "azure-bot" not in selected_ids
     assert "qwenpaw-creator" not in selected_ids
     assert "middleware-demo-thinking-log" not in selected_ids
@@ -84,7 +92,7 @@ def test_staging_excludes_denied_plugins_and_build_trees(tmp_path):
     allowed.mkdir(parents=True)
     denied.mkdir(parents=True)
     (allowed / "plugin.json").write_text(
-        '{"id": "allowed"}\n',
+        '{"id": "ugsci"}\n',
         encoding="utf-8",
     )
     (allowed / "main.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -97,7 +105,35 @@ def test_staging_excludes_denied_plugins_and_build_trees(tmp_path):
     )
     destination = tmp_path / "staged"
 
-    assert helper.stage_bundled_plugins(repo, destination) == ["allowed"]
+    assert helper.stage_bundled_plugins(repo, destination) == ["ugsci"]
     assert (destination / "allowed" / "main.py").is_file()
     assert not (destination / "allowed" / "ui" / "node_modules").exists()
     assert not (destination / "cloud").exists()
+
+
+def test_main_release_staging_excludes_apps_from_explicit_roots(tmp_path):
+    helper = _load_helper()
+    repo = tmp_path / "repo"
+    for kind, name, plugin_type in (
+        ("bundle", "ugsci", "bundle"),
+        ("bundle", "qwenpaw-pet", "general"),
+        ("bundle", "new-optional-plugin", "general"),
+        ("bundle", "misplaced-app", "app"),
+        ("apps", "application", "app"),
+    ):
+        source = repo / "plugins" / kind / name
+        source.mkdir(parents=True)
+        (source / "plugin.json").write_text(
+            json.dumps({"id": name, "type": plugin_type}),
+            encoding="utf-8",
+        )
+        (source / "plugin.py").write_text("VALUE = 1\n", encoding="utf-8")
+    destination = tmp_path / "staged"
+    selected = helper.stage_bundled_plugins(
+        repo,
+        destination,
+        plugin_roots=("bundle", "apps"),
+    )
+    assert selected == ["ugsci"]
+    assert sorted(path.name for path in destination.iterdir()) == ["ugsci"]
+    assert (repo / "plugins/apps/application/plugin.py").is_file()

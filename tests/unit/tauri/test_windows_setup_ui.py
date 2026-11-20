@@ -140,6 +140,8 @@ internal static class InstallerUiProbe
             float scale = new[] { 1f, 1.5f, 2f }[scaleIndex];
             activePage = 0; expanded = false;
             form.Scale(new SizeF(scale, scale));
+            formType.GetMethod("FitToWorkingArea", Methods).Invoke(form,
+                new object[] { new Rectangle(0, 0, 1280, 700) });
             form.PerformLayout();
             CheckBounds(form);
             if (scaleIndex == 0) Save(form, Path.Combine(args[2],

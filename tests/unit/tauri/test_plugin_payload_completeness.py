@@ -81,7 +81,6 @@ def _desktop(tmp_path):
         "flowforge",
         "qwenpaw-run-center",
         "qwenpaw-openui",
-        "qwenpaw-data",
     ):
         manifest = {
             "id": plugin_id,
@@ -89,7 +88,7 @@ def _desktop(tmp_path):
             "entry": {"backend": "plugin.py", "frontend": "ui/index.js"},
             "pack_requires": ["ui/context-console/index.html"],
         }
-        category = "apps" if plugin_id == "qwenpaw-data" else "bundle"
+        category = "bundle"
         _write(
             repo / "plugins" / category / plugin_id,
             "plugin.json",
@@ -178,7 +177,7 @@ def test_signed_component_gate_rejects_missing_declared_payload(
     missing,
 ):
     _, _, plugins = _desktop(tmp_path)
-    (plugins / "qwenpaw-data" / missing).unlink()
+    (plugins / "qwenpaw-openui" / missing).unlink()
     with pytest.raises(ValueError, match="missing required payload"):
         _release(plugins, tmp_path / "release")
 
@@ -201,12 +200,12 @@ def test_desktop_plugin_reuse_rejects_foreign_or_incomplete_sources(
             document["components"]["backend"]["version"] = "2.3.0b3"
         active.write_text(json.dumps(document), "utf-8")
     elif damage == "identity":
-        manifest = plugins / "qwenpaw-data/plugin.json"
+        manifest = plugins / "qwenpaw-openui/plugin.json"
         document = json.loads(manifest.read_text("utf-8"))
         document["version"] = "1.0.4"
         manifest.write_text(json.dumps(document), "utf-8")
     elif damage == "missing":
-        (plugins / "qwenpaw-data/ui/context-console/index.html").unlink()
+        (plugins / "qwenpaw-openui/ui/context-console/index.html").unlink()
     else:
         _write(plugins / "ugsci", "visualization/data/local.bin")
     output = tmp_path / "output"
@@ -223,7 +222,7 @@ def test_desktop_plugin_reuse_rejects_foreign_or_incomplete_sources(
 
 def test_desktop_archive_requires_manifest_declared_auxiliary_files(tmp_path):
     _, _, plugins = _desktop(tmp_path)
-    (plugins / "qwenpaw-data/ui/context-console/index.html").unlink()
+    (plugins / "qwenpaw-openui/ui/context-console/index.html").unlink()
     verifier = _load("verify_frozen_plugins")
     with pytest.raises(ValueError, match="missing required payload"):
         verifier.verify(plugins)

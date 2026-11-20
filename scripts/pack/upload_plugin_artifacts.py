@@ -12,10 +12,13 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import tempfile
+import zipfile
 from urllib.parse import urlsplit
 
 
-def artifact_plan(root: Path) -> list[tuple[Path, str]]:
+def artifact_plan(
+    root: Path, *, reject_apps: bool = False,
+) -> list[tuple[Path, str]]:
     """Require a complete index-to-artifact mapping before touching OSS."""
     root = root.resolve(strict=True)
     index = json.loads((root / "index.json").read_text("utf-8"))
@@ -57,6 +60,15 @@ def artifact_plan(root: Path) -> list[tuple[Path, str]]:
             or source.stat().st_size != row["size_bytes"]
         ):
             raise ValueError(f"Indexed plugin artifact differs: {relative}")
+        if reject_apps:
+            if relative.parts[0] == "apps":
+                raise ValueError("Applications require an independent release")
+            with zipfile.ZipFile(source) as archive:
+                manifest = json.loads(
+                    archive.read(f"{row['plugin_id']}/plugin.json"),
+                )
+            if manifest.get("type") == "app":
+                raise ValueError("Applications require an independent release")
         key = relative.as_posix()
         if key in plan:
             raise ValueError(f"Duplicate plugin artifact URL: {key}")
@@ -98,9 +110,10 @@ def upload_artifacts(
     bucket: str,
     *,
     preflight_only: bool = False,
+    reject_apps: bool = False,
 ) -> None:
     """Validate immutable objects and optionally upload new archives."""
-    plan = artifact_plan(root)
+    plan = artifact_plan(root, reject_apps=reject_apps)
     existing, conflicts = set(), []
     with tempfile.TemporaryDirectory(prefix="qwenpaw-plugin-upload-") as work:
         for index, (source, relative) in enumerate(plan):
@@ -146,14 +159,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("dist/plugins"))
     parser.add_argument("--bucket", required=True)
+    parser.add_argument("--reject-apps", action="store_true")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--preflight", action="store_true")
     args = parser.parse_args()
     if args.check:
-        print(f"Validated {len(artifact_plan(args.root))} indexed plugin ZIPs")
+        count = len(artifact_plan(args.root, reject_apps=args.reject_apps))
+        print(f"Validated {count} indexed plugin ZIPs")
     else:
-        upload_artifacts(args.root, args.bucket, preflight_only=args.preflight)
+        upload_artifacts(
+            args.root, args.bucket, preflight_only=args.preflight,
+            reject_apps=args.reject_apps,
+        )
 
 
 if __name__ == "__main__":

@@ -398,6 +398,36 @@ def prepare_base(
         shutil.rmtree(temporary, ignore_errors=True)
 
 
+def _selected_baseline_key(
+    source_root: Path,
+    manifest_raw: bytes,
+    expected_target: str,
+) -> str | None:
+    """Identify the selected component state within a verified manifest."""
+    manifest = json.loads(manifest_raw.decode("utf-8"))
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != 1
+        or manifest.get("target") != expected_target
+        or not isinstance(manifest.get("components"), dict)
+    ):
+        raise ValueError("previous component manifest is invalid")
+    selected = {}
+    for source in source_root.iterdir():
+        if not (
+            (source / "plugin.json").is_file()
+            or (source / "component.json").is_file()
+        ):
+            continue
+        component, _, _ = read_component_metadata(source)
+        entry = manifest["components"].get(component)
+        if isinstance(entry, dict):
+            selected[component] = entry
+    if not selected:
+        return None
+    return hashlib.sha256(canonical_json(selected)).hexdigest()
+
+
 def prepare_bases(
     source_root: Path,
     base_root: Path,
@@ -536,6 +566,7 @@ def prepare_bases(
         )
     prepared = 0
     seen: set[str] = set()
+    seen_payloads: set[str] = set()
     for entry in entries[:history_count]:
         release_id = (
             entry.get("release_id") if isinstance(entry, dict) else None
@@ -572,6 +603,22 @@ def prepare_bases(
             != str(entry.get("manifest_signature", "")).strip()
         ):
             raise ValueError("component history manifest signature mismatch")
+        # An application-only publication can preserve the exact same core
+        # entries. Authenticate every historical manifest before considering
+        # reuse, then download each distinct selected baseline only once.
+        _verify(manifest_raw, manifest_signature, private)
+        baseline_key = _selected_baseline_key(
+            source_root,
+            manifest_raw,
+            expected_target,
+        )
+        if baseline_key is None or baseline_key in seen_payloads:
+            print(
+                f"Skipping unchanged or unselected component base {release_id}",
+                flush=True,
+            )
+            continue
+        print(f"Preparing component base {release_id}", flush=True)
         if prepare_base(
             source_root,
             base_root / release_id,
@@ -580,6 +627,7 @@ def prepare_bases(
             expected_target=expected_target,
             allow_missing=True,
         ):
+            seen_payloads.add(baseline_key)
             prepared += 1
     return prepared
 

@@ -28,6 +28,11 @@ on:
         type: string
         required: false
         default: "all"
+      macos_runner:
+        description: "Standard ARM64 macOS build image"
+        type: string
+        required: false
+        default: macos-15
   workflow_dispatch:
     inputs:
       ref:
@@ -41,16 +46,41 @@ on:
         required: false
         default: false
       platform:
-        description: "Desktop platform to build (all, windows, macos)"
+        description: "Desktop platform or standalone DMG regression"
         type: choice
-        options: [all, windows, macos]
+        options: [all, windows, macos, macos-dmg-tests]
         required: false
         default: all
+      macos_runner:
+        description: "Standard ARM64 macOS build image"
+        type: choice
+        options: [macos-15, macos-26]
+        required: false
+        default: macos-15
 
 permissions:
   contents: read
 
 jobs:
+  verify-macos-dmg:
+    if: ${{ inputs.platform == 'macos-dmg-tests' }}
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Test native macOS drag-install packaging
+        run: |
+          python -m pip install pytest -r scripts/pack-tauri/requirements-macos-dmg.txt
+          python -m pytest --confcutdir=tests/unit/tauri tests/unit/tauri/test_macos_dmg_native.py -q
+
   check-updater-signing:
     runs-on: ubuntu-latest
     steps:
@@ -117,7 +147,7 @@ jobs:
           python -m pip install --upgrade "certifi>=2026.10.19"
 
       - name: Install packaging helper dependencies
-        run: python -m pip install packaging
+        run: python -m pip install packaging "Pillow>=10.0.0"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
@@ -192,7 +222,8 @@ jobs:
           }
           $installScript = Get-Content -LiteralPath (Join-Path $inspectRoot 'install.ps1') -Raw -Encoding UTF8
           if ($installScript -notmatch 'function Copy-DirectoryLongPathSafe' -or
-              $installScript -notmatch 'Copy-DirectoryLongPathSafe -Source \$payloadRoot' -or
+              $installScript -notmatch '\[UGSciInstallerIO\]::CopyDirectory\(\$payloadRoot,\s*\$stagingDir,\s*\$false,\s*\$payloadBytes\)' -or
+              $installScript -notmatch 'Add-Type -TypeDefinition' -or
               $installScript -match 'Copy-Item -Destination \$stagingDir -Recurse -Force') {
             throw 'Portable Windows installer contains a stale or unsafe install.ps1; long-path-safe copier is required'
           }
@@ -391,7 +422,7 @@ jobs:
       QWENPAW_JAVA_RELEASE: ${{ vars.QWENPAW_JAVA_RELEASE_MACOS || vars.QWENPAW_JAVA_RELEASE }}
       QWENPAW_PYTHON_BUILD_STANDALONE_RELEASE: "20261021"
       QWENPAW_PYTHON_RUNTIME_SHA256: "b5199d66966141fb6d5447512d2b2fe0398d417da37b1949f58db3792d314eac"
-    runs-on: macos-15
+    runs-on: ${{ inputs.macos_runner || 'macos-15' }}
     timeout-minutes: 120
     steps:
       - name: Checkout
@@ -427,7 +458,12 @@ jobs:
           python -m pip install --upgrade "certifi>=2026.10.19"
 
       - name: Install packaging helper dependencies
-        run: python -m pip install packaging
+        run: python -m pip install packaging "Pillow>=10.0.0"
+
+      - name: Test native macOS drag-install packaging
+        run: |
+          python -m pip install pytest -r scripts/pack-tauri/requirements-macos-dmg.txt
+          python -m pytest --confcutdir=tests/unit/tauri tests/unit/tauri/test_macos_dmg_native.py -q
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
@@ -473,6 +509,34 @@ jobs:
           chmod +x scripts/pack-tauri/build_macos_pyinstaller.sh
           bash scripts/pack-tauri/build_macos_pyinstaller.sh
 
+      - name: Verify signed macOS recovery bundle
+        if: failure()
+        id: macos-recovery
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          bundle=console/src-tauri/target/release/bundle/macos
+          archives=("$bundle/"*.app.tar.gz)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            exit 0
+          fi
+          output="$RUNNER_TEMP/macos-build-recovery/UGSci-Tauri-${{ steps.version.outputs.version }}-macOS.app.tar.gz"
+          python scripts/pack-tauri/generate_update_manifest.py stage \
+            --bundle-dir "$bundle" --pattern '*.app.tar.gz' \
+            --target darwin-aarch64 --output "$output" \
+            --pubkey-config console/src-tauri/tauri.version.conf.json
+          python scripts/pack-tauri/verify_frozen_plugins.py --archive "$output"
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+
+      - name: Upload verified macOS recovery bundle
+        if: ${{ failure() && steps.macos-recovery.outputs.ready == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-signed-build-recovery-${{ steps.version.outputs.version }}
+          path: ${{ runner.temp }}/macos-build-recovery/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Require signed macOS updater assets for production
         if: ${{ inputs.require_updater_assets }}
         run: |
@@ -480,11 +544,6 @@ jobs:
           test -s dist/UGSci-Tauri-*-macOS.app.tar.gz
           test -s dist/UGSci-Tauri-*-macOS.app.tar.gz.sig
           test -s dist/tauri-darwin-*-updater.json
-
-      - name: Test native macOS drag-install packaging
-        run: |
-          python -m pip install pytest
-          python -m pytest --confcutdir=tests/unit/tauri tests/unit/tauri/test_macos_dmg_native.py -q
 
       - name: Require drag-install DMG
         run: |

@@ -538,6 +538,159 @@ def test_previous_signed_pointer_base_is_downloaded_and_verified(
     )
 
 
+def _component_history_fixture(tmp_path, mode):
+    release_module = _load()
+    spec = importlib.util.spec_from_file_location(
+        "prepare_component_history_dedup",
+        SCRIPTS / "prepare_component_base.py",
+    )
+    assert spec and spec.loader
+    prepare = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(prepare)
+    private = Ed25519PrivateKey.generate()
+    key = base64.b64encode(
+        private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ),
+    ).decode()
+    source = tmp_path / "source"
+    for component in ("demo", "optional"):
+        (source / component).mkdir(parents=True)
+    selected = tmp_path / "selected" / "demo"
+    selected.mkdir(parents=True)
+    (selected / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "2.0.0"}),
+        encoding="utf-8",
+    )
+    history = None
+    history_signature = None
+    urls = {}
+    for index in range(3):
+        (source / "demo" / "plugin.json").write_text(
+            json.dumps(
+                {"id": "demo", "version": "1.0.0" if index == 0 else "1.1.0"},
+            ),
+            encoding="utf-8",
+        )
+        body = "old" if index == 0 else "new"
+        if index == 2 and mode == "changed-bytes":
+            body = "different bytes under the same version"
+        (source / "demo" / "main.py").write_text(body, encoding="utf-8")
+        (source / "optional" / "plugin.json").write_text(
+            json.dumps({"id": "optional", "version": f"1.0.{index}"}),
+            encoding="utf-8",
+        )
+        output = tmp_path / f"release-{index}"
+        manifest = release_module.build_release(
+            source,
+            output,
+            product="qwenpaw",
+            channel="stable",
+            target="windows-x86_64",
+            core_min_version="1.0.0",
+            base_url="https://oss.example",
+            private_key_b64=key,
+            release_id=f"run-{index}",
+            release_sequence=index + 1,
+            history_input=history,
+            history_signature_input=history_signature,
+        )
+        history = manifest.with_name(
+            f"windows-x86_64-run-{index}.history.json",
+        )
+        history_signature = history.with_name(history.name + ".sig")
+        for path in output.rglob("*"):
+            if path.is_file():
+                relative = path.relative_to(output).as_posix()
+                urls[f"https://oss.example/{relative}"] = path.read_bytes()
+    return prepare, private, key, selected, urls
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["duplicate", "changed-bytes", "bad-signature"],
+)
+def test_history_preparation_reuses_identical_selected_components(
+    tmp_path,
+    monkeypatch,
+    mode,
+):
+    import hashlib
+
+    prepare, private, key, selected, urls = _component_history_fixture(
+        tmp_path,
+        mode,
+    )
+    pointer_url = (
+        "https://oss.example/metadata/components/stable/"
+        "windows-x86_64.current.json"
+    )
+    pointer = json.loads(urls[pointer_url])
+    history_url = pointer["history_url"]
+    if mode == "bad-signature":
+        document = json.loads(urls[history_url])
+        duplicate = document["releases"][1]
+        bad_signature = base64.b64encode(
+            Ed25519PrivateKey.generate().sign(urls[duplicate["manifest_url"]]),
+        ).decode()
+        duplicate["manifest_signature"] = bad_signature
+        urls[duplicate["manifest_url"] + ".sig"] = bad_signature.encode()
+        history_raw = prepare.canonical_json(document)
+        urls[history_url] = history_raw
+        pointer["history_size"] = len(history_raw)
+        pointer["history_sha256"] = hashlib.sha256(history_raw).hexdigest()
+        pointer["history_signature"] = base64.b64encode(
+            private.sign(history_raw),
+        ).decode()
+        pointer.pop("signature")
+        pointer["signature"] = base64.b64encode(
+            private.sign(prepare.canonical_json(pointer)),
+        ).decode()
+        urls[pointer_url] = prepare.canonical_json(pointer)
+    downloaded = []
+
+    def get(url):
+        if url.endswith(".zip"):
+            downloaded.append(url)
+        return urls[url]
+
+    monkeypatch.setattr(prepare, "_get", get)
+    destination = tmp_path / "bases"
+    saved_history = tmp_path / "history.json"
+    saved_signature = tmp_path / "history.json.sig"
+
+    def prepare_history():
+        return prepare.prepare_bases(
+            selected.parent,
+            destination,
+            pointer_url=pointer_url,
+            private_key_b64=key,
+            expected_target="windows-x86_64",
+            history_output=saved_history,
+            history_signature_output=saved_signature,
+        )
+
+    if mode == "bad-signature":
+        with pytest.raises(ValueError, match="signature verification failed"):
+            prepare_history()
+        return
+    expected = 3 if mode == "changed-bytes" else 2
+    assert prepare_history() == expected
+    assert len(downloaded) == expected
+    assert all("/demo/" in url for url in downloaded)
+    assert (destination / "run-2" / "demo" / "main.py").is_file()
+    assert (destination / "run-0" / "demo" / "main.py").read_text() == "old"
+    assert (destination / "run-1").exists() == (mode == "changed-bytes")
+    assert saved_history.read_bytes() == urls[history_url]
+    assert len(json.loads(saved_history.read_bytes())["releases"]) == 3
+    private.public_key().verify(
+        base64.b64decode(saved_signature.read_text()),
+        saved_history.read_bytes(),
+    )
+
+
 def test_previous_base_restores_signed_file_modes(tmp_path, monkeypatch):
     release_module = _load()
     prepare_spec = importlib.util.spec_from_file_location(

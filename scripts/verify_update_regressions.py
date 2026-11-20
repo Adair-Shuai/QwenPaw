@@ -73,8 +73,31 @@ SUITES = (
     "tests/unit/channels/test_channel_host.py",
     "tests/unit/harnesses/test_harness_dependency_profiles.py",
     "tests/unit/plugins/test_install_lock.py",
+    "tests/unit/scripts/test_macos_packaging.py",
+    "tests/unit/plugins/test_generate_plugin_metadata.py",
+    "tests/unit/tauri/test_frozen_plugin_archive.py",
+    "tests/unit/tauri/test_bundled_plugin_packaging.py",
+    "tests/unit/verify/test_unit_sharding.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/scripts/test_macos_packaging.py": (
+        "test_launcher_uses_real_top_level_app",
+        "test_signing_skips_debug_symbols_and_keeps_native_signatures",
+    ),
+    "tests/unit/plugins/test_generate_plugin_metadata.py": (
+        "test_main_release_excludes_apps_and_preserves_independent_packing",
+    ),
+    "tests/unit/tauri/test_frozen_plugin_archive.py": (
+        "test_desktop_publication_rejects_application_payloads",
+    ),
+    "tests/unit/tauri/test_bundled_plugin_packaging.py": (
+        "test_main_release_staging_excludes_apps_from_explicit_roots",
+    ),
+    "tests/unit/verify/test_unit_sharding.py": (
+        "test_unit_shards_execute_every_case_once_and_propagate_failures",
+        "test_unit_shards_reject_invalid_partition",
+        "test_windows_matrix_runs_all_four_unit_shards_and_app_contracts_once",
+    ),
     "tests/unit/app/test_expert_repair.py": (
         "test_repair_retains_instance_files_policy_and_recovers_committed_switch",
         "test_repair_failure_or_race_never_replaces_current_environment",
@@ -329,6 +352,7 @@ REQUIRED_CASES = {
         "test_desktop_update_commands_are_allowed_by_main_window_acl",
         "test_artifact_selection_retains_fork_brand_and_newest_id",
         "test_fork_beta_promotion_retains_checked_desktop_manifest",
+        "test_download_base_artifacts_verifies_only_unreplaced_platforms",
     },
     "tests/unit/tauri/test_backend_guard.py": {
         "test_runtime_lock_rejects_a_second_owner",
@@ -356,6 +380,20 @@ REQUIRED_CASES = {
         "test_console_checkout_preserves_formatter_line_endings",
         "test_plugin_upload_rejects_incomplete_local_artifacts",
         "test_plugin_upload_transport_failures_do_not_pass",
+        "test_application_releases_prepare_versions_without_force_overwrites",
+        "test_application_version_preparation_commits_and_repacks_real_artifact",
+        "test_backend_units_install_only_the_locked_native_icon_renderer",
+        "test_core_artifact_reuse_only_allows_exact_extension_tooling_paths",
+        "test_core_release_allocates_monotonic_independent_versions",
+        "test_desktop_packaging_helpers_install_icon_dependencies",
+        "test_every_application_has_an_independent_release_entry",
+        "test_full_unit_gate_builds_actual_computer_use_version_bundle",
+        "test_independent_release_versions_advance_only_changed_payloads",
+        "test_main_plugin_publisher_rejects_actual_application_archives",
+        "test_main_release_workflows_exclude_every_application",
+        "test_optional_frontend_locks_use_public_registry_without_entering_core",
+        "test_replaced_platforms_are_excluded_from_base_downloads",
+        "test_resumed_artifacts_must_match_release_commit_and_metadata",
     },
     "tests/unit/tauri/test_stage_officecli.py": {
         "test_reviewed_pin_does_not_query_latest",
@@ -369,9 +407,11 @@ REQUIRED_CASES = {
         "test_publication_gate_blocks_broken_but_present_artifacts",
         "test_current_updater_preserves_data_across_future_release_routes",
         "test_update_release_gates_cannot_be_bypassed_by_publication",
+        "test_publication_gate_rejects_apps_in_signed_update_payloads",
     },
     "tests/unit/tauri/test_component_release.py": {
         "test_builds_ten_direct_deltas_and_binds_signed_history",
+        "test_history_preparation_reuses_identical_selected_components",
     },
     "tests/unit/tauri/test_ugsci_release_data.py": {
         "test_release_staging_and_market_zip_exclude_local_visualization_data",
@@ -383,6 +423,7 @@ REQUIRED_CASES = {
         "test_runtime_bundle_retries_windows_sharing_and_preserves_user_data",
         "test_runtime_hash_matches_legacy_without_entering_excluded_trees",
         "test_runtime_copy_uses_manifest_identity_and_ignores_pack_exclude",
+        "test_python_distributions_reject_embedded_application_payloads",
     },
     "tests/unit/tauri/test_storage_capacity_publication.py": {
         "test_manifest_rejects_hosts_without_scoped_app_sdk",

@@ -98,11 +98,14 @@ class AssistantModel:
             }
             reply = ""
             async for event in workspace.stream_query(request):
-                field = lambda key, current=event: (
-                    current.get(key)
-                    if isinstance(current, dict)
-                    else getattr(current, key, None)
-                )
+
+                def field(key, current=event):
+                    return (
+                        current.get(key)
+                        if isinstance(current, dict)
+                        else getattr(current, key, None)
+                    )
+
                 status = getattr(field("status"), "value", field("status"))
                 if field("error") or status in {"failed", "cancelled"}:
                     raise RuntimeError(str(field("error") or status))
@@ -127,5 +130,6 @@ class AssistantModel:
                         reply = "".join(blocks)
             return SimpleNamespace(content=reply)
 
-        # pylint: disable-next=W0212
+        # Use the catalog's owning event loop, as its discovery calls do.
+        # pylint: disable-next=protected-access
         return await self.catalog._on_host(invoke)

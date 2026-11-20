@@ -1,16 +1,10 @@
 name: Wellbore Pressure App Release
 
 on:
-  push:
-    branches: [codex/wellbore-pressure-app]
-    paths:
-      - 'plugins/apps/wellbore-pressure/**'
-      - '.github/workflows/wellbore-pressure-release.yml'
-      - 'scripts/pack/publish_wellbore_pressure.py'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: oss-production-metadata
@@ -42,6 +36,21 @@ jobs:
           python scripts/pack/generate_plugin_metadata.py --plugins-root plugins --dist dist/wellbore-pressure --metadata-out dist/wellbore-pressure/index.json --cdn-prefix /files/plugins --only wellbore-pressure
       - name: Install publication SDK
         run: python -m pip install 'oss2==2.19.1'
+      - name: Prepare independent application version
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = branch
+          python -m pip install 'oss2==2.19.1' packaging
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python scripts/pack/prepare_plugin_versions.py --repo . --dist dist/wellbore-pressure --bucket "$OSS_BUCKET" --sdk --commit --branch "$RELEASE_BRANCH" --repack
+
       - name: Publish immutable app and verify before updating catalog
         env:
           OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}

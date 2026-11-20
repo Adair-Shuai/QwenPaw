@@ -87,7 +87,9 @@ jobs:
             --attempts 2 \
             --brand ugsci \
             --run-id "${{ inputs.artifacts_run_id || github.run_id }}" \
-            --include-updater-metadata
+            --include-updater-metadata \
+            ${{ inputs.windows_artifacts_run_id != '' && '--exclude-windows' || '' }} \
+            ${{ inputs.macos_artifacts_run_id != '' && '--exclude-macos' || '' }}
 
       - name: Overlay newer Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}
@@ -331,7 +333,9 @@ jobs:
             --attempts 2 \
             --brand ugsci \
             --run-id "${{ inputs.artifacts_run_id || github.run_id }}" \
-            --include-updater-metadata
+            --include-updater-metadata \
+            ${{ inputs.windows_artifacts_run_id != '' && '--exclude-windows' || '' }} \
+            ${{ inputs.macos_artifacts_run_id != '' && '--exclude-macos' || '' }}
 
       - name: Overlay newer Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}

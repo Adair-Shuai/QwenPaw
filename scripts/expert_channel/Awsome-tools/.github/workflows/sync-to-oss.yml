@@ -1,0 +1,140 @@
+name: Sync to OSS
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'agents/**'
+      - 'petroleum/**'
+      - 'skills/**'
+      - 'mcp/**'
+      - 'README.md'
+      - 'README.en.md'
+      - '.github/workflows/sync-to-oss.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: awesome-tools-legacy-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect changed content
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          before = os.environ.get("BEFORE_SHA", "")
+          full = os.environ["EVENT_NAME"] == "workflow_dispatch" or not before or set(before) == {"0"}
+          paths = []
+          if not full:
+              try:
+                  paths = subprocess.check_output(["git", "diff", "--name-only", before, os.environ["GITHUB_SHA"]], text=True).splitlines()
+              except subprocess.CalledProcessError:
+                  full = True
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              for folder in ("skills", "mcp", "agents", "petroleum"):
+                  changed = full or any(path.startswith(folder + "/") for path in paths)
+                  print(f"{folder}={str(changed).lower()}", file=output)
+              roots = full or any(path in ("README.md", "README.en.md") for path in paths)
+              print(f"roots={str(roots).lower()}", file=output)
+          PY
+
+      - name: Validate MCP catalog
+        run: python3 mcp/validate_catalog.py
+
+      - name: Setup ossutil
+        uses: manyuanrong/setup-ossutil@v3.0
+        with:
+          endpoint: ${{ secrets.OSS_ENDPOINT }}
+          access-key-id: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          access-key-secret: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+
+      - name: Sync skills to OSS
+        if: steps.changes.outputs.skills == 'true'
+        run: |
+          ossutil sync skills/ oss://${{ secrets.OSS_BUCKET }}/skills/ \
+            --update --delete \
+            --exclude ".DS_Store"
+
+      - name: Sync MCP servers to OSS
+        if: steps.changes.outputs.mcp == 'true'
+        run: |
+          ossutil sync mcp/ oss://${{ secrets.OSS_BUCKET }}/mcp/ \
+            --update --delete \
+            --exclude ".DS_Store"
+
+      - name: Validate template publication configuration
+        if: steps.changes.outputs.agents == 'true'
+        env:
+          TOOLCHAIN: ${{ vars.UGSCI_EXPERT_TOOLCHAIN_REF }}
+          SERVICE_URL: ${{ vars.UGSCI_PUBLISH_SERVICE_URL }}
+          PUBLISH_TOKEN: ${{ secrets.UGSCI_PUBLISH_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from urllib.parse import urlsplit
+          if not re.fullmatch(r'[0-9a-f]{40}', os.environ['TOOLCHAIN']):
+              raise SystemExit('Configure immutable expert toolchain commit before syncing agents')
+          if urlsplit(os.environ['SERVICE_URL']).scheme != 'https' or not os.environ['PUBLISH_TOKEN']:
+              raise SystemExit('Configure the existing publication service before syncing agents')
+          PY
+
+      - name: Sync template files without deleting published expert versions
+        if: steps.changes.outputs.agents == 'true'
+        run: |
+          ossutil sync agents/ oss://${{ secrets.OSS_BUCKET }}/agents/ \
+            --update \
+            --exclude "manifest.json" \
+            --exclude ".DS_Store"
+
+      - uses: actions/checkout@v4
+        if: steps.changes.outputs.agents == 'true'
+        with:
+          repository: Adair-Shuai/QwenPaw
+          ref: ${{ vars.UGSCI_EXPERT_TOOLCHAIN_REF }}
+          token: ${{ secrets.UGSCI_TOOLCHAIN_READ_TOKEN }}
+          path: .release-toolchain
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        if: steps.changes.outputs.agents == 'true'
+        with:
+          python-version: '3.12'
+
+      - name: Install catalog publication tooling
+        if: steps.changes.outputs.agents == 'true'
+        run: python -m pip install ./.release-toolchain
+
+      - name: Merge template catalog through the single publication writer
+        if: steps.changes.outputs.agents == 'true'
+        env:
+          UGSCI_PUBLISH_SERVICE_URL: ${{ vars.UGSCI_PUBLISH_SERVICE_URL }}
+          UGSCI_PUBLISH_TOKEN: ${{ secrets.UGSCI_PUBLISH_TOKEN }}
+        run: |
+          python .release-toolchain/scripts/publish_expert_release.py --templates --input agents/manifest.json
+
+      - name: Sync petroleum resources to OSS
+        if: steps.changes.outputs.petroleum == 'true'
+        run: |
+          ossutil sync petroleum/ oss://${{ secrets.OSS_BUCKET }}/petroleum/ \
+            --update --delete \
+            --exclude ".DS_Store"
+
+      - name: Sync root files
+        if: steps.changes.outputs.roots == 'true'
+        run: |
+          ossutil cp README.md oss://${{ secrets.OSS_BUCKET }}/README.md
+          ossutil cp README.en.md oss://${{ secrets.OSS_BUCKET }}/README.en.md
