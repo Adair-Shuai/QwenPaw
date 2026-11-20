@@ -1456,7 +1456,12 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
                 timeout=max(0, deadline - asyncio.get_running_loop().time()),
             )
             if not completed:
-                self._log_drain_timeout(key, "tracker")
+                pending = await tracker.snapshot_active_tasks(
+                    owner=self._workspace,
+                    channel_id=key,
+                    channel_handoff=channel_handoff,
+                )
+                self._log_drain_timeout(key, "tracker", len(pending))
             return completed
         return True
 

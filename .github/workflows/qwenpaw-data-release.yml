@@ -43,6 +43,7 @@ concurrency:
   queue: max
 
 env:
+  OSS_BUCKET: ${{ vars.OSS_BUCKET || 'qwenpaw-download' }}
   PLUGIN_DIR: plugins/apps/qwenpaw-data
   PLUGIN_ID: qwenpaw-data
 
@@ -108,8 +109,8 @@ jobs:
             exit 0
           fi
           if stat_out=$(ossutil stat \
-            "oss://qwenpaw-download/metadata/plugins/index.json" 2>&1); then
-            ossutil cp "oss://qwenpaw-download/metadata/plugins/index.json" \
+            "oss://${OSS_BUCKET}/metadata/plugins/index.json" 2>&1); then
+            ossutil cp "oss://${OSS_BUCKET}/metadata/plugins/index.json" \
               plugins-index.json
             published=$(jq -r --arg id "$file_id" '.files | has($id)' \
               plugins-index.json) || {
@@ -270,7 +271,6 @@ jobs:
           OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'qwenpaw-download' }}
 
       - name: Merge historical versions into index
         run: |
@@ -282,7 +282,7 @@ jobs:
       - name: Upload plugins index (short-cache)
         run: |
           ossutil cp dist/plugins/index.json \
-            "oss://qwenpaw-download/metadata/plugins/index.json" \
+            "oss://${OSS_BUCKET}/metadata/plugins/index.json" \
             --acl public-read \
             --force \
             --meta "Cache-Control:public, max-age=60, must-revalidate"
@@ -292,8 +292,8 @@ jobs:
           # Same fail-closed rule for the top-level product index: only a
           # confirmed NoSuchKey/404 may bootstrap a fresh skeleton.
           if stat_out=$(ossutil stat \
-            "oss://qwenpaw-download/metadata/index.json" 2>&1); then
-            ossutil cp "oss://qwenpaw-download/metadata/index.json" \
+            "oss://${OSS_BUCKET}/metadata/index.json" 2>&1); then
+            ossutil cp "oss://${OSS_BUCKET}/metadata/index.json" \
               main-index.json
             python3 -c 'import json; json.load(open("main-index.json"))' || {
               echo "ERROR: existing main index is not valid JSON." >&2
@@ -319,7 +319,7 @@ jobs:
             --out   main-index.json
 
           ossutil cp main-index.json \
-            "oss://qwenpaw-download/metadata/index.json" \
+            "oss://${OSS_BUCKET}/metadata/index.json" \
             --acl public-read \
             --force \
             --meta "Cache-Control:public, max-age=60, must-revalidate"

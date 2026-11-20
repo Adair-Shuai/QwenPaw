@@ -344,8 +344,3 @@ fn show_windows_message(title: &str, text: &str) {
         let _ = MessageBoxW(None, &text, &title, MB_OK | MB_ICONWARNING);
     }
 }
-
-/// Run the detached desktop supervisor without constructing a WebView.
-pub fn run_agent_host() -> Result<(), String> {
-    backend::daemon::run()
-}

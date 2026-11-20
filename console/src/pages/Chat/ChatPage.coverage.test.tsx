@@ -92,7 +92,6 @@ const {
   mockGetContext,
   mockAgentList,
   mockHistoryRequests,
-  mockSetSessionMessages,
 } = vi.hoisted(() => ({
   mockListProviders: vi.fn(),
   mockPreviewModelInfo: vi.fn(),
@@ -133,10 +132,19 @@ const {
     void _sessionId;
     return [];
   }),
-  mockSetSessionMessages: vi.fn(),
 }));
 
 let capturedOptions: CapturedChatOptions | null = null;
+
+function reconnectChat(chatId: string) {
+  const reconnect = capturedOptions?.api.reconnect;
+  if (!reconnect) throw new Error("Chat reconnect transport is unavailable");
+  return reconnect({
+    chatSessionId: chatId,
+    session_id: chatId,
+    signal: new AbortController().signal,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -1247,10 +1255,7 @@ describe("ChatPage coverage", () => {
 
     vi.mocked(fetch).mockResolvedValueOnce(new Response(""));
     await act(async () => {
-      await capturedOptions.api.reconnect({
-        chatSessionId: "test-session",
-        signal: new AbortController().signal,
-      });
+      await reconnectChat("test-session");
     });
 
     const firstPoll = setIntervalSpy.mock.calls.find(
@@ -1307,12 +1312,9 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     vi.mocked(fetch).mockRejectedValueOnce(new Error("reconnect failed"));
-    await expect(
-      capturedOptions.api.reconnect({
-        chatSessionId: "test-session",
-        signal: new AbortController().signal,
-      }),
-    ).rejects.toThrow("reconnect failed");
+    await expect(reconnectChat("test-session")).rejects.toThrow(
+      "reconnect failed",
+    );
 
     const poll = setIntervalSpy.mock.calls.find(
       ([, delay]) => delay === 5000,
@@ -1357,10 +1359,7 @@ describe("ChatPage coverage", () => {
           rejectSourceReconnect = reject;
         }),
     );
-    const sourceReconnect = capturedOptions.api.reconnect({
-      chatSessionId: sourceChatId,
-      signal: new AbortController().signal,
-    });
+    const sourceReconnect = reconnectChat(sourceChatId);
     const sourceFailure = expect(sourceReconnect).rejects.toThrow(
       "source reconnect failed",
     );
@@ -1375,10 +1374,7 @@ describe("ChatPage coverage", () => {
 
     vi.mocked(fetch).mockResolvedValueOnce(new Response(""));
     await act(async () => {
-      await capturedOptions.api.reconnect({
-        chatSessionId: targetChatId,
-        signal: new AbortController().signal,
-      });
+      await reconnectChat(targetChatId);
     });
     rejectSourceReconnect?.(new Error("source reconnect failed"));
     await sourceFailure;

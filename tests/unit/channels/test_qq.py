@@ -3,6 +3,7 @@
 import asyncio
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 import sys
 import threading
 import pytest
@@ -176,6 +177,9 @@ class Gateway:
 async def native_driver(tmp_path, monkeypatch):
     # Exercise real internals and verify lifecycle state in this test.
     # pylint: disable=protected-access
+    # The fake gateway is local even when Windows supplies a system proxy.
+    no_proxy = os.environ.get("NO_PROXY", "")
+    monkeypatch.setenv("NO_PROXY", f"{no_proxy},127.0.0.1,localhost")
     server = Gateway().start()
     monkeypatch.setenv("QQ_API_BASE", server.base)
     monkeypatch.setenv("QQ_TOKEN_URL", server.base + "/token")

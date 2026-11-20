@@ -51,7 +51,6 @@ def _runtime_identity():
 
 @pytest.mark.asyncio
 async def test_drain_timeout_retains_tracked_work_and_reports_stage(caplog):
-    from types import SimpleNamespace
     from qwenpaw.app.channels.manager import ChannelManager
     from qwenpaw.app.task_tracker import TaskTracker
 

@@ -253,6 +253,7 @@ def test_channel_catalog_matches_local_version_and_host_compatibility(
     installed_version,
     upgrade_available,
 ):
+    monkeypatch.setattr("qwenpaw.__version__.__version__", "2.3.1b1")
     source = tmp_path / "local-source"
     source.mkdir()
     (source / "plugin.json").write_text(
@@ -267,7 +268,7 @@ def test_channel_catalog_matches_local_version_and_host_compatibility(
         "version": "0.1.0",
         "platform": "channel",
         "url": "/files/plugins/channel/matrix/matrix-0.1.0.zip",
-        "qwenpaw_version": {"min": "0.0.0"},
+        "qwenpaw_version": {"min": "2.3.0.post1", "max": "3.0.0"},
     }
     with patch(
         "qwenpaw.plugins.download_catalog._fetch_json",
@@ -292,8 +293,8 @@ def test_channel_catalog_matches_local_version_and_host_compatibility(
     assert channel["installed_version"] == installed_version
     assert channel["upgrade_available"] is upgrade_available
     assert channel["install_url"] == (
-        "https://download.qwenpaw.agentscope.io"
-        "/files/plugins/channel/matrix/matrix-0.1.0.zip"
+        PLUGIN_DOWNLOAD_CDN.rstrip("/")
+        + "/files/plugins/channel/matrix/matrix-0.1.0.zip"
     )
 
 
