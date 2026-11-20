@@ -632,7 +632,8 @@ async def test_deleted_expert_reinstalls_preserving_customization_and_tool_scope
     assert installer.status(plan["id"])["status"] == "removed"
     await installer.start(plan["id"])
     await installer.tasks[plan["id"]]
-    assert installer.status(plan["id"])["status"] == "ready"
+    reinstalled = installer.status(plan["id"])
+    assert reinstalled["status"] == "ready", reinstalled.get("error")
     assert state["agent_id"] in load_config().agents.profiles
     assert (
         json.loads((workspace / "agent.json").read_text(encoding="utf-8"))[
