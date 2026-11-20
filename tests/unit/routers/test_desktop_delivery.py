@@ -212,7 +212,6 @@ def test_selected_executable_is_resolved_from_shell_handlers(
     tmp_path,
 ):
     from contextlib import nullcontext
-    from qwenpaw.services import desktop_associations as associations
 
     executable = tmp_path / "Sheets.exe"
     executable.touch()
@@ -244,11 +243,19 @@ def test_selected_executable_is_resolved_from_shell_handlers(
     assert len(calls) == 1
 
 
-def test_scripts_open_only_in_an_explicit_installed_editor(monkeypatch, tmp_path):
+def test_scripts_open_only_in_an_explicit_installed_editor(
+    monkeypatch,
+    tmp_path,
+):
     from contextlib import nullcontext
 
     monkeypatch.setattr(associations.sys, "platform", "win32")
-    for variable in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "SystemRoot"):
+    for variable in (
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "ProgramW6432",
+        "SystemRoot",
+    ):
         monkeypatch.delenv(variable, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     editor = tmp_path / "Programs" / "Microsoft VS Code" / "Code.exe"
@@ -261,7 +268,9 @@ def test_scripts_open_only_in_an_explicit_installed_editor(monkeypatch, tmp_path
     monkeypatch.setattr(
         associations,
         "_association",
-        lambda suffix, kind: str(editor) if (suffix, kind) == (".py", 2) else "",
+        lambda suffix, kind: str(editor)
+        if (suffix, kind) == (".py", 2)
+        else "",
     )
     monkeypatch.setattr(
         associations,
@@ -288,13 +297,22 @@ def test_scripts_open_only_in_an_explicit_installed_editor(monkeypatch, tmp_path
         "canChooseApplication": True,
         "editorOnly": True,
     }
-    for application_id in (None, "system-default", str(editor), "editor:cursor"):
+    for application_id in (
+        None,
+        "system-default",
+        str(editor),
+        "editor:cursor",
+    ):
         with pytest.raises(ValueError, match="Choose an available editor"):
             associations.open_file(script, application_id)
-    assert calls == []
+    assert not calls
     associations.open_file(script, "editor:vscode")
     assert calls == [[str(editor), str(script)]]
-    monkeypatch.setattr(associations, "_association", lambda *_args: "python.exe")
+    monkeypatch.setattr(
+        associations,
+        "_association",
+        lambda *_args: "python.exe",
+    )
     app = associations.list_applications(script.name)["applications"][0]
     assert not app["isDefault"]
     editor.unlink()
@@ -309,7 +327,6 @@ def test_default_executable_does_not_require_an_optional_open_with_handler(
     tmp_path,
 ):
     from contextlib import nullcontext
-    from qwenpaw.services import desktop_associations as associations
 
     executable = tmp_path / "Default.exe"
     executable.touch()

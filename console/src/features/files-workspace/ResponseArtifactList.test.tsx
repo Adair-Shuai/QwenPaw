@@ -2,7 +2,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("react-i18next", () => ({
+vi.mock(import("react-i18next"), async (importOriginal) => ({
+  ...(await importOriginal()),
   useTranslation: () => ({
     t: (key: string) =>
       ({

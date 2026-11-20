@@ -118,6 +118,10 @@ jobs:
                 scripts/verify_update_regressions.py|\
                 console/src/plugins/hostSdk/hooks.host.test.ts|\
                 console/src/plugins/flowForgeWorkbench.test.tsx|\
+                console/src/features/files-workspace/FilesDrawer.test.tsx|\
+                console/src/features/files-workspace/ResponseArtifactList.test.tsx|\
+                console/src/pages/Settings/PluginManager/components/InstalledPluginList.coverage.test.tsx|\
+                tests/unit/routers/test_desktop_delivery.py|\
                 tests/unit/scripts/test_macos_packaging.py|\
                 tests/unit/tauri/test_macos_dmg.py|\
                 tests/unit/tauri/test_macos_dmg_native.py|\
@@ -177,7 +181,7 @@ jobs:
                   ;;
               esac
             done < <(jq -r '.files[]?.filename' <<<"$comparison")
-            echo "Reusing product artifacts across release-tooling-only changes"
+            echo "Reusing product artifacts across release tooling and test-only changes"
           }
           verify_cleanup_only_failure() {
             local run_id="$1" job_name="$2" job_id job_json unexpected

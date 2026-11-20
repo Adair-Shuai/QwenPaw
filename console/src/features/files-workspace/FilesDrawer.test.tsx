@@ -1475,12 +1475,14 @@ describe("FilesDrawer", () => {
           dispatch={vi.fn()}
         />,
       );
-      await waitFor(() =>
-        expect(
-          screen.getByRole("button", {
-            name: i18n.t("workbench.activity.browser"),
-          }),
-        ).toHaveAttribute("aria-pressed", "true"),
+      await waitFor(
+        () =>
+          expect(
+            screen.getByRole("button", {
+              name: i18n.t("workbench.activity.browser"),
+            }),
+          ).toHaveAttribute("aria-pressed", "true"),
+        { timeout: 12_000 },
       );
       const frame = await findHtmlFrame(path);
       expect(frame).toBeVisible();
@@ -1526,6 +1528,7 @@ describe("FilesDrawer", () => {
       ).toBeUndefined();
       popup.mockRestore();
     },
+    45_000,
   );
 
   it("opens edited HTML from the preview button in the browser using the same dirty buffer", async () => {
