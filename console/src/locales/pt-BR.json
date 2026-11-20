@@ -1643,6 +1643,10 @@
     "selectAtLeastOneDay": "Selecione pelo menos um dia."
   },
   "channels": {
+    "update": {
+      "action": "Atualizar",
+      "available": "Nova versão disponível: {{version}}"
+    },
     "qrcodeInstallRequired": "Instale o plugin para escanear um código QR",
     "runtime": {
       "missing_code": "Plugin não instalado"
@@ -1689,6 +1693,7 @@
     "streamingEnabled": "Saída em Streaming",
     "streamingEnabledDingtalkHint": "Apenas efetivo quando o tipo de mensagem é Card",
     "streamingEnabledFeishuHint": "Requer habilitar a permissão cardkit:card:write na página de gerenciamento de permissões da Plataforma Aberta Feishu",
+    "streamingEnabledQQHint": "A saída em streaming está disponível apenas em conversas privadas do QQ (C2C); mensagens de grupos e canais continuam sendo enviadas por completo",
     "autoCollapseThinking": "Recolher Thinking",
     "autoCollapseThinkingTooltip": "Recolher automaticamente o painel de Thinking após o término do streaming. O painel ainda pode ser expandido manualmente.",
     "ackMessage": "Acknowledgment Message",
@@ -3828,7 +3833,8 @@
       "attach": "Anexar arquivos",
       "send": "Enviar mensagem",
       "stop": "Parar geração"
-    }
+    },
+    "outputTruncated": "O modelo atingiu o limite de saída. Esta resposta está incompleta. Peça ao modelo para continuar ou aumente o limite de saída."
   },
   "security": {
     "parent": "Configuracoes",
@@ -5442,6 +5448,7 @@
     "emojiRecent": "Recentes",
     "emojiAll": "Padrão",
     "emojiCustom": "Leopardo-das-neves",
+    "emojiAnimated": "Leopardo das Neves Fofo",
     "addCommentImage": "Enviar imagem",
     "removeCommentImage": "Remover imagem",
     "commentImageMax": "Você pode adicionar até {{count}} imagens",
@@ -5458,6 +5465,7 @@
     "video": "Vídeo da publicação",
     "imagePreview": "Pré-visualização da imagem",
     "editPost": "Editar",
+    "fromGithub": "Do GitHub",
     "deletePost": "Excluir",
     "editHelp": "Edite na Platform para preservar imagens, vídeos e formatação",
     "deleteTitle": "Excluir esta publicação?",
@@ -5478,6 +5486,9 @@
     "login": "Entrar na Platform",
     "account": "Publicando como {{name}}",
     "postTitle": "Título",
+    "githubLinkLabel": "Repositório do GitHub",
+    "githubLinkPlaceholder": "https://github.com/owner/repo",
+    "githubLinkInvalid": "Insira uma URL válida de repositório do GitHub",
     "body": "Corpo",
     "confirm": "Revisei o título e o corpo e concordo em publicar este conteúdo publicamente.",
     "publish": "Publicar",

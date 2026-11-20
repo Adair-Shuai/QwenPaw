@@ -248,6 +248,22 @@ def _sha256_of_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def content_digest(files) -> str:
+    """Identify delivered paths and bytes, independent of ZIP metadata."""
+    entries = sorted(
+        (name, hashlib.sha256(content).hexdigest()) for name, content in files
+    )
+    payload = json.dumps(entries, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def plugin_content_digest(plugin_dir: Path, manifest: dict) -> str:
+    return content_digest(
+        (relative, (plugin_dir / relative).read_bytes())
+        for relative in _iter_tree_relpaths(plugin_dir, manifest)
+    )
+
+
 def _iter_tree_relpaths(
     plugin_dir: Path,
     manifest: dict[str, Any] | None = None,

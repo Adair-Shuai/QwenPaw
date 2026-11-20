@@ -2095,6 +2095,10 @@
     "selectAtLeastOneDay": "请选择至少一天。"
   },
   "channels": {
+    "update": {
+      "action": "更新",
+      "available": "发现新版本：{{version}}"
+    },
     "runtime": {
       "missing_code": "插件未安装"
     },
@@ -2145,6 +2149,7 @@
     "streamingEnabled": "流式输出",
     "streamingEnabledDingtalkHint": "仅在消息类型为 Card 时生效",
     "streamingEnabledFeishuHint": "需要在飞书开放平台权限管理界面开通 cardkit:card:write 权限",
+    "streamingEnabledQQHint": "仅 QQ 单聊（C2C）支持流式输出；群聊和频道仍发送完整消息",
     "autoCollapseThinking": "折叠思考内容",
     "autoCollapseThinkingTooltip": "思考内容流式输出结束后自动折叠，仍可手动展开。",
     "ackMessage": "即时确认消息",
@@ -3424,6 +3429,8 @@
     "download": "下载",
     "downloadFailed": "文件下载失败",
     "resize": "调整文件抽屉宽度",
+    "enterFullscreen": "全屏预览",
+    "exitFullscreen": "退出全屏预览",
     "loadFailed": "文件加载失败。请确认文件仍在当前智能体工作区的主工作目录中。",
     "previewUnavailable": "暂不支持预览，仍可查看元数据并下载。",
     "mentionInChat": "在聊天中引用",
@@ -4855,7 +4862,8 @@
       "delegate": "直接指派",
       "collaborate": "共同协作"
     },
-    "quoteFollowUp": "引用并追问"
+    "quoteFollowUp": "引用并追问",
+    "outputTruncated": "模型已达到输出上限，当前回答不完整。请让模型继续回答，或提高输出上限。"
   },
   "security": {
     "parent": "设置",
@@ -6836,6 +6844,7 @@
     "emojiRecent": "最近使用",
     "emojiAll": "默认",
     "emojiCustom": "雪豹",
+    "emojiAnimated": "可爱雪豹",
     "addCommentImage": "上传图片",
     "removeCommentImage": "移除图片",
     "commentImageMax": "评论最多添加 {{count}} 张图片",
@@ -6852,6 +6861,7 @@
     "video": "帖子视频",
     "imagePreview": "图片预览",
     "editPost": "编辑",
+    "fromGithub": "源自GitHub",
     "deletePost": "删除",
     "editHelp": "在 Platform 编辑，保留图片、视频和原有格式",
     "deleteTitle": "删除这篇帖子？",
@@ -6872,6 +6882,9 @@
     "login": "登录 Platform",
     "account": "发布账号：{{name}}",
     "postTitle": "标题",
+    "githubLinkLabel": "GitHub 仓库",
+    "githubLinkPlaceholder": "https://github.com/owner/repo",
+    "githubLinkInvalid": "请输入一个有效的github仓库地址",
     "body": "正文",
     "confirm": "我已检查标题与正文，确认公开发布这些内容。",
     "publish": "确认发布",

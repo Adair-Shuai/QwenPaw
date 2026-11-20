@@ -1,7 +1,7 @@
 {
   "id": "slack",
   "name": "Slack",
-  "version": "0.1.0.dev1",
+  "version": "0.1.1",
   "type": "channel",
   "description": "Slack Socket Mode messaging channel; standalone integration preview.",
   "author": "QwenPaw Team",
@@ -12,5 +12,5 @@
     "min": "2.2.2b4",
     "max": "3.0.0"
   },
-  "publish": false
+  "publish": true
 }

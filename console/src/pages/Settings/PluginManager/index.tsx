@@ -119,6 +119,9 @@ export default function PluginManagerPage() {
           key={targetPlugin}
           initialSearch={targetPlugin}
           onInstalled={handleInstalled}
+          installedPlugins={plugins ?? []}
+          uninstallingId={uninstallingId}
+          onUninstall={handleUninstall}
         />
       ),
     },

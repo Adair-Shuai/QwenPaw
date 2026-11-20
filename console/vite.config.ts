@@ -103,7 +103,9 @@ export default defineConfig(({ command, mode }) => {
       },
       proxy: {
         "/api": {
-          target: "http://localhost:8088",
+          target: /^https?:\/\//i.test(apiBaseUrl)
+            ? apiBaseUrl
+            : "http://localhost:8088",
           changeOrigin: false,
         },
       },
@@ -212,6 +214,7 @@ export default defineConfig(({ command, mode }) => {
       // outDir: path.resolve(__dirname, "../src/qwenpaw/console"),
       // emptyOutDir: true,
       cssCodeSplit: true,
+      manifest: !desktop,
       sourcemap: mode !== "production" && !desktop,
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
@@ -219,17 +222,23 @@ export default defineConfig(({ command, mode }) => {
         output: {
           // Extensionless licenses must not acquire a Windows-invalid trailing dot.
           assetFileNames: "assets/[name]-[hash][extname]",
+          onlyExplicitManualChunks: true,
           manualChunks(id) {
             if (desktop) return;
-            if (id.includes("vite/preload-helper")) return "ui-vendor";
-            // Keep chart dependencies with their lazy consumers.
+            // A shared runtime must not land in a lazy consumer that its
+            // vendor imports back (for example Monaco and TabbedEditor).
+            if (
+              id.includes("commonjsHelpers.js") ||
+              id.includes("vite/preload-helper")
+            ) {
+              return "runtime-vendor";
+            }
+            // Share D3 between lazy charts and maps without hoisting it into UI.
             if (
               id.includes("node_modules/d3-") ||
-              id.includes("node_modules/d3/") ||
-              id.includes("node_modules/@ant-design/plots/") ||
-              id.includes("node_modules/@antv/")
+              id.includes("node_modules/d3/")
             ) {
-              return;
+              return "d3-vendor";
             }
             // React core
             if (
@@ -242,31 +251,26 @@ export default defineConfig(({ command, mode }) => {
             }
             if (
               id.includes("node_modules/monaco-editor/") ||
-              id.includes("node_modules/@monaco-editor/")
+              id.includes("node_modules/@monaco-editor/") ||
+              id.includes("node_modules/state-local/")
             ) {
               return "editor-vendor";
             }
-            // Keep AgentScope Chat with Rollup's graph. Its current release
-            // shares UI dependencies with the design system; forcing a
-            // separate chat vendor creates an initial ui-vendor cycle.
-            // XMarkdown is also lazy-only. Do not let the broad @ant-design
-            // rule below merge it into the initial UI vendor chunk.
-            if (id.includes("node_modules/@ant-design/x-markdown/")) {
-              return;
+            // Keep the chat package's internally circular modules together,
+            // but leave its third-party dependencies in the lazy import graph.
+            const chatPackageRoot = "node_modules/@agentscope-ai/chat/";
+            const chatPackageIndex = id.indexOf(chatPackageRoot);
+            if (chatPackageIndex >= 0) {
+              const chatRelativePath = id.slice(
+                chatPackageIndex + chatPackageRoot.length,
+              );
+              if (!chatRelativePath.includes("node_modules/")) {
+                return "chat-vendor";
+              }
             }
-            // Ant Design + AgentScope design system (merged to avoid circular deps)
-            if (
-              id.includes("node_modules/antd/") ||
-              id.includes("node_modules/antd-style/") ||
-              id.includes("node_modules/@ant-design/") ||
-              id.includes("node_modules/@babel/runtime/") ||
-              id.includes("node_modules/clsx/") ||
-              id.includes("node_modules/dompurify/") ||
-              id.includes("node_modules/lucide-react/") ||
-              id.includes("node_modules/@agentscope-ai/")
-            ) {
-              return "ui-vendor";
-            }
+            // Let Rollup split UI exports by actual use. Merging every antd
+            // export here would pull deferred plugin components and icons
+            // back into the entry.
             // i18n
             if (
               id.includes("node_modules/i18next/") ||

@@ -1404,6 +1404,10 @@
     "selectAtLeastOneDay": "曜日を少なくとも1つ選択してください。"
   },
   "channels": {
+    "update": {
+      "action": "更新",
+      "available": "新しいバージョン：{{version}}"
+    },
     "qrcodeInstallRequired": "QR コードをスキャンするには、プラグインをインストールしてください",
     "runtime": {
       "missing_code": "プラグインがインストールされていません"
@@ -1450,6 +1454,7 @@
     "streamingEnabled": "ストリーミング出力",
     "streamingEnabledDingtalkHint": "メッセージタイプがCardの場合のみ有効",
     "streamingEnabledFeishuHint": "Feishuオープンプラットフォームの権限管理ページでcardkit:card:write権限を有効にする必要があります",
+    "streamingEnabledQQHint": "ストリーミング出力はQQの個別チャット（C2C）のみで利用できます。グループとギルドのメッセージは従来どおり完了後に送信されます",
     "autoCollapseThinking": "思考内容を折りたたむ",
     "autoCollapseThinkingTooltip": "思考内容のストリーミング終了後に自動で折りたたみます。手動で展開することもできます。",
     "ackMessage": "即時確認メッセージ",
@@ -3571,7 +3576,8 @@
       "attach": "ファイルを添付",
       "send": "メッセージを送信",
       "stop": "生成を停止"
-    }
+    },
+    "outputTruncated": "モデルの出力が上限に達したため、この回答は不完全です。続きを回答するよう依頼するか、出力上限を引き上げてください。"
   },
   "security": {
     "parent": "設定",
@@ -5390,6 +5396,7 @@
     "emojiRecent": "最近",
     "emojiAll": "デフォルト",
     "emojiCustom": "ユキヒョウ",
+    "emojiAnimated": "かわいいユキヒョウ",
     "addCommentImage": "画像をアップロード",
     "removeCommentImage": "画像を削除",
     "commentImageMax": "画像は最大 {{count}} 枚まで追加できます",
@@ -5406,6 +5413,7 @@
     "video": "投稿動画",
     "imagePreview": "画像プレビュー",
     "editPost": "編集",
+    "fromGithub": "GitHub より",
     "deletePost": "削除",
     "editHelp": "画像・動画・書式を保持するには Platform で編集してください",
     "deleteTitle": "この投稿を削除しますか？",
@@ -5426,6 +5434,9 @@
     "login": "Platform にサインイン",
     "account": "{{name}} として公開",
     "postTitle": "タイトル",
+    "githubLinkLabel": "GitHub リポジトリ",
+    "githubLinkPlaceholder": "https://github.com/owner/repo",
+    "githubLinkInvalid": "有効なGitHubリポジトリのURLを入力してください",
     "body": "本文",
     "confirm": "タイトルと本文を確認し、この内容を公開することに同意します。",
     "publish": "公開",

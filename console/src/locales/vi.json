@@ -1319,7 +1319,8 @@
       "attach": "Đính kèm tệp",
       "send": "Gửi tin nhắn",
       "stop": "Dừng tạo"
-    }
+    },
+    "outputTruncated": "Mô hình đã đạt giới hạn đầu ra. Câu trả lời này chưa đầy đủ. Hãy yêu cầu mô hình tiếp tục hoặc tăng giới hạn đầu ra."
   },
   "debug": {
     "title": "Gỡ lỗi",
@@ -3341,6 +3342,10 @@
     "sandboxEnabled": "Bảo vệ sandbox"
   },
   "channels": {
+    "update": {
+      "action": "Cập nhật",
+      "available": "Có phiên bản mới: {{version}}"
+    },
     "qrcodeInstallRequired": "Cài đặt plugin để quét mã QR",
     "runtime": {
       "missing_code": "Chưa cài đặt plugin"
@@ -3541,6 +3546,7 @@
     "sipUsername": "Tên người dùng SIP",
     "streamingEnabledDingtalkHint": "Chỉ có hiệu lực với tin nhắn dạng thẻ",
     "streamingEnabledFeishuHint": "Bật quyền cardkit:card:write trong nền tảng nhà phát triển Feishu",
+    "streamingEnabledQQHint": "Chỉ cuộc trò chuyện riêng QQ (C2C) hỗ trợ xuất streaming; tin nhắn nhóm và kênh vẫn được gửi dưới dạng tin nhắn hoàn chỉnh",
     "sttProvider": "Nhà cung cấp nhận dạng giọng nói",
     "time": "Thời gian",
     "ttsProvider": "Nhà cung cấp tổng hợp giọng nói",
@@ -4458,6 +4464,7 @@
     "emojiRecent": "Gần đây",
     "emojiAll": "Mặc định",
     "emojiCustom": "Báo tuyết",
+    "emojiAnimated": "Báo tuyết dễ thương",
     "addCommentImage": "Tải ảnh lên",
     "removeCommentImage": "Gỡ ảnh",
     "commentImageMax": "Bạn có thể thêm tối đa {{count}} ảnh",
@@ -4474,6 +4481,7 @@
     "video": "Video bài viết",
     "imagePreview": "Xem trước ảnh",
     "editPost": "Sửa",
+    "fromGithub": "Từ GitHub",
     "deletePost": "Xóa",
     "editHelp": "Sửa trên Platform để giữ ảnh, video và định dạng",
     "deleteTitle": "Xóa bài viết này?",
@@ -4494,6 +4502,9 @@
     "login": "Đăng nhập Platform",
     "account": "Đăng với tên {{name}}",
     "postTitle": "Tiêu đề",
+    "githubLinkLabel": "Kho lưu trữ GitHub",
+    "githubLinkPlaceholder": "https://github.com/owner/repo",
+    "githubLinkInvalid": "Vui lòng nhập địa chỉ kho lưu trữ GitHub hợp lệ",
     "body": "Nội dung",
     "confirm": "Tôi đã xem lại tiêu đề và nội dung và đồng ý xuất bản công khai nội dung này.",
     "publish": "Xuất bản",

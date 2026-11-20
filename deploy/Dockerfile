@@ -6,7 +6,7 @@ ARG UV_IMAGE=agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/uv:0.
 # -----------------------------------------------------------------------------
 # Stage 1: build console frontend (dist not committed in repo).
 # -----------------------------------------------------------------------------
-FROM ${NODE_IMAGE} AS console-builder
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS console-builder
 WORKDIR /app
 COPY console /app/console
 COPY src/qwenpaw/plugins/frontend /app/src/qwenpaw/plugins/frontend

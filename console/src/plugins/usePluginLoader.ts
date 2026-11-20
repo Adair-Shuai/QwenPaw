@@ -14,6 +14,7 @@ import { removePluginRuntime } from "./pluginRuntimeCleanup";
 import { harnessRegistry, refreshHarnessCatalog } from "./harnesses";
 import { subscribeToPluginChanges } from "../utils/pluginChangeEvents";
 import { routeRegistry } from "./registry/store";
+import { loadHostUiDependencies } from "./hostUiDependencies";
 
 export interface PluginLoadSummary {
   loaded: number;
@@ -177,6 +178,7 @@ async function executePluginScript(
 
   if (response) {
     const jsText = await response.text();
+    await loadHostUiDependencies();
     assertExecutable?.();
     const blobUrl = URL.createObjectURL(
       new Blob([jsText], { type: "text/javascript" }),
@@ -192,6 +194,7 @@ async function executePluginScript(
   // Strategy 2: Direct same-origin dynamic import (fallback).
   // In some environments (e.g. web dev mode), this may work when the
   // Blob URL approach doesn't.
+  await loadHostUiDependencies();
   assertExecutable?.();
   await import(/* @vite-ignore */ versionedUrl);
 }

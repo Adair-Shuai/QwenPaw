@@ -1336,7 +1336,8 @@
       "attach": "Lampirkan file",
       "send": "Kirim pesan",
       "stop": "Hentikan pembuatan"
-    }
+    },
+    "outputTruncated": "Model telah mencapai batas keluaran. Jawaban ini belum lengkap. Minta model untuk melanjutkan atau tingkatkan batas keluaran."
   },
   "modelSelector": {
     "subagentModel": "Model subagen",
@@ -1821,6 +1822,10 @@
     "updateFailed": "Pembaruan gagal"
   },
   "channels": {
+    "update": {
+      "action": "Perbarui",
+      "available": "Versi baru tersedia: {{version}}"
+    },
     "qrcodeInstallRequired": "Instal plugin untuk memindai kode QR",
     "runtime": {
       "missing_code": "Plugin belum diinstal"
@@ -2022,6 +2027,7 @@
     "streamingEnabled": "Keluaran streaming",
     "streamingEnabledDingtalkHint": "Hanya berlaku untuk pesan jenis kartu",
     "streamingEnabledFeishuHint": "Aktifkan izin cardkit:card:write di platform pengembang Feishu",
+    "streamingEnabledQQHint": "Hanya obrolan pribadi QQ (C2C) yang mendukung keluaran streaming; pesan grup dan guild tetap dikirim sebagai pesan lengkap",
     "sttProvider": "Penyedia pengenalan suara",
     "ttsProvider": "Penyedia sintesis suara",
     "ttsVoice": "Suara TTS",
@@ -5137,6 +5143,7 @@
     "emojiRecent": "Terbaru",
     "emojiAll": "Bawaan",
     "emojiCustom": "Macan Tutul Salju",
+    "emojiAnimated": "Macan Tutul Salju Lucu",
     "addCommentImage": "Unggah gambar",
     "removeCommentImage": "Hapus gambar",
     "commentImageMax": "Anda dapat menambahkan hingga {{count}} gambar",
@@ -5153,6 +5160,7 @@
     "video": "Video postingan",
     "imagePreview": "Pratinjau gambar",
     "editPost": "Edit",
+    "fromGithub": "Dari GitHub",
     "deletePost": "Hapus",
     "editHelp": "Edit di Platform untuk mempertahankan gambar, video, dan format",
     "deleteTitle": "Hapus postingan ini?",
@@ -5173,6 +5181,9 @@
     "login": "Masuk ke Platform",
     "account": "Menerbitkan sebagai {{name}}",
     "postTitle": "Judul",
+    "githubLinkLabel": "Repositori GitHub",
+    "githubLinkPlaceholder": "https://github.com/owner/repo",
+    "githubLinkInvalid": "Masukkan URL repositori GitHub yang valid",
     "body": "Isi",
     "confirm": "Saya telah meninjau judul dan isi serta setuju menerbitkan konten ini secara publik.",
     "publish": "Terbitkan",

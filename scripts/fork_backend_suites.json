@@ -234,6 +234,7 @@
       "tests/unit/tauri/test_windows_webview_install.py",
       "tests/unit/tauri/test_desktop_scientific_pruning.py",
       "tests/unit/tauri/test_stage_python_runtime.py",
+      "tests/unit/verify/test_release_workflow_safety.py",
       "tests/unit/tauri/test_desktop_workflows.py"
     ],
     "toolDiscovery": [

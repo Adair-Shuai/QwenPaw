@@ -3187,11 +3187,14 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                         else f"Plugin '{plugin_id}' failed to load"
                     ),
                 )
-            if not self._reload_already_committed(
-                plugin_id,
-                False,
-                previous_instance=inst,
-                generation=old_generation + 1,
+            if not (
+                (not old_enabled and new_record.status == "inactive")
+                or self._reload_already_committed(
+                    plugin_id,
+                    False,
+                    previous_instance=inst,
+                    generation=old_generation + 1,
+                )
             ):
                 raise RuntimeError("New plugin instance did not activate")
             activated_new = True
@@ -4100,7 +4103,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 from .settings import clear_channel_tombstone
 
                 await self._run_committed_cleanup(
-                    record, clear_channel_tombstone, plugin_id
+                    record,
+                    clear_channel_tombstone,
+                    plugin_id,
                 )
                 await self._write_installation_origin(
                     record,
