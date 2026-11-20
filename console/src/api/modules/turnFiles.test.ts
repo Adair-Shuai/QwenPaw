@@ -39,6 +39,99 @@ beforeEach(() => {
 });
 
 describe("turnFilesApi", () => {
+  it("normalizes legacy scan limits on list and get without altering archived evidence", async () => {
+    const turn: TurnFileManifest = {
+      id: "legacy-capture",
+      session_id: "runtime-a",
+      agent_id: "agent-a",
+      status: "completed",
+      started_at: "2026-11-15T00:00:00Z",
+      overlap: false,
+      incomplete: true,
+      warnings: [
+        "File exceeds snapshot size limit: unrelated.GRID",
+        "Snapshot byte budget reached; some contents unavailable",
+      ],
+      files: [
+        {
+          id: "image",
+          root: "workspace",
+          path: "output/image.png",
+          name: "image.png",
+          status: "delivered",
+          size: 20,
+          binary: true,
+          delivered: true,
+          before_available: false,
+          after_available: true,
+        },
+      ],
+    };
+    mocks.request.mockResolvedValueOnce(turn);
+    const result = await turnFilesApi.get(scope, turn.id);
+    expect(result).toMatchObject({
+      incomplete: false,
+      warnings: [],
+      scan_warnings: turn.warnings,
+      files: turn.files,
+    });
+    expect(turn.incomplete).toBe(true);
+    expect(turn.warnings).toHaveLength(2);
+    mocks.request.mockResolvedValueOnce({ turns: [turn] });
+    const list = await turnFilesApi.list({
+      ...scope,
+      sessionId: "route-legacy-limits",
+    });
+    expect(list.turns[0]).toEqual(result);
+    mocks.request.mockResolvedValueOnce(result);
+    expect(await turnFilesApi.get(scope, turn.id)).toEqual(result);
+    const pending = { ...turn, status: "running" };
+    mocks.request.mockResolvedValueOnce(pending);
+    expect(await turnFilesApi.get(scope, turn.id)).toEqual(pending);
+    const saturated = {
+      ...turn,
+      warnings: Array.from(
+        { length: 100 },
+        (_, i) => `File exceeds snapshot size limit: old-${i}.GRID`,
+      ),
+    };
+    mocks.request.mockResolvedValueOnce(saturated);
+    expect(await turnFilesApi.get(scope, turn.id)).toEqual(saturated);
+  });
+
+  it.each([
+    ["created", false, false],
+    ["modified", false, true],
+    ["deleted", false, false],
+    ["delivered", false, false],
+  ] as const)(
+    "retains capacity errors for unavailable %s archive versions",
+    async (status, before, after) => {
+      const turn = {
+        id: "missing-capture",
+        status: "completed",
+        incomplete: true,
+        warnings: [
+          "File exceeds snapshot size limit: large.GRID",
+          "Snapshot byte budget reached; some contents unavailable",
+        ],
+        files: [
+          {
+            path: "large.GRID",
+            status,
+            before_available: before,
+            after_available: after,
+          },
+        ],
+      } as TurnFileManifest;
+      mocks.request.mockResolvedValueOnce(turn);
+      expect(await turnFilesApi.get(scope, turn.id)).toMatchObject({
+        incomplete: true,
+        warnings: turn.warnings,
+      });
+    },
+  );
+
   it("keeps historical pages and exact-response queries separate in the list cache", async () => {
     const pagedScope = { ...scope, sessionId: "route-pagination" };
     await turnFilesApi.list(pagedScope, { offset: 0, limit: 100 });

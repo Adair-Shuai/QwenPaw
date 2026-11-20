@@ -94,6 +94,8 @@ describe("SettingsCenter", () => {
     localStorage.removeItem("qwenpaw_assistant_message_display_mode");
     localStorage.removeItem("qwenpaw_show_thinking");
     localStorage.removeItem("qwenpaw-theme");
+    // Exercise the original sidebar controls with an explicit saved layout.
+    localStorage.setItem("qwenpaw-page-style", "classic");
     useSidebarStore.setState({
       focusItemIds: DEFAULT_FOCUS_ITEM_IDS,
       hiddenPluginItemIds: [],
@@ -636,7 +638,9 @@ describe("SettingsCenter", () => {
 
     renderWithProviders(
       <>
-        <SettingsCenter />
+        <ThemeProvider syncRemote={false}>
+          <SettingsCenter />
+        </ThemeProvider>
         <LocationProbe />
       </>,
       { initialEntries: ["/settings/general"] },
@@ -988,9 +992,14 @@ describe("SettingsCenter", () => {
       },
     ];
 
-    renderWithProviders(<SettingsCenter />, {
-      initialEntries: ["/settings/general"],
-    });
+    renderWithProviders(
+      <ThemeProvider syncRemote={false}>
+        <SettingsCenter />
+      </ThemeProvider>,
+      {
+        initialEntries: ["/settings/general"],
+      },
+    );
 
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
     await userEvent.click(
@@ -1023,9 +1032,14 @@ describe("SettingsCenter", () => {
       },
     ];
 
-    renderWithProviders(<SettingsCenter />, {
-      initialEntries: ["/settings/general"],
-    });
+    renderWithProviders(
+      <ThemeProvider syncRemote={false}>
+        <SettingsCenter />
+      </ThemeProvider>,
+      {
+        initialEntries: ["/settings/general"],
+      },
+    );
 
     expect(
       screen.queryByRole("heading", { level: 3, name: "Global settings" }),
@@ -1130,9 +1144,14 @@ describe("SettingsCenter", () => {
       },
     ];
 
-    renderWithProviders(<SettingsCenter />, {
-      initialEntries: ["/settings/general"],
-    });
+    renderWithProviders(
+      <ThemeProvider syncRemote={false}>
+        <SettingsCenter />
+      </ThemeProvider>,
+      {
+        initialEntries: ["/settings/general"],
+      },
+    );
 
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
     await userEvent.click(screen.getByRole("button", { name: "Add Security" }));

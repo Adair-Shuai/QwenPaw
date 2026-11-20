@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Model boundary, transactional versioning and non-mutating AI previews."""
+
 import asyncio
 import copy
 import json
@@ -60,9 +61,11 @@ class RecordingModel:
         if isinstance(result, Exception):
             raise result
         return SimpleNamespace(
-            content=result
-            if isinstance(result, str)
-            else json.dumps({"flow": result}),
+            content=(
+                result
+                if isinstance(result, str)
+                else json.dumps({"flow": result})
+            ),
         )
 
 
@@ -243,6 +246,211 @@ def test_exact_parameter_diff_with_redacted_credentials():
     ) and "new-secret" not in json.dumps(changes)
 
 
+def test_selected_authoring_preserves_outside_nodes_and_allows_new_nodes(
+    service,
+):
+    saved = service.save_flow("inventory", document())
+
+    def edit(request):
+        assert request["selected_node_ids"] == ["output"]
+        candidate = copy.deepcopy(request["current_flow"])
+        candidate["nodes"]["output"]["label"] = "确认库存"
+        candidate["nodes"]["extra"] = {
+            "class_type": "InputNode",
+            "inputs": {"name": "extra"},
+        }
+        candidate.setdefault("metadata", {}).setdefault("positions", {})[
+            "extra"
+        ] = {"x": 100, "y": 100}
+        return candidate
+
+    service.executor.llm_service = RecordingModel(edit)
+    proposal = asyncio.run(
+        service.create_proposal(
+            "补充库存输入",
+            flow=saved,
+            selected_node_ids=["output"],
+        ),
+    )
+    assert proposal["validation"]["ok"], proposal["validation"]
+    assert service.get_flow("inventory") == saved
+    applied = service.apply_proposal(proposal["proposal_id"], 1)
+    assert applied["nodes"]["input"] == saved["nodes"]["input"]
+    assert applied["nodes"]["output"]["label"] == "确认库存"
+    assert "extra" in applied["nodes"]
+
+
+@pytest.mark.parametrize(
+    "outside_change",
+    ["node", "name", "position", "edge"],
+)
+def test_selected_authoring_rejects_model_changes_outside_selection(
+    service,
+    outside_change,
+):
+    original = document()
+    original["nodes"]["other"] = copy.deepcopy(original["nodes"]["output"])
+    original["edges"].append(
+        {
+            "id": "other-edge",
+            "source": "input",
+            "target": "other",
+            "target_handle": "value",
+        },
+    )
+    original["metadata"] = {"positions": {"input": {"x": 1, "y": 2}}}
+    saved = service.save_flow("inventory", original)
+
+    def edit(request):
+        candidate = copy.deepcopy(request["current_flow"])
+        if outside_change == "node":
+            candidate["nodes"]["input"]["label"] = "越界修改"
+        elif outside_change == "name":
+            candidate["name"] = "越界修改"
+        elif outside_change == "position":
+            candidate["metadata"]["positions"]["input"]["x"] = 999
+        else:
+            candidate["edges"] = [
+                edge
+                for edge in candidate["edges"]
+                if edge["target"] != "other"
+            ]
+        return candidate
+
+    service.executor.llm_service = RecordingModel(edit)
+    proposal = asyncio.run(
+        service.create_proposal(
+            "仅编辑输出",
+            flow=saved,
+            selected_node_ids=["output"],
+        ),
+    )
+    assert not proposal["validation"]["ok"]
+    assert any("选区" in error for error in proposal["validation"]["errors"])
+    with pytest.raises(ValueError, match="未通过"):
+        service.apply_proposal(proposal["proposal_id"], 1)
+    assert service.get_flow("inventory") == saved
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [[], ["missing"], ["input", "input"], "input"],
+)
+def test_authoring_rejects_invalid_selection_before_calling_model(
+    service,
+    selection,
+):
+    saved = service.save_flow("inventory", document())
+    model = RecordingModel()
+    service.executor.llm_service = model
+    with pytest.raises(ValueError, match="选区"):
+        asyncio.run(
+            service.create_proposal(
+                "修改",
+                flow=saved,
+                selected_node_ids=selection,
+            ),
+        )
+    assert not model.messages
+
+
+def test_authoring_conversation_survives_restart_and_applies_chosen_round(
+    service,
+    tmp_path,
+):
+    saved = service.save_flow("inventory", document())
+    model = RecordingModel(
+        lambda request: {
+            **request["current_flow"],
+            "description": request["instruction"],
+        },
+    )
+    service.executor.llm_service = model
+    first = asyncio.run(service.create_proposal("第一轮说明", flow=saved))
+    restarted = WorkflowService(flows_dir=tmp_path)
+    try:
+        restarted.executor.llm_service = model
+        second = asyncio.run(
+            restarted.create_proposal(
+                "第二轮说明",
+                flow=saved,
+                parent_proposal_id=first["proposal_id"],
+            ),
+        )
+        request = json.loads(model.messages[1].content)
+        assert request["current_flow"]["description"] == "第一轮说明"
+        assert request["conversation"][0]["instruction"] == "第一轮说明"
+        assert second["parent_proposal_id"] == first["proposal_id"]
+        assert second["base_revision"] == 1
+        assert not any(key.startswith("_") for key in second)
+        assert restarted.get_flow("inventory") == saved
+        # Either preview remains a real checkpoint until one is applied.
+        chosen = restarted.apply_proposal(first["proposal_id"], 1)
+        assert chosen["description"] == "第一轮说明"
+        with pytest.raises(RevisionConflict):
+            restarted.apply_proposal(second["proposal_id"], 1)
+    finally:
+        restarted.close(timeout=2)
+
+
+@pytest.mark.parametrize("change", ["agent", "draft", "selection", "expired"])
+def test_authoring_conversation_rejects_changed_scope_before_model(
+    service,
+    change,
+):
+    saved = service.save_flow("inventory", document())
+    model = RecordingModel(lambda request: request["current_flow"])
+    service.executor.llm_service = model
+    first = asyncio.run(service.create_proposal("原始对话", flow=saved))
+    model.messages = []
+    payload = {"flow": saved, "parent_proposal_id": first["proposal_id"]}
+    if change == "agent":
+        payload["scope_agent_id"] = "other"
+    elif change == "draft":
+        payload["flow"] = {**saved, "description": "新草稿"}
+    elif change == "selection":
+        payload["selected_node_ids"] = ["output"]
+    else:
+        payload["parent_proposal_id"] = "missing"
+    with pytest.raises(RevisionConflict):
+        asyncio.run(service.create_proposal("继续修改", **payload))
+    assert not model.messages
+
+
+def test_authoring_router_carries_selection_and_parent_proposal(service):
+    saved = service.save_flow("inventory", document())
+    service.executor.llm_service = RecordingModel(
+        lambda request: request["current_flow"],
+    )
+    api = client(service)
+    first = api.post(
+        "/authoring/proposals",
+        json={
+            "prompt": "第一轮",
+            "flow": saved,
+            "selected_node_ids": ["output"],
+        },
+    )
+    assert first.status_code == 200, first.text
+    second = api.post(
+        "/authoring/proposals",
+        json={
+            "prompt": "第二轮",
+            "flow": saved,
+            "selected_node_ids": ["output"],
+            "parent_proposal_id": first.json()["proposal_id"],
+        },
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["parent_proposal_id"] == first.json()["proposal_id"]
+    assert (
+        json.loads(service.executor.llm_service.messages[1].content)[
+            "conversation"
+        ][0]["instruction"]
+        == "第一轮"
+    )
+
+
 def test_api_revision_guard_and_restore_creates_new_version(service):
     api = client(service)
     first = api.post("/flows", json=document())
@@ -414,3 +622,13 @@ def test_failed_resume_preparation_releases_claim_before_any_node_work(
         ]
         == "completed"
     )
+
+
+def test_authoring_diff_distinguishes_boolean_and_zero():
+    changes = workflow_diff(
+        {"nodes": {"node": {"inputs": {"value": False}}}},
+        {"nodes": {"node": {"inputs": {"value": 0}}}},
+    )
+    assert changes[0]["kind"] == "modified"
+    assert changes[0]["details"][0]["before"] is False
+    assert type(changes[0]["details"][0]["after"]) is int

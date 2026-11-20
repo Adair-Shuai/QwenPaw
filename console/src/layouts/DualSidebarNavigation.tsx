@@ -1,13 +1,7 @@
-import type { ReactNode } from "react";
-import {
-  FolderOpen,
-  House,
-  PanelLeftOpen,
-  Settings,
-  Puzzle,
-} from "lucide-react";
+import { useSyncExternalStore, type ReactNode } from "react";
+import { sidebarDensityPreference } from "../utils/sidebarDensityPreference";
+import { FolderOpen, House, Settings, Puzzle } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { SearchTrigger } from "../features/global-search/SearchTrigger";
 import type { FlatMenuEntry } from "./registry/adapter";
 import styles from "./dualSidebar.module.less";
 
@@ -32,8 +26,7 @@ export const DUAL_SIDEBAR_FIXED_KEYS: readonly string[] = [
 export default function DualSidebarNavigation({
   entries,
   selectedKey,
-  collapsed,
-  onExpand,
+  footer,
   onHome,
   onNavigate,
   onWorkspace,
@@ -45,8 +38,7 @@ export default function DualSidebarNavigation({
 }: {
   entries: FlatMenuEntry[];
   selectedKey: string;
-  collapsed: boolean;
-  onExpand?: () => void;
+  footer: ReactNode;
   onHome: () => void;
   onNavigate: (entry: FlatMenuEntry) => void;
   onWorkspace?: (trigger: HTMLElement) => void;
@@ -57,6 +49,10 @@ export default function DualSidebarNavigation({
   currentPath?: string;
 }) {
   const { t } = useTranslation();
+  const density = useSyncExternalStore(
+    sidebarDensityPreference.subscribe,
+    sidebarDensityPreference.get,
+  );
   const activeKey =
     selectedKey === "core.marketplace" ||
     selectedKey === "core.app-center.embed"
@@ -82,6 +78,7 @@ export default function DualSidebarNavigation({
   return (
     <nav
       className={styles.rail}
+      data-sidebar-density={density}
       aria-label={t("sidebar.dualSidebar.navigation", "Feature navigation")}
     >
       <div className={styles.brand}>
@@ -98,28 +95,6 @@ export default function DualSidebarNavigation({
         <strong>UGSci</strong>
       </div>
       <div className={styles.primary}>
-        {collapsed && (
-          <div className={styles.collapsedActions}>
-            {onExpand && (
-              <button
-                type="button"
-                aria-label={t(
-                  "sidebar.dualSidebar.expand",
-                  "Expand conversation pane",
-                )}
-                onClick={onExpand}
-                title={t(
-                  "sidebar.dualSidebar.expand",
-                  "Expand conversation pane",
-                )}
-              >
-                <PanelLeftOpen size={18} />
-                <span>{t("sidebar.expand", "Expand sidebar")}</span>
-              </button>
-            )}
-            <SearchTrigger compact />
-          </div>
-        )}
         <button
           type="button"
           aria-current={selectedKey === "core.chat" ? "page" : undefined}
@@ -196,6 +171,7 @@ export default function DualSidebarNavigation({
           <Settings size={18} />
           <span>{t("sidebar.quickMenu.settings", "Settings")}</span>
         </button>
+        {footer}
       </div>
     </nav>
   );

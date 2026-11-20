@@ -82,31 +82,54 @@ export function fetchNeqSimInstallTask(
   );
 }
 
-export function fetchEngineRuntimePlan(
+export async function fetchEngineRuntimePlan(
   engineId: string,
 ): Promise<EngineRuntimePlan> {
+  if (engineId === "neqsim") {
+    const runtime = await fetchNeqSimRuntime(true);
+    return {
+      engine_id: engineId,
+      installable: runtime.installable && !runtime.ready,
+      packages: [
+        `Java ${runtime.java_version}`,
+        `NeqSim ${runtime.neqsim_version}`,
+      ],
+      state: runtime.ready
+        ? "ready"
+        : runtime.installable
+        ? "missing"
+        : "blocked",
+      message: "下载后自动验证并加载计算工具，无需手动配置 Java。",
+      active_task: runtime.active_task || null,
+    };
+  }
   return apiFetch<EngineRuntimePlan>(
     `/ugsci/domain-engines/${encodeURIComponent(engineId)}/runtime`,
     { bypassCache: true },
   );
 }
 
-export function installEngineRuntime(
+export async function installEngineRuntime(
   engineId: string,
 ): Promise<RuntimeInstallTask> {
-  return apiFetch<RuntimeInstallTask>(
+  const task = await apiFetch<RuntimeInstallTask>(
     `/ugsci/domain-engines/${encodeURIComponent(engineId)}/install`,
     { method: "POST" },
   );
+  return { ...task, engine_id: engineId };
 }
 
-export function fetchEngineInstallTask(
+export async function fetchEngineInstallTask(
   taskId: string,
+  engineId?: string,
 ): Promise<RuntimeInstallTask> {
-  return apiFetch<RuntimeInstallTask>(
-    `/ugsci/domain-engines/install-tasks/${encodeURIComponent(taskId)}`,
+  const task = await apiFetch<RuntimeInstallTask>(
+    engineId === "neqsim"
+      ? `/ugsci/domain-engines/neqsim/install/${encodeURIComponent(taskId)}`
+      : `/ugsci/domain-engines/install-tasks/${encodeURIComponent(taskId)}`,
     { bypassCache: true },
   );
+  return { ...task, engine_id: engineId || task.engine_id };
 }
 
 // ─── MCP Provider Status ─────────────────────────────────────────────────────

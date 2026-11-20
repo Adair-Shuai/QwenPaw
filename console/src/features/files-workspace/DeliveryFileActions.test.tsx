@@ -26,6 +26,10 @@ const mocks = vi.hoisted(() => ({
   open: vi.fn(),
   reveal: vi.fn(),
   error: vi.fn(),
+  success: vi.fn(),
+  copy: vi.fn(),
+  copyImage: vi.fn(),
+  download: vi.fn(),
 }));
 vi.mock("./deliveryFileNative", () => ({
   isDeliveryNativeAvailable: mocks.available,
@@ -34,9 +38,16 @@ vi.mock("./deliveryFileNative", () => ({
   revealDeliveryFile: mocks.reveal,
 }));
 vi.mock("../../hooks/useAppMessage", () => ({
-  useAppMessage: () => ({ message: { error: mocks.error } }),
+  useAppMessage: () => ({
+    message: { error: mocks.error, success: mocks.success },
+  }),
 }));
 
+vi.mock("../../utils/clipboard", () => ({ copyText: mocks.copy }));
+vi.mock("./deliveryFileContent", () => ({
+  copyDeliveryImage: mocks.copyImage,
+  downloadDeliveryContent: mocks.download,
+}));
 import DeliveryFileActions from "./DeliveryFileActions";
 
 const scope: SessionFilesScope = {
@@ -115,7 +126,7 @@ function mount(patch: Partial<Props> = {}) {
   };
   const ui = (values: Props) => (
     <I18nextProvider i18n={i18n}>
-      <ConfigProvider theme={{ token: { motion: false } }}>
+      <ConfigProvider prefixCls="qwenpaw" theme={{ token: { motion: false } }}>
         <DeliveryFileActions {...values} />
       </ConfigProvider>
     </I18nextProvider>
@@ -132,6 +143,16 @@ function mount(patch: Partial<Props> = {}) {
 async function openMenu() {
   const trigger = screen.getByRole("button", { name: "打开方式 report.docx" });
   fireEvent.click(trigger);
+  const menu = await screen.findByRole("menu");
+  await waitFor(() => expect(menu).toBeVisible());
+  return { trigger, menu };
+}
+async function openContext() {
+  const control = screen.getByTestId("delivery-file-actions");
+  const trigger = control.querySelector<HTMLButtonElement>(
+    "button:not(:disabled)",
+  )!;
+  fireEvent.contextMenu(control);
   const menu = await screen.findByRole("menu");
   await waitFor(() => expect(menu).toBeVisible());
   return { trigger, menu };
@@ -164,9 +185,10 @@ describe("DeliveryFileActions with real Ant Design menu", () => {
     fireEvent.click(primary);
     expect(onPreview).toHaveBeenCalledWith(primary);
     const { menu } = await openMenu();
-    expect(menu.closest(".ant-dropdown")).toHaveStyle({
-      width: "248px",
-      maxWidth: "calc(100vw - 24px)",
+    expect(menu.closest(".qwenpaw-dropdown")).toHaveStyle({
+      width: "max-content",
+      minWidth: "144px",
+      maxWidth: "min(360px, calc(100vw - 24px))",
     });
     expect(
       within(menu).getByRole("menuitem", { name: "内置预览" }),
@@ -221,7 +243,8 @@ describe("DeliveryFileActions with real Ant Design menu", () => {
       ).toBeEnabled(),
     );
     expect(mocks.open).toHaveBeenCalledTimes(1);
-    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+    expect(mocks.list).toHaveBeenLastCalledWith("report.docx", true, scope);
   });
 
   it("reveals the same archive version and scope while filtering the legacy workspace location action", async () => {
@@ -256,12 +279,11 @@ describe("DeliveryFileActions with real Ant Design menu", () => {
   it("offers built-in preview after association enumeration fails and retries the real menu request", async () => {
     mocks.list.mockRejectedValueOnce(new Error("association unavailable"));
     const { onPreview } = mount();
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "打开 report.docx" }),
-      ).toBeEnabled(),
+    await screen.findByRole("button", { name: "显示文件位置 report.docx" });
+    const context = await openContext();
+    fireEvent.click(
+      within(context.menu).getByRole("menuitem", { name: "内置预览" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "打开 report.docx" }));
     expect(onPreview).toHaveBeenCalledTimes(1);
     const { menu } = await openMenu();
     expect(
@@ -286,7 +308,7 @@ describe("DeliveryFileActions with real Ant Design menu", () => {
     const primary = screen.getByRole("button", { name: "打开 report.docx" });
     expect(primary).toBeDisabled();
     fireEvent.click(primary);
-    const { trigger, menu } = await openMenu();
+    const { trigger, menu } = await openContext();
     expect(
       within(menu).getByRole("menuitem", { name: "内置预览" }),
     ).toHaveAttribute("aria-disabled", "true");
@@ -427,4 +449,185 @@ describe("DeliveryFileActions with real Ant Design menu", () => {
     await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(2));
     expect(mocks.error).toHaveBeenCalledTimes(1);
   });
+});
+
+it("uses the first associated application when none is marked default and hides the arrow when only reveal remains", async () => {
+  mocks.list.mockResolvedValue({
+    ...listing,
+    applications: listing.applications.map((app) => ({
+      ...app,
+      isDefault: false,
+    })),
+  });
+  const { rerenderProps } = mount();
+  fireEvent.click(await defaultButton());
+  await waitFor(() =>
+    expect(mocks.open).toHaveBeenCalledWith(
+      file,
+      scope,
+      "wps-writer",
+      expect.any(Object),
+    ),
+  );
+  mocks.list.mockResolvedValue({
+    applications: [],
+    canOpenDefault: false,
+    canChooseApplication: false,
+  });
+  rerenderProps({ target: { ...file, path: "other.unknown" } });
+  expect(
+    await screen.findByRole("button", { name: "显示文件位置 report.docx" }),
+  ).toBeEnabled();
+  expect(
+    screen.queryByRole("button", { name: "打开方式 report.docx" }),
+  ).not.toBeInTheDocument();
+});
+
+it.each([true, false])(
+  "keeps Preview and Open With available for scripts with installed editors=%s",
+  async (hasEditor) => {
+    const editorIcon = "data:image/png;base64,Y29kZQ==";
+    mocks.list.mockResolvedValue({
+      editorOnly: true,
+      canOpenDefault: false,
+      canChooseApplication: hasEditor,
+      applications: hasEditor
+        ? [
+            {
+              id: "editor:vscode",
+              name: "Visual Studio Code",
+              isDefault: true,
+              iconDataUrl: editorIcon,
+            },
+          ]
+        : [],
+    });
+    const script = { ...file, path: "output/setup.py" };
+    const { onPreview } = mount({ name: "setup.py", target: script });
+    const location = await screen.findByRole("button", {
+      name: "显示文件位置 setup.py",
+    });
+    fireEvent.click(location);
+    await waitFor(() => expect(mocks.reveal).toHaveBeenCalledTimes(1));
+    expect(mocks.open).not.toHaveBeenCalled();
+
+    const trigger = screen.getByRole("button", { name: "打开方式 setup.py" });
+    fireEvent.click(trigger);
+    const menu = await screen.findByRole("menu");
+    const editorLabel = /Visual Studio Code\s*（默认）/;
+    const editor = within(menu).queryByRole("menuitem", {
+      name: editorLabel,
+    });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "内置预览" }));
+    expect(onPreview).toHaveBeenCalledWith(trigger);
+    expect(mocks.open).not.toHaveBeenCalled();
+    if (hasEditor) {
+      expect(editor?.querySelector("img")).toHaveAttribute("src", editorIcon);
+      fireEvent.click(trigger);
+      const editorMenu = await screen.findByRole("menu");
+      fireEvent.click(
+        within(editorMenu).getByRole("menuitem", {
+          name: editorLabel,
+        }),
+      );
+      await waitFor(() =>
+        expect(mocks.open).toHaveBeenCalledWith(
+          script,
+          scope,
+          "editor:vscode",
+          expect.any(Object),
+        ),
+      );
+    } else {
+      expect(editor).not.toBeInTheDocument();
+    }
+  },
+);
+
+it("opens the full card context menu by keyboard, copies its path and restores focus on Escape", async () => {
+  mocks.available.mockReturnValue(false);
+  mocks.copy.mockResolvedValue(undefined);
+  mount({
+    children: (actions) => (
+      <li>
+        <button>report card</button>
+        {actions}
+      </li>
+    ),
+  });
+  const origin = screen.getByRole("button", { name: "report card" });
+  origin.focus();
+  fireEvent.keyDown(origin, { key: "F10", shiftKey: true });
+  const menu = await screen.findByRole("menu");
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "复制路径" }));
+  await waitFor(() =>
+    expect(mocks.copy).toHaveBeenCalledWith("output/report.docx"),
+  );
+  expect(mocks.success).toHaveBeenCalledWith("已复制");
+  fireEvent.keyDown(origin, { key: "ContextMenu" });
+  const reopened = await screen.findByRole("menu");
+  await waitFor(() =>
+    expect(reopened.contains(document.activeElement)).toBe(true),
+  );
+  fireEvent.keyDown(
+    within(reopened).getByRole("menuitem", { name: "复制路径" }),
+    { key: "Escape" },
+  );
+  await waitFor(() => expect(origin).toHaveFocus());
+});
+it("opens floating preview from the card and copies the exact image target", async () => {
+  mocks.available.mockReturnValue(false);
+  vi.stubGlobal("ClipboardItem", class {});
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { write: vi.fn() },
+  });
+  try {
+    const target = { ...file, path: "output/image.png" };
+    const { onPreview } = mount({ name: "image.png", target });
+    fireEvent.contextMenu(screen.getByTestId("delivery-file-actions"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "浮动预览" }));
+    expect(onPreview).toHaveBeenCalledWith(expect.any(HTMLElement), "floating");
+    fireEvent.contextMenu(screen.getByTestId("delivery-file-actions"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "复制图片" }));
+    await waitFor(() =>
+      expect(mocks.copyImage).toHaveBeenCalledWith(
+        target,
+        scope,
+        expect.any(Function),
+      ),
+    );
+  } finally {
+    if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+    else Reflect.deleteProperty(navigator, "clipboard");
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps the split dropdown restricted to system apps and location while the full card previews in the sidebar", async () => {
+  const { onPreview } = mount({
+    children: (actions) => (
+      <li>
+        <button onClick={(event) => onPreview(event.currentTarget)}>
+          File card
+        </button>
+        {actions}
+      </li>
+    ),
+  });
+  const card = screen.getByRole("button", { name: "File card" });
+  fireEvent.click(card);
+  expect(onPreview).toHaveBeenCalledWith(card);
+  fireEvent.click(await defaultButton());
+  await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(1));
+  expect(onPreview).toHaveBeenCalledTimes(1);
+  const { menu } = await openMenu();
+  expect(
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toEqual(["WPS Writer（默认）", "Microsoft Word", "显示文件位置"]);
+  expect(within(menu).queryByText("内置预览")).not.toBeInTheDocument();
+  expect(within(menu).queryByText("浮动预览")).not.toBeInTheDocument();
 });

@@ -1516,6 +1516,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         """Build/stage wheels; the shared gate owns actual package writes."""
         import hashlib
         from packaging.utils import parse_wheel_filename
+        from packaging.version import Version
         from ..config.utils import get_config_path
         from .dependency_gate import (
             SharedDependencyError,
@@ -1567,16 +1568,19 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 {**immutable, **snapshot.distributions},
                 snapshot.marker_environment,
             ):
+                provider = snapshot.distributions.get(name) or immutable.get(
+                    name,
+                )
                 if name in immutable and (
                     name not in snapshot.distributions
                     or not requirement.specifier.contains(
-                        immutable[name]["version"],
+                        provider["version"],
                         prereleases=True,
                     )
                 ):
                     dependency_context.refuse_immutable_provider(
                         name,
-                        immutable[name],
+                        provider,
                     )
         cleanup = ExitStack()
         try:
@@ -1590,13 +1594,18 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             staging = Path(temporary)
             constraints = staging / "constraints.txt"
             resolver = staging / "requirements.txt"
+            resolver_source = ""
 
             def prepare_requirements():
+                from .dependency_gate import stage_pinned_constraints
+
+                nonlocal resolver_source
+                resolver_source = stage_pinned_constraints(
+                    requirements_file,
+                    staging,
+                )
                 resolver.write_text(
-                    requirements_file.read_text(encoding="utf-8-sig")
-                    + "\n"
-                    + CERTIFI_REQUIREMENT
-                    + "\n",
+                    resolver_source + "\n" + CERTIFI_REQUIREMENT + "\n",
                     encoding="utf-8",
                 )
 
@@ -1707,9 +1716,10 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     ),
                     encoding="utf-8",
                 )
-                # Keep accepted pip options and the source's exact declaration.
+                # Keep accepted pip options and pins in this audited staging
+                # directory, even when host constraints are regenerated.
                 resolver.write_text(
-                    requirements_file.read_text(encoding="utf-8-sig")
+                    resolver_source
                     + "\n"
                     + "\n".join(
                         sorted(
@@ -1769,10 +1779,12 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 lambda: any(
                     str(parse_wheel_filename(path.name)[0])
                     in snapshot.distributions
-                    and snapshot.distributions[
-                        str(parse_wheel_filename(path.name)[0])
-                    ]["version"]
-                    != str(parse_wheel_filename(path.name)[1])
+                    and Version(
+                        snapshot.distributions[
+                            str(parse_wheel_filename(path.name)[0])
+                        ]["version"],
+                    )
+                    != parse_wheel_filename(path.name)[1]
                     for path in staging.glob("*.whl")
                 ),
             )
@@ -3975,9 +3987,11 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         manifest = record.manifest
         origin = origin_from_platform_url(
             installation_source,
-            "app"
-            if manifest.plugin_type == "app" or manifest.meta.get("pawapp")
-            else "plugin",
+            (
+                "app"
+                if manifest.plugin_type == "app" or manifest.meta.get("pawapp")
+                else "plugin"
+            ),
             manifest.version,
         )
         try:
@@ -4080,7 +4094,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                         from .errors import SDKRestartRequiredError
 
                         raise SDKRestartRequiredError(detail)
-                    raise RuntimeError(detail)
+                    failure = RuntimeError(detail)
+                    failure.needs_restart = report.needs_restart
+                    raise failure
                 record = self._loaded_plugins[plugin_id]
                 record.update_needs_restart = report.needs_restart
                 record.diagnostics.extend(
@@ -4100,7 +4116,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 from .settings import clear_channel_tombstone
 
                 await self._run_committed_cleanup(
-                    record, clear_channel_tombstone, plugin_id
+                    record,
+                    clear_channel_tombstone,
+                    plugin_id,
                 )
                 await self._write_installation_origin(
                     record,
@@ -4312,9 +4330,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                             ),
                             encoding="utf-8",
                         )
-                    retry_windows_io(
-                        lambda: os.rename(stage_dir, target_dir),
-                    )
+                    retry_windows_io(lambda: os.rename(stage_dir, target_dir))
                 finally:
                     if stage_root.exists():
                         safe_remove(
@@ -4456,10 +4472,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 plugin_id,
                 plugins_dir=install_base,
             )
-            await self._write_installation_origin(
-                record,
-                installation_source,
-            )
+            await self._write_installation_origin(record, installation_source)
             return record
         except BaseException:
             if files_committed:

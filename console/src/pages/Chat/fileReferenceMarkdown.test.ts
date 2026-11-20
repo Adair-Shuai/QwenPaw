@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DIRECTORY_REFERENCE_HREF_PREFIX,
   FILE_REFERENCE_HREF_PREFIX,
+  IMAGE_REFERENCE_HREF_PREFIX,
   directoryReferenceFromText,
   fileReferenceFromText,
   prepareFileReferenceMarkdown,
@@ -226,6 +227,11 @@ describe("file reference Markdown adaptation", () => {
   it("preserves external links, ordinary text, images and unverified destinations", () => {
     const source =
       "The agent id is default.\n\n[web](https://example.com) ![image](C:/Work/a.png) [unsafe](javascript:alert)";
-    expect(prepareFileReferenceMarkdown(source)).toBe(source);
+    expect(prepareFileReferenceMarkdown(source)).toBe(
+      source.replace(
+        "C:/Work/a.png",
+        IMAGE_REFERENCE_HREF_PREFIX + encodeURIComponent("C:/Work/a.png"),
+      ),
+    );
   });
 });

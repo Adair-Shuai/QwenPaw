@@ -34,12 +34,15 @@ import { DownloadCancelledError } from "../../utils/downloadFileFromUrl";
 import { filesWorkspaceScopeKey } from "./filesWorkspaceScope";
 import { openFilePreview } from "./openFilePreview";
 import { turnFileTarget } from "./turnFileTarget";
+import TurnFileReviewHeader from "./TurnFileReviewHeader";
 import DeliveryFileActions from "./DeliveryFileActions";
+import ZoomableChatImage from "./ZoomableChatImage";
+import { normalizeTurnFileCapture } from "./turnFileCaptureDiagnostics";
 import styles from "./TurnFileSummary.module.less";
 
 const DiffViewer = lazy(() => import("./TurnFileDiffViewer"));
 const RETRY_DELAYS = [400, 800, 1600, 2500, 4000];
-const COLLAPSED_FILES = 6;
+const COLLAPSED_FILES = 4;
 const IMAGE_FILE = /\.(?:png|jpe?g|gif|webp|avif|bmp|svg)$/i;
 
 function DeliveredImage({
@@ -55,28 +58,23 @@ function DeliveredImage({
   const [failed, setFailed] = useState(false);
   if (failed)
     return (
-      <p className={styles.imageError}>{t("turnFiles.imagePreviewFailed")}</p>
+      <span className={styles.imageError} role="status">
+        <span>{t("turnFiles.imagePreviewFailed")}</span>
+        <button type="button" onClick={() => setFailed(false)}>
+          {t("turnFiles.retry")}
+        </button>
+      </span>
     );
+  const src = turnFilesApi.fileUrl(scope, turn.id, file.id, "after");
   return (
-    <button
-      type="button"
+    <ZoomableChatImage
       className={styles.imagePreview}
-      aria-label={`${t("turnFiles.previewImage")} ${file.name}`}
-      onClick={(event) =>
-        openFilePreview(
-          turnFileTarget(scope, turn, file),
-          event.currentTarget,
-          scope,
-        )
-      }
-    >
-      <img
-        src={turnFilesApi.fileUrl(scope, turn.id, file.id, "after")}
-        alt={file.name}
-        loading="lazy"
-        onError={() => setFailed(true)}
-      />
-    </button>
+      key={src}
+      src={src}
+      alt={file.name}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
   );
 }
 
@@ -107,20 +105,38 @@ function matchTurn(
     : undefined;
 }
 
+function canCompare(file: TurnFileEntry): boolean {
+  return (
+    !file.binary &&
+    file.status !== "delivered" &&
+    (file.status === "created" || file.before_available) &&
+    (file.status === "deleted" || file.after_available)
+  );
+}
+
 function SummaryContent({
   scope,
   turn,
+  review = false,
 }: {
   scope: SessionFilesScope;
   turn: TurnFileManifest;
+  review?: boolean;
 }) {
   const { t } = useTranslation();
+  const captureWarnings = [
+    ...(turn.warnings ?? []),
+    ...(turn.scan_warnings ?? []),
+  ];
   const [expanded, setExpanded] = useState(false);
+  const [archiveExpanded, setArchiveExpanded] = useState(false);
   const [otherExpanded, setOtherExpanded] = useState(false);
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState("");
   const [diffId, setDiffId] = useState<string>();
   const [diff, setDiff] = useState<TurnFileDiff>();
+  const [split, setSplit] = useState(true);
+  const [wrap, setWrap] = useState(false);
   const [diffError, setDiffError] = useState(false);
   const diffRequest = useRef(0);
   const alive = useRef(true);
@@ -209,6 +225,7 @@ function SummaryContent({
     setDiffId(file.id);
     setDiff(undefined);
     setDiffError(false);
+    if (!canCompare(file)) return;
     try {
       const result = await turnFilesApi.diff(archiveScope, turn.id, file.id);
       if (alive.current && diffRequest.current === requestId) setDiff(result);
@@ -218,17 +235,72 @@ function SummaryContent({
     }
   };
 
+  const selectedFile = turn.files.find((file) => file.id === diffId);
+  const initialReview = useRef(false);
+  useEffect(() => {
+    if (!review || initialReview.current || !turn.files.length) return;
+    initialReview.current = true;
+    void showDiff(turn.files.find(canCompare) ?? turn.files[0]);
+    // The enclosing turn/scope identity remounts this archive view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [review, turn.id]);
+
+  const comparison = selectedFile && (
+    <div className={styles.diff}>
+      <TurnFileReviewHeader
+        scope={archiveScope}
+        turn={turn}
+        file={selectedFile}
+        onSelect={(file) => {
+          if (file.id !== diffId) void showDiff(file);
+        }}
+        split={split}
+        onSplit={setSplit}
+        wrap={wrap}
+        onWrap={setWrap}
+      />
+      <div className={styles.diffHeading}>{t("turnFiles.diffHint")}</div>
+      {!canCompare(selectedFile) ? (
+        <p role="status">{t("turnFiles.diffUnsupported")}</p>
+      ) : diffError ? (
+        <p role="alert">
+          {t("turnFiles.diffFailed")}{" "}
+          <button
+            type="button"
+            onClick={() => void showDiff(selectedFile, true)}
+          >
+            {t("turnFiles.retry")}
+          </button>
+        </p>
+      ) : !diff ? (
+        <p role="status">{t("turnFiles.loadingDiff")}</p>
+      ) : (
+        <>
+          {diff.truncated && (
+            <p className={styles.notice}>{t("turnFiles.diffTruncated")}</p>
+          )}
+          <Suspense
+            fallback={<p role="status">{t("turnFiles.loadingDiff")}</p>}
+          >
+            <DiffViewer
+              diff={diff}
+              sideBySide={split}
+              wrapLines={wrap}
+              hideToolbar
+            />
+          </Suspense>
+        </>
+      )}
+    </div>
+  );
+
   const renderFiles = (files: TurnFileEntry[], featured = false) => (
-    <ul className={styles.files}>
+    <ul className={`${styles.files}${featured ? "" : ` ${styles.changeList}`}`}>
       {files.map((file) => {
         const version = file.status === "deleted" ? "before" : "after";
         const available =
           version === "before" ? file.before_available : file.after_available;
-        const canDiff =
-          !file.binary &&
-          file.status !== "delivered" &&
-          (file.status === "created" || file.before_available) &&
-          (file.status === "deleted" || file.after_available);
+        const canDiff = canCompare(file);
         const extension =
           file.name.match(/\.([^.]+)$/)?.[1].toLowerCase() || "";
         const kind = /^(csv|tsv|xlsx?|ods)$/.test(extension)
@@ -247,174 +319,177 @@ function SummaryContent({
         const size = version === "before" ? file.before_size : file.size;
         const target = turnFileTarget(archiveScope, turn, file, version);
         return (
-          <li key={file.id} className={styles.file} data-featured={featured}>
-            {featured &&
-              file.delivered &&
-              available &&
-              version === "after" &&
-              IMAGE_FILE.test(file.name) && (
-                <DeliveredImage
-                  key={`${turn.id}:${file.id}`}
-                  scope={archiveScope}
-                  turn={turn}
-                  file={file}
-                />
-              )}
-            <div className={styles.row}>
-              <button
-                className={styles.previewButton}
-                type="button"
-                aria-label={`${t("turnFiles.openArchive")} ${file.name}`}
-                title={`${file.root}/${file.path}`}
-                disabled={!available}
-                onClick={(event) =>
-                  openFilePreview(target, event.currentTarget, scope)
-                }
-              >
-                <span
-                  className={styles.fileIcon}
-                  data-kind={kind}
-                  aria-hidden="true"
-                >
-                  <FileIcon size={22} strokeWidth={1.6} />
-                </span>
-                <span className={styles.fileInfo}>
-                  <span className={styles.fileName}>
-                    <strong>{file.name}</strong>
-                  </span>
-                  <span className={styles.fileMeta}>
-                    <span className={styles.fileType}>
-                      {extension && extension.length <= 6
-                        ? extension.toUpperCase()
-                        : t("turnFiles.file")}
-                    </span>
-                    {size != null && <span>{prettyBytes(size)}</span>}
-                    <span className={styles.status} data-status={file.status}>
-                      {t(`turnFiles.status.${file.status}`)}
-                    </span>
-                    {!file.binary &&
-                      (file.additions != null || file.deletions != null) && (
-                        <span>
-                          <span className={styles.added}>
-                            +{file.additions ?? 0}
-                          </span>{" "}
-                          <span className={styles.removed}>
-                            −{file.deletions ?? 0}
-                          </span>
-                        </span>
-                      )}
-                  </span>
-                </span>
-              </button>
-              <DeliveryFileActions
-                name={file.name}
-                target={target}
-                scope={archiveScope}
-                disabled={!available}
-                onPreview={(trigger) => openFilePreview(target, trigger, scope)}
-                moreActions={[
-                  ...(canDiff
-                    ? [
-                        {
-                          key: "diff",
-                          label: t("turnFiles.diff"),
-                          icon: <GitCompareArrows size={16} />,
-                          onSelect: () => void showDiff(file),
-                        },
-                      ]
-                    : []),
-                  ...(file.status !== "deleted"
-                    ? [
-                        {
-                          key: "current",
-                          label: t("turnFiles.openCurrent"),
-                          icon: <FolderOpen size={16} />,
-                          onSelect: (trigger: HTMLElement) =>
-                            openFilePreview(
-                              {
-                                source: "workspace",
-                                path: file.path,
-                                root: file.root,
-                              },
-                              trigger,
-                              scope,
-                            ),
-                        },
-                      ]
-                    : []),
-                  {
-                    key: "download",
-                    label: t(
-                      version === "before"
-                        ? "turnFiles.downloadBefore"
-                        : "turnFiles.download",
-                    ),
-                    icon:
-                      busy === file.id ? (
-                        <LoaderCircle size={16} className={styles.spinner} />
-                      ) : (
-                        <Download size={16} />
-                      ),
-                    disabled: !available || Boolean(busy),
-                    onSelect: () =>
-                      void download(file.id, () =>
-                        turnFilesApi.downloadFile(
-                          archiveScope,
-                          turn.id,
-                          file,
-                          version,
+          <DeliveryFileActions
+            key={file.id}
+            compact
+            name={file.name}
+            target={target}
+            scope={archiveScope}
+            disabled={!available}
+            onPreview={(trigger, presentation) =>
+              openFilePreview(target, trigger, scope, presentation)
+            }
+            moreActions={[
+              ...(canDiff
+                ? [
+                    {
+                      key: "diff",
+                      label: t("turnFiles.diff"),
+                      icon: <GitCompareArrows size={16} />,
+                      onSelect: () => void showDiff(file),
+                    },
+                  ]
+                : []),
+              ...(file.status !== "deleted"
+                ? [
+                    {
+                      key: "current",
+                      label: t("turnFiles.openCurrent"),
+                      icon: <FolderOpen size={16} />,
+                      onSelect: (trigger: HTMLElement) =>
+                        openFilePreview(
+                          {
+                            source: "workspace",
+                            path: file.path,
+                            root: file.root,
+                          },
+                          trigger,
+                          scope,
                         ),
-                      ),
-                  },
-                ]}
-              />
-            </div>
-            {!available && (
-              <span className={styles.unavailable}>
-                {t("turnFiles.unavailable")}
-              </span>
-            )}
-            {version === "before" && available && (
-              <span className={styles.version}>
-                {t("turnFiles.beforeVersion")}
-              </span>
-            )}
-            {diffId === file.id && (
-              <div className={styles.diff}>
-                <div className={styles.diffHeading}>
-                  {t("turnFiles.diffHint")}
+                    },
+                  ]
+                : []),
+              {
+                key: "download",
+                label: t(
+                  version === "before"
+                    ? "turnFiles.downloadBefore"
+                    : "turnFiles.download",
+                ),
+                icon:
+                  busy === file.id ? (
+                    <LoaderCircle size={16} className={styles.spinner} />
+                  ) : (
+                    <Download size={16} />
+                  ),
+                disabled: !available || Boolean(busy),
+                onSelect: () =>
+                  void download(file.id, () =>
+                    turnFilesApi.downloadFile(
+                      archiveScope,
+                      turn.id,
+                      file,
+                      version,
+                    ),
+                  ),
+              },
+            ]}
+          >
+            {(actions) => (
+              <li
+                className={styles.file}
+                data-featured={featured}
+                onClick={(event) => {
+                  if (
+                    available &&
+                    event.target instanceof Element &&
+                    event.currentTarget.contains(event.target) &&
+                    !event.target.closest("button, a, input, summary")
+                  )
+                    openFilePreview(target, event.currentTarget, scope);
+                }}
+              >
+                {featured &&
+                  file.delivered &&
+                  available &&
+                  version === "after" &&
+                  IMAGE_FILE.test(file.name) && (
+                    <DeliveredImage
+                      key={`${turn.id}:${file.id}`}
+                      scope={archiveScope}
+                      turn={turn}
+                      file={file}
+                    />
+                  )}
+                <div className={styles.row}>
+                  <button
+                    className={styles.previewButton}
+                    type="button"
+                    aria-label={`${t("turnFiles.openArchive")} ${file.name}`}
+                    title={`${file.root}/${file.path}`}
+                    disabled={!available}
+                    onClick={(event) =>
+                      openFilePreview(target, event.currentTarget, scope)
+                    }
+                  >
+                    <span
+                      className={styles.fileIcon}
+                      data-kind={kind}
+                      aria-hidden="true"
+                    >
+                      <FileIcon size={22} strokeWidth={1.6} />
+                    </span>
+                    <span className={styles.fileInfo}>
+                      <span className={styles.fileName}>
+                        {!featured && file.path.includes("/") && (
+                          <span className={styles.pathDirectory}>
+                            {file.path.slice(0, file.path.lastIndexOf("/") + 1)}
+                          </span>
+                        )}
+                        <strong>{file.name}</strong>
+                      </span>
+                      <span className={styles.fileMeta}>
+                        {featured && (
+                          <span className={styles.fileType}>
+                            {extension && extension.length <= 6
+                              ? extension.toUpperCase()
+                              : t("turnFiles.file")}
+                          </span>
+                        )}
+                        {featured && size != null && (
+                          <span>{prettyBytes(size)}</span>
+                        )}
+                        {!featured && (
+                          <span
+                            className={styles.status}
+                            data-status={file.status}
+                          >
+                            {t(`turnFiles.status.${file.status}`)}
+                          </span>
+                        )}
+                        {version === "before" && available && (
+                          <span
+                            className={styles.version}
+                            title={t("turnFiles.beforeVersion")}
+                          >
+                            {t("turnFiles.beforeVersion")}
+                          </span>
+                        )}
+                        {!file.binary &&
+                          (file.additions != null ||
+                            file.deletions != null) && (
+                            <span>
+                              <span className={styles.added}>
+                                +{file.additions ?? 0}
+                              </span>{" "}
+                              <span className={styles.removed}>
+                                −{file.deletions ?? 0}
+                              </span>
+                            </span>
+                          )}
+                      </span>
+                    </span>
+                  </button>
+                  {actions}
                 </div>
-                {diffError ? (
-                  <p role="alert">
-                    {t("turnFiles.diffFailed")}{" "}
-                    <button
-                      type="button"
-                      onClick={() => void showDiff(file, true)}
-                    >
-                      {t("turnFiles.retry")}
-                    </button>
-                  </p>
-                ) : !diff ? (
-                  <p role="status">{t("turnFiles.loadingDiff")}</p>
-                ) : (
-                  <>
-                    {diff.truncated && (
-                      <p className={styles.notice}>
-                        {t("turnFiles.diffTruncated")}
-                      </p>
-                    )}
-                    <Suspense
-                      fallback={
-                        <p role="status">{t("turnFiles.loadingDiff")}</p>
-                      }
-                    >
-                      <DiffViewer diff={diff} />
-                    </Suspense>
-                  </>
+                {!available && (
+                  <span className={styles.unavailable}>
+                    {t("turnFiles.unavailable")}
+                  </span>
                 )}
-              </div>
+              </li>
             )}
-          </li>
+          </DeliveryFileActions>
         );
       })}
     </ul>
@@ -427,6 +502,25 @@ function SummaryContent({
       aria-label={t("turnFiles.title")}
       data-turn-id={turn.id}
     >
+      {deliveries.length === 0 && turn.files.length > 0 && (
+        <div className={styles.changesHeading}>
+          <span className={styles.fileIcon}>
+            <FileCode2 size={20} aria-hidden="true" />
+          </span>
+          <div>
+            <strong>
+              {t("turnFiles.changedCount", { count: turn.files.length })}
+            </strong>
+            {hasLineCounts && (
+              <span className={styles.counts}>
+                <span className={styles.added}>+{additions}</span>
+                <span className={styles.removed}>−{deletions}</span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      {review && comparison}
       {renderFiles(
         expanded ? primaryFiles : primaryFiles.slice(0, COLLAPSED_FILES),
         deliveries.length > 0,
@@ -519,6 +613,9 @@ function SummaryContent({
           {renderFiles(
             otherExpanded ? otherFiles : otherFiles.slice(0, COLLAPSED_FILES),
           )}
+          {!review &&
+            otherFiles.some((file) => file.id === diffId) &&
+            comparison}
           {otherFiles.length > COLLAPSED_FILES && (
             <button
               className={styles.expand}
@@ -538,19 +635,73 @@ function SummaryContent({
           )}
         </details>
       )}
+      {!review &&
+        !(
+          deliveries.length > 0 && otherFiles.some((file) => file.id === diffId)
+        ) &&
+        comparison}
       <footer className={styles.footer}>
-        <div className={styles.archiveNote}>
-          <span>{t("turnFiles.archiveHint")}</span>
-          {hasLineCounts && (
-            <span
-              className={styles.counts}
-              aria-label={t("turnFiles.lineChanges")}
-            >
-              <span className={styles.added}>+{additions}</span>
-              <span className={styles.removed}>−{deletions}</span>
-            </span>
+        <details
+          className={styles.archiveDetails}
+          onToggle={(event) => setArchiveExpanded(event.currentTarget.open)}
+        >
+          <summary>{t("turnFiles.versionDetails")}</summary>
+          <div className={styles.archiveNote}>
+            <span>{t("turnFiles.archiveHint")}</span>
+            {hasLineCounts && (
+              <span
+                className={styles.counts}
+                aria-label={t("turnFiles.lineChanges")}
+              >
+                <span className={styles.added}>+{additions}</span>
+                <span className={styles.removed}>−{deletions}</span>
+              </span>
+            )}
+          </div>
+          {archiveExpanded && (
+            <div className={styles.archiveVersions}>
+              {turn.files
+                .filter((file) => file.before_available)
+                .map((file) => (
+                  <div key={file.id}>
+                    <span title={`${file.root}/${file.path}`}>{file.name}</span>
+                    <button
+                      type="button"
+                      aria-label={`${t("turnFiles.openBefore")} ${file.name}`}
+                      onClick={(event) =>
+                        openFilePreview(
+                          turnFileTarget(archiveScope, turn, file, "before"),
+                          event.currentTarget,
+                          scope,
+                        )
+                      }
+                    >
+                      {t("turnFiles.openBefore")}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={Boolean(busy)}
+                      aria-label={`${t("turnFiles.downloadPrevious")} ${
+                        file.name
+                      }`}
+                      onClick={() =>
+                        void download(`before:${file.id}`, () =>
+                          turnFilesApi.downloadFile(
+                            archiveScope,
+                            turn.id,
+                            file,
+                            "before",
+                          ),
+                        )
+                      }
+                    >
+                      {t("turnFiles.downloadPrevious")}
+                    </button>
+                  </div>
+                ))}
+            </div>
           )}
-        </div>
+        </details>
         {turn.status !== "completed" &&
           turn.status !== "success" &&
           turn.status !== "running" && (
@@ -565,24 +716,26 @@ function SummaryContent({
             {t("turnFiles.overlap")}
           </p>
         )}
-        {turn.incomplete && !turn.warnings?.length && (
+        {turn.incomplete && captureWarnings.length === 0 && (
           <p className={styles.notice}>
             <AlertCircle size={13} />
             {t("turnFiles.incomplete")}
           </p>
         )}
-        {turn.warnings?.length > 0 && (
+        {captureWarnings.length > 0 && (
           <details className={styles.warnings}>
             <summary className={turn.incomplete ? styles.notice : undefined}>
               {turn.incomplete && <AlertCircle size={13} />}
               {t(
                 turn.incomplete
                   ? "turnFiles.incomplete"
+                  : turn.scan_warnings?.length
+                  ? "turnFiles.scanDetails"
                   : "turnFiles.captureDetails",
               )}
             </summary>
             <ul>
-              {turn.warnings.map((warning, index) => (
+              {captureWarnings.map((warning, index) => (
                 <li key={`${index}:${warning}`}>{warning}</li>
               ))}
             </ul>
@@ -675,6 +828,7 @@ export default function TurnFileSummary({
           turn = find(historical.turns);
         }
         if (turn) {
+          turn = normalizeTurnFileCapture(turn);
           latestTurn = turn;
           setResolved({ key: scopeKey, turn });
           if (turn.status === "running") {

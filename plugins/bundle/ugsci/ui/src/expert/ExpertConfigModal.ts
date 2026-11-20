@@ -1,3 +1,4 @@
+import { skillDisplayName } from "../core/displayNames";
 import { EXPERT_STYLES } from "./expertStyles";
 import { ExpertBasicSettings } from "./ExpertBasicSettings";
 import { ExpertAvatar } from "../components/avatars";
@@ -606,7 +607,11 @@ export function SkillsConfigTab({
                         skill.emoji,
                       )
                     : null,
-                  React.createElement(Text, { strong: true }, skill.name),
+                  React.createElement(
+                    Text,
+                    { strong: true },
+                    skillDisplayName(skill.name),
+                  ),
                   skill.version_text
                     ? React.createElement(
                         Tag,
@@ -1565,6 +1570,8 @@ export function ExpertConfigModal({
   const { Modal, Tabs, Button } = getHost().antd;
   const [confirmModal, confirmContext] = Modal.useModal();
   const [activeTab, setActiveTab] = useState("basic");
+  const [fileEditorOpen, setFileEditorOpen] = useState(false);
+  const [fileSaving, setFileSaving] = useState(false);
   const [promptFiles, setPromptFiles] = useState<string[]>([]);
   const [narrow, setNarrow] = useState(
     () => window.matchMedia("(max-width: 680px)").matches,
@@ -1604,6 +1611,8 @@ export function ExpertConfigModal({
   useEffect(() => {
     dirty.current = {};
     setActiveTab("basic");
+    setFileEditorOpen(false);
+    setFileSaving(false);
     setPromptFiles([]);
     if (open) void loadFiles();
     return () => {
@@ -1624,6 +1633,7 @@ export function ExpertConfigModal({
   const agent = expert.agent,
     display = expertPresentation(expert);
   const close = () => {
+    if (fileSaving) return;
     if (Object.values(dirty.current).some(Boolean))
       confirmModal.confirm({
         title: "还有未保存的修改",
@@ -1670,18 +1680,24 @@ export function ExpertConfigModal({
     {
       key: "files",
       label: "文件与提示词",
-      children: intro(
-        "文件与提示词",
-        "保留现有工作区文件与系统提示词挂载关系。",
-        React.createElement(KnowledgeBaseTab, {
-          agentId: agent.id,
-          systemPromptFiles: promptFiles,
-          onRefresh: () => {
-            void loadFiles();
-            onRefresh();
-          },
-          onDirtyChange: changes.files,
-        }),
+      children: React.createElement(
+        "div",
+        { className: "ugsci-settings-files" },
+        intro(
+          "文件与提示词",
+          "编辑专家的工作区文档，管理加入系统提示的文件。",
+          React.createElement(KnowledgeBaseTab, {
+            agentId: agent.id,
+            systemPromptFiles: promptFiles,
+            onRefresh: () => {
+              void loadFiles();
+              onRefresh();
+            },
+            onDirtyChange: changes.files,
+            onEditorOpenChange: setFileEditorOpen,
+            onSavingChange: setFileSaving,
+          }),
+        ),
       ),
     },
     {
@@ -1732,23 +1748,30 @@ export function ExpertConfigModal({
       {
         open,
         title: "专家设置",
-        className: "ugsci-expert-settings",
+        className: `ugsci-expert-settings${
+          fileEditorOpen ? " ugsci-files-expanded" : ""
+        }`,
         onCancel: close,
-        footer: React.createElement(
-          "div",
-          { className: "ugsci-settings-footer" },
-          React.createElement(
-            "span",
-            null,
-            "各栏目分别保存；技能与 MCP 操作即时生效。",
-          ),
-          React.createElement(
-            Button,
-            { onClick: close, "aria-label": "关闭设置" },
-            "关闭",
-          ),
-        ),
-        width: 940,
+        closable: !fileSaving,
+        keyboard: !fileSaving,
+        maskClosable: !fileSaving,
+        footer: fileEditorOpen
+          ? null
+          : React.createElement(
+              "div",
+              { className: "ugsci-settings-footer" },
+              React.createElement(
+                "span",
+                null,
+                "各栏目分别保存；技能与 MCP 操作即时生效。",
+              ),
+              React.createElement(
+                Button,
+                { onClick: close, "aria-label": "关闭设置" },
+                "关闭",
+              ),
+            ),
+        width: fileEditorOpen ? 1440 : 940,
         centered: true,
         styles: {
           footer: { margin: 0, textAlign: "start" },

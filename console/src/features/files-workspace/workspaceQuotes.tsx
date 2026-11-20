@@ -7,6 +7,8 @@ import { getActiveSenderTextarea } from "../../pages/Chat/utils";
 import { openFilePreview } from "./openFilePreview";
 import { useWorkbenchTabsStore } from "./workbenchTabsStore";
 import { useFilesSurfaceStore } from "../../stores/filesSurfaceStore";
+import { getApiBaseUrl } from "../../api/config";
+import { buildAuthenticatedMediaUrl } from "../../api/authHeaders";
 import {
   filesWorkspaceScopeKey,
   type FilesWorkspaceScope,
@@ -43,7 +45,7 @@ export function WorkspaceQuoteProvider({
       },
       add: (text, source) => {
         const label =
-          source.kind === "file"
+          source.kind !== "terminal"
             ? `${source.target.path}${
                 source.target.line
                   ? `:${source.target.line}-${
@@ -72,6 +74,7 @@ export function useWorkspaceQuotes() {
 export function openQuoteSource(
   source: AnswerQuoteSource,
   currentScope?: SessionScope,
+  trigger: HTMLElement | null = null,
 ) {
   const draftSource =
     !source.scope.chatId &&
@@ -86,6 +89,28 @@ export function openQuoteSource(
       : source.scope;
   if (source.kind === "file") {
     openFilePreview({ ...source.target, preferredView: "text" }, null, scope);
+    return;
+  }
+  if (source.kind === "file-reference") {
+    const target = source.target;
+    const artifactUrl = target.artifactUrl
+      ? buildAuthenticatedMediaUrl(
+          `${getApiBaseUrl()}${target.artifactUrl}`,
+          scope.agentId,
+        )
+      : undefined;
+    openFilePreview(
+      {
+        ...target,
+        artifactUrl,
+        artifact: target.artifact && {
+          ...target.artifact,
+          binaryUrl: artifactUrl,
+        },
+      },
+      trigger,
+      scope,
+    );
     return;
   }
   const key = filesWorkspaceScopeKey(scope);

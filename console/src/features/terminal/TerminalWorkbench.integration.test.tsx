@@ -6,7 +6,9 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithProviders } from "../../test/common_setup";
+import { renderWithProviders as renderWithBaseProviders } from "../../test/common_setup";
+const renderWithProviders: typeof renderWithBaseProviders = (ui, options) =>
+  renderWithBaseProviders(ui, { ...options, authEnabled: true });
 import i18n from "../../i18n";
 import FilesDrawer from "../files-workspace/FilesDrawer";
 import { useWorkbenchTabsStore } from "../files-workspace/workbenchTabsStore";
@@ -121,6 +123,7 @@ describe("terminal inside the real workspace", () => {
       <FilesDrawer state={state} dispatch={vi.fn()} scope={scope} />,
     );
     await openFromNewTab();
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
     const view = await screen.findByTestId(
       "terminal-screen",
       {},
@@ -145,7 +148,7 @@ describe("terminal inside the real workspace", () => {
     expect(screen.queryByTestId("terminal-screen")).not.toBeInTheDocument();
     expect(requests("DELETE")).toHaveLength(0);
     const page = screen.getByRole("region", {
-      name: i18n.t("workbench.tabs.newTab"),
+      name: i18n.t("workbench.empty.label"),
     });
     const recent = within(page).getByRole("region", {
       name: i18n.t("workbench.empty.recent"),

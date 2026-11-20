@@ -270,6 +270,8 @@ def _check_version(bucket, inspected, identity):
         if str(entry.get("plugin_id") or entry.get("id")) == asset_id
     ]
     for entry in matches:
+        if kind == "expert" and entry.get("package_manifest"):
+            raise HTTPException(409, "此专家已使用签名专家包，请通过专家包发布入口更新")
         if (
             not identity["admin"]
             and entry.get("publisher_namespace") != identity["namespace"]
@@ -540,6 +542,44 @@ async def release(request: Request):
 @app.post("/v1/releases/inspect")
 async def inspect_release(request: Request):
     return await _handle(request, mode="release", check=True)
+
+
+@app.post("/v1/expert-packages/releases")
+@app.post("/v1/expert-packages/releases/inspect")
+async def expert_package_release(request: Request):
+    from .expert_packages.publication import publish
+
+    publisher = _identity(request, admin=True)
+    payload = await _body(request)
+    try:
+        return await run_in_threadpool(
+            publish,
+            payload,
+            publisher,
+            check=request.url.path.endswith("/inspect"),
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, "专家包发布未确认成功，请检查回执后重试") from exc
+
+
+@app.post("/v1/expert-catalog/import")
+async def expert_catalog_import(request: Request):
+    from .expert_packages.publication import import_templates
+
+    _identity(request, admin=True)
+    payload = await _body(request)
+    try:
+        return await run_in_threadpool(import_templates, payload)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, "专家目录更新未确认成功，请检查后重试") from exc
 
 
 @app.post("/v1/approve/{namespace}/{kind}/{asset_id}/{version}")

@@ -280,7 +280,7 @@ if ($NsisExe) {
 # b5; it carries this exact ZIP as a PE overlay and hands off to the visible
 # update assistant instead of the legacy hidden PowerShell path.
 $AppExe = Get-Item (Join-Path $REPO_ROOT "console\src-tauri\target\release\qwenpaw-desktop.exe") -ErrorAction Stop
-$PortableRoot = Join-Path $BUNDLE_DIR "portable\UGSci Desktop"
+$PortableRoot = Join-Path $BUNDLE_DIR "portable\UGSci"
 $PortablePayload = Join-Path $PortableRoot "payload"
 $ZipPath = Join-Path $BUNDLE_DIR "UGSci-Desktop-portable.zip"
 # Always rebuild the portable package. Reusing an existing ZIP can silently
@@ -293,6 +293,8 @@ foreach ($staleArtifact in @($ZipPath, "$ZipPath.sig", $PortableRoot)) {
 }
 New-Item -ItemType Directory -Force -Path $PortablePayload | Out-Null
 Copy-Item -Force $AppExe.FullName (Join-Path $PortablePayload "UGSci.exe")
+python scripts/pack/verify_desktop_icons.py --windows-exe (Join-Path $PortablePayload "UGSci.exe")
+Assert-LastExit "Packaged Windows icon content verification failed"
 $Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
 if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
 python (Join-Path $REPO_ROOT "scripts\pack-tauri\copy_windows_tree.py") `

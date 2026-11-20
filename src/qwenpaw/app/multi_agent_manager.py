@@ -40,6 +40,8 @@ _OLD_WORKSPACE_TASK_MAX_WAIT_ROUNDS = 24 * 60
 _OLD_WORKSPACE_CLEANUP_RETRY_SECONDS = 5.0
 
 
+# The manager is the public owner of agent lifecycle operations.
+# pylint: disable-next=too-many-public-methods
 class MultiAgentManager:
     """Manages multiple agent workspaces.
 
@@ -70,6 +72,7 @@ class MultiAgentManager:
         self._unloaded_stop_tasks: Dict[str, asyncio.Task] = {}
         self._reloading_agents: Dict[str, int] = {}
         self._history_transition_agents: Set[str] = set()
+        self._maintenance_agents: Set[str] = set()
         self._config_generations: Dict[str, int] = {}
         self._operation_locks: dict[str, asyncio.Lock] = {}
         self._channel_delivery_locks: dict[str, asyncio.Lock] = {}
@@ -714,6 +717,8 @@ class MultiAgentManager:
         )
 
     def assert_agent_available(self, agent_id: str) -> None:
+        if agent_id in self._maintenance_agents:
+            raise RuntimeError(f"Agent '{agent_id}' is repairing its runtime")
         if agent_id in self._history_transition_agents:
             raise RuntimeError(
                 f"Agent '{agent_id}' is switching to Scroll history",
@@ -729,6 +734,43 @@ class MultiAgentManager:
     def reserve_agent_uninstall(self, agent_ids) -> None:
         """Block new requests while plugin-owned agents are removed."""
         self._uninstalling_agents.update(agent_ids)
+
+    @asynccontextmanager
+    async def inactive_agent_maintenance(self, agent_id: str):
+        (
+            "Serialize an inactive runtime commit; never interrupt a "
+            "workspace."
+        )
+        lock = self._operation_locks.setdefault(agent_id, asyncio.Lock())
+        task = asyncio.current_task()
+        assert task is not None
+        self._operations.add(task)
+        try:
+            async with lock:
+                self.assert_agent_available(agent_id)
+                starting = self._agent_startup_tasks.get(agent_id)
+                startup_active = agent_id in self._pending_starts or (
+                    starting is not None and not starting.done()
+                )
+                if (
+                    self._closing
+                    or startup_active
+                    or agent_id in self.agents
+                    or any(
+                        w.agent_id == agent_id
+                        for w in self._retired_instances.values()
+                    )
+                ):
+                    raise ValueError(
+                        "专家仍在运行、启动或清理中，请先在专家中心停用，等待停止后再修复",
+                    )
+                self._maintenance_agents.add(agent_id)
+                try:
+                    yield
+                finally:
+                    self._maintenance_agents.discard(agent_id)
+        finally:
+            self._operations.discard(task)
 
     def release_agent_uninstall(self, agent_ids) -> None:
         self._uninstalling_agents.difference_update(agent_ids)

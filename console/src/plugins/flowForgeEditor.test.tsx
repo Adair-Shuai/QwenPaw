@@ -11,6 +11,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -138,13 +139,49 @@ describe("FlowForge mounted editor architecture", () => {
       try {
         await screen.findByText(flow.name);
         const english = language === "en";
+        const palette =
+          view.container.querySelector<HTMLElement>("aside.ff-palette")!;
+        expect(palette.firstElementChild).toContainElement(
+          screen.getByRole("textbox", {
+            name: english ? "Search nodes" : "搜索节点",
+          }),
+        );
+        expect(
+          within(palette).queryByRole("button", {
+            name: /自然语言|natural language/i,
+          }),
+        ).not.toBeInTheDocument();
+        expect(palette.querySelector("p.ff-muted")).toBeNull();
+        fireEvent.click(
+          screen.getByRole("button", { name: english ? "AI edit" : "AI 编辑" }),
+        );
+        const aiTitle = english
+          ? "Edit the workflow with natural language"
+          : "用自然语言修改工作流";
+        const aiDialog = await screen.findByRole("dialog", { name: aiTitle });
+        expect(within(aiDialog).queryByRole("alert")).toBeNull();
+        expect(
+          within(aiDialog).getByRole("textbox", {
+            name: english ? "Goal and requested changes" : "业务目标与修改要求",
+          }),
+        ).toBeVisible();
+        fireEvent.click(
+          within(aiDialog).getByRole("button", {
+            name: english ? "Cancel" : /取\s*消/,
+          }),
+        );
+        await waitFor(() =>
+          expect(screen.queryByRole("dialog", { name: aiTitle })).toBeNull(),
+        );
         expect(
           screen.queryByRole("button", { name: english ? "Versions" : "版本" }),
         ).toBeNull();
         const more = screen.getByRole("button", {
           name: english ? "More actions" : "更多操作",
         });
-        fireEvent.click(more);
+        fireEvent.click(
+          screen.getByRole("button", { name: english ? "Arrange" : "排列" }),
+        );
         fireEvent.click(
           await screen.findByRole("menuitem", {
             name: english ? "Auto layout" : "自动布局",
@@ -365,6 +402,7 @@ describe("FlowForge mounted editor architecture", () => {
     expect(input).toBeDisabled();
     expect(input).toHaveValue("上游模型 → 文本");
     expect(input).not.toHaveValue(expect.stringContaining("来源已失效"));
+    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
     expect(
       screen.getByRole("combobox", { name: "prompt 的数据来源" }),
     ).toHaveValue(JSON.stringify(["source", "text"]));

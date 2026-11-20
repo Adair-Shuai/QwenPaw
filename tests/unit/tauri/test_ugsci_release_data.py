@@ -528,6 +528,9 @@ def test_updates_preserve_user_imports_without_shipping_visualization_data(
             managed_components={"ugsci"},
             target="windows-x86_64",
             core_version="2.2.2b9",
+            # Force the restored data path beyond the legacy Windows limit
+            # even when pytest uses a short base directory.
+            backup_root=tmp_path / ("backup-" + "x" * 175),
         )
         document = updater.load_manifest(path, path.with_suffix(".json.sig"))
         entry = document["components"]["ugsci"]

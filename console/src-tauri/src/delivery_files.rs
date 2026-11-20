@@ -90,6 +90,7 @@ pub(crate) struct DeliveryApplications {
     applications: Vec<DeliveryApplication>,
     can_open_default: bool,
     can_choose_application: bool,
+    editor_only: bool,
 }
 
 fn validate_file_name(name: &str) -> Result<(), String> {
@@ -118,6 +119,16 @@ fn validate_file_name(name: &str) -> Result<(), String> {
         return Err("Delivery file name is reserved by the operating system".into());
     }
     Ok(())
+}
+
+fn script_extension(name: &str) -> Option<String> {
+    let extension = Path::new(name).extension()?.to_str()?.to_ascii_lowercase();
+    [
+        "bat", "cmd", "ps1", "psm1", "psd1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "sh",
+        "command", "py", "pyw",
+    ]
+    .contains(&extension.as_str())
+    .then(|| format!(".{extension}"))
 }
 
 fn file_extension(name: &str) -> Result<String, String> {
@@ -297,14 +308,20 @@ pub(crate) async fn stage_delivery_file(
 pub(crate) async fn list_delivery_file_applications(
     file_name: String,
 ) -> Result<DeliveryApplications, String> {
+    validate_file_name(&file_name)?;
+    if let Some(extension) = script_extension(&file_name) {
+        return tauri::async_runtime::spawn_blocking(move || script_applications(&extension))
+            .await
+            .map_err(|err| err.to_string());
+    }
     let extension = match file_extension(&file_name) {
         Ok(extension) => extension,
         Err(_) => {
-            validate_file_name(&file_name)?;
             return Ok(DeliveryApplications {
                 applications: vec![],
                 can_open_default: false,
                 can_choose_application: false,
+                editor_only: false,
             });
         }
     };
@@ -325,15 +342,44 @@ pub(crate) async fn open_delivery_file(
             .lock()
             .map_err(|_| "Delivery cache is unavailable".to_string())?
             .resolve(&token)?;
-        let extension = file_extension(
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .ok_or("Invalid delivery file name")?,
-        )?;
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("Invalid delivery file name")?;
+        if script_extension(name).is_some() {
+            return open_script_in_editor(&path, application_id.as_deref());
+        }
+        let extension = file_extension(name)?;
         platform_open(&path, &extension, application_id.as_deref())
     })
     .await
     .map_err(|err| err.to_string())?
+}
+
+fn script_applications(extension: &str) -> DeliveryApplications {
+    #[cfg(windows)]
+    let applications = windows::script_editor_applications(extension);
+    #[cfg(not(windows))]
+    let applications = {
+        let _ = extension;
+        Vec::<DeliveryApplication>::new()
+    };
+    DeliveryApplications {
+        can_choose_application: !applications.is_empty(),
+        applications,
+        can_open_default: false,
+        editor_only: true,
+    }
+}
+
+fn open_script_in_editor(path: &Path, application_id: Option<&str>) -> Result<(), String> {
+    #[cfg(windows)]
+    if let Some(id) = application_id {
+        return windows::open_script_in_editor(path, id);
+    }
+    #[cfg(not(windows))]
+    let _ = (path, application_id);
+    Err("Choose an available editor to open this script".into())
 }
 
 #[tauri::command]
@@ -372,6 +418,7 @@ fn platform_applications(_extension: &str) -> Result<DeliveryApplications, Strin
         applications: vec![],
         can_open_default: cfg!(any(target_os = "macos", target_os = "linux")),
         can_choose_application: false,
+        editor_only: false,
     })
 }
 

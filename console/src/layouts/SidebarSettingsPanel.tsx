@@ -53,8 +53,16 @@ import {
 import { openExternalLink } from "../utils/openExternalLink";
 import styles from "./sidebarSettingsPanel.module.less";
 import LocalAvatarPicker from "./LocalAvatarPicker";
-import { COLOR_THEMES, type InterfaceStyle } from "../utils/interfaceStyle";
-import { PAGE_STYLES, type PageStyle } from "../utils/pageStyle";
+import {
+  COLOR_THEMES,
+  DEFAULT_INTERFACE_STYLE,
+  type InterfaceStyle,
+} from "../utils/interfaceStyle";
+import {
+  PAGE_STYLES,
+  DEFAULT_PAGE_STYLE,
+  type PageStyle,
+} from "../utils/pageStyle";
 import { useIsMobile } from "../hooks/useIsMobile";
 
 type ContentWidth = "standard" | "wide";
@@ -235,9 +243,9 @@ export default function SidebarSettingsPanel({
   const {
     themeMode,
     setThemeMode,
-    interfaceStyle = "classic",
+    interfaceStyle = DEFAULT_INTERFACE_STYLE,
     setInterfaceStyle,
-    pageStyle = "classic",
+    pageStyle = DEFAULT_PAGE_STYLE,
     setPageStyle,
   } = useTheme();
   const [wideMode, setWideMode] = useState(getChatWideModePreference);

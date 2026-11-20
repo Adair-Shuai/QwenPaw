@@ -1,0 +1,22 @@
+{
+  "id": "research-agenda",
+  "name": "工作日程",
+  "version": "0.2.0",
+  "type": "app",
+  "description": "从聊天记录、会议纪要和截图整理工作事项，核对来源、跟踪反馈并安排日程。",
+  "author": "UGSci Team",
+  "channel": "ugsci",
+  "entry": { "backend": "backend/main.py", "frontend": "ui/index.js" },
+  "pack_exclude": ["src", "tests", "build.mjs"],
+  "qwenpaw_version": { "min": "2.2.2b9", "max": "3.0.0" },
+  "meta": {
+    "pawapp": {
+      "icon": "📅",
+      "category": "research",
+      "entry_page": "/apps/research-agenda",
+      "launch_scope": "page"
+    },
+    "permissions": { "chat": true, "storage": true },
+    "settings": []
+  }
+}

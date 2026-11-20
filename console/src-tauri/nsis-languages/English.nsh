@@ -27,7 +27,7 @@ LangString webview2InstallSuccess ${LANG_ENGLISH} "WebView2 installed successful
 LangString deleteAppData ${LANG_ENGLISH} "Clear app data (e.g. settings, drafts, cache; keeps agents/chats)"
 LangString qwenpawCliPathPageTitle ${LANG_ENGLISH} "Command line"
 LangString qwenpawCliPathPageSubtitle ${LANG_ENGLISH} "Choose whether qwenpaw is available in terminals."
-LangString qwenpawCliPathPageDescription ${LANG_ENGLISH} "This adds the bundled qwenpaw command to your user PATH. You can change it later by reinstalling or uninstalling UGSci Desktop."
+LangString qwenpawCliPathPageDescription ${LANG_ENGLISH} "This adds the bundled qwenpaw command to your user PATH. You can change it later by reinstalling or uninstalling UGSci."
 LangString qwenpawCliPathCheckbox ${LANG_ENGLISH} "Add qwenpaw to PATH"
 LangString qwenpawCliPathAdded ${LANG_ENGLISH} "Added qwenpaw to user PATH"
 LangString qwenpawCliPathSkipped ${LANG_ENGLISH} "Skipped adding qwenpaw to user PATH"

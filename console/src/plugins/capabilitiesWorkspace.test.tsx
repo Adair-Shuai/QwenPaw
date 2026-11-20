@@ -1,3 +1,9 @@
+import {
+  MemoryRouter,
+  BrowserRouter,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
 import fs from "node:fs";
 import path from "node:path";
 import React from "react";
@@ -23,6 +29,15 @@ describe.each([
   "src/qwenpaw/plugins_bundle/ugsci/ui/dist/index.js",
 ])("packaged capability workspace: %s", (bundlePath) => {
   const fetchHost = vi.fn();
+  let omitContent = false;
+  let chineseNames = false;
+  const fullDefinition =
+    "---\nname: scoped-definition\n---\n# 完整定义\n" +
+    "技能正文中英文 definition\n".repeat(200) +
+    "全文末尾验收";
+  function WindowLocation() {
+    return <output aria-label="窗口路由">{useLocation().pathname}</output>;
+  }
   const loadBuiltinPage = vi.fn();
   let selectedAgent: string;
   const listeners = new Set<() => void>();
@@ -39,7 +54,7 @@ describe.each([
     emoji: "📄",
     enabled,
     source: "custom",
-    content: "# 保留技能内容",
+    content: omitContent ? "" : "# 保留技能内容",
     tags: ["文档"],
   });
   const changeAgent = (id: string) => {
@@ -50,6 +65,8 @@ describe.each([
     routeRegistry.__resetForTests();
     window.history.replaceState({}, "", "/ugsci-tools-skills?tab=engines");
     selectedAgent = "expert-a";
+    omitContent = false;
+    chineseNames = false;
     enabled = true;
     rejectSave = false;
     poolInstalled = false;
@@ -78,7 +95,10 @@ describe.each([
         if (url === "/agents")
           return json({
             agents: [
-              { id: "expert-a", name: "专家 A" },
+              {
+                id: "expert-a",
+                name: chineseNames ? "QwenPaw-Data" : "专家 A",
+              },
               { id: "expert-b", name: "专家 B" },
             ],
           });
@@ -88,6 +108,12 @@ describe.each([
           engine = { ...engine, ...JSON.parse(String(init.body)) };
           return json(engine);
         }
+        if (
+          url.startsWith("/skills/") &&
+          !url.startsWith("/skills/pool") &&
+          !url.startsWith("/skills/workspaces")
+        )
+          return json({ content: fullDefinition });
         if (url === "/skills/pool?summary=true")
           return json([
             { ...skill("pool-report"), content: "", protected: false },
@@ -110,13 +136,14 @@ describe.each([
               resolveOldSkills = resolve;
             });
           return json([
-            skill("报告技能 A"),
+            skill(chineseNames ? "scientific-writing" : "报告技能 A"),
             ...(poolInstalled ? [skill("pool-report")] : []),
           ]);
         }
         if (url === "/agents/expert-b/skills")
           return json([skill("报告技能 B")]);
         if (
+          url === "/agents/expert-a/skills/scientific-writing/disable" ||
           url === "/agents/expert-a/skills/报告技能%20A/disable" ||
           url ===
             "/agents/expert-a/skills/%E6%8A%A5%E5%91%8A%E6%8A%80%E8%83%BD%20A/disable"
@@ -173,8 +200,16 @@ describe.each([
     routeRegistry.__resetForTests();
     Reflect.deleteProperty(window, "QwenPaw");
   });
-  async function mountPage(tab = "engines", translations?: i18n) {
-    window.history.replaceState({}, "", `/ugsci-tools-skills?tab=${tab}`);
+  async function mountPage(
+    tab = "engines",
+    translations?: i18n,
+    basename = "",
+  ) {
+    window.history.replaceState(
+      {},
+      "",
+      `${basename}/ugsci-tools-skills?tab=${tab}`,
+    );
     await act(async () => {
       new Function(
         fs.readFileSync(path.resolve(process.cwd(), "..", bundlePath), "utf8"),
@@ -190,11 +225,22 @@ describe.each([
         </antd.App>
       </antd.ConfigProvider>
     );
+    const translated = translations ? (
+      <I18nextProvider i18n={translations}>{content}</I18nextProvider>
+    ) : (
+      content
+    );
     render(
-      translations ? (
-        <I18nextProvider i18n={translations}>{content}</I18nextProvider>
+      basename ? (
+        <BrowserRouter basename={basename}>
+          <WindowLocation />
+          {translated}
+        </BrowserRouter>
       ) : (
-        content
+        <MemoryRouter initialEntries={[`/ugsci-tools-skills?tab=${tab}`]}>
+          <WindowLocation />
+          {translated}
+        </MemoryRouter>
       ),
     );
   }
@@ -333,6 +379,39 @@ describe.each([
     );
   });
 
+  it("shows Chinese preset names and searches and toggles skills using stable identifiers", async () => {
+    chineseNames = true;
+    await mountPage("skills");
+    expect(await screen.findByText("数据分析专家")).toBeVisible();
+    await userEvent.click(
+      await screen.findByRole("switch", { name: "禁用 科学论文写作" }),
+    );
+    expect(
+      await screen.findByRole("switch", { name: "启用 科学论文写作" }),
+    ).not.toBeChecked();
+    expect(fetchHost).toHaveBeenCalledWith(
+      "/agents/expert-a/skills/scientific-writing/disable",
+      expect.objectContaining({ method: "POST" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "配置 科学论文写作" }),
+    );
+    const detail = await screen.findByRole("region", { name: /科学论文写作/ });
+    await userEvent.click(
+      within(detail).getByRole("button", { name: "返回列表" }),
+    );
+    const search = screen.getByPlaceholderText("搜索当前专家的技能...");
+    await userEvent.type(search, "科学论文");
+    expect(
+      screen.getByRole("button", { name: "配置 科学论文写作" }),
+    ).toBeVisible();
+    await userEvent.clear(search);
+    await userEvent.type(search, "scientific-writing");
+    expect(
+      screen.getByRole("button", { name: "配置 科学论文写作" }),
+    ).toBeVisible();
+  });
+
   it("shows skill controls without hovering and returns from focused details to the updated agent card", async () => {
     await mountPage("skills");
     await userEvent.click(
@@ -349,6 +428,9 @@ describe.each([
       screen.getByRole("button", { name: "配置 报告技能 A" }),
     );
     const detail = await screen.findByRole("region", { name: /报告技能 A/ });
+    await userEvent.click(
+      within(detail).getByRole("tab", { name: "SKILL.md 源文" }),
+    );
     expect(within(detail).getByText("# 保留技能内容")).toBeVisible();
     await userEvent.click(
       within(detail).getByRole("button", { name: "返回列表" }),
@@ -356,6 +438,67 @@ describe.each([
     expect(
       screen.getByRole("switch", { name: "启用 报告技能 A" }),
     ).toBeVisible();
+  });
+
+  it("reads the complete scoped skill definition and uses the desktop window router for management", async () => {
+    omitContent = true;
+    window.QwenPaw!.host.useNavigate = useNavigate;
+    await mountPage("skills");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "配置 报告技能 A" }),
+    );
+    const detail = await screen.findByRole("region", { name: /报告技能 A/ });
+    expect(await within(detail).findByText(/全文末尾验收/)).toBeVisible();
+    expect(
+      within(detail).queryByText(/name: scoped-definition/),
+    ).not.toBeInTheDocument();
+    expect(fetchHost).toHaveBeenCalledWith(
+      "/skills/%E6%8A%A5%E5%91%8A%E6%8A%80%E8%83%BD%20A",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "x-agent-id": "expert-a" }),
+      }),
+    );
+    await userEvent.click(
+      within(detail).getByRole("tab", { name: "SKILL.md 源文" }),
+    );
+    expect(
+      within(detail).getByText(/全文末尾验收/, { selector: "pre" }).textContent,
+    ).toBe(fullDefinition);
+    await userEvent.click(
+      within(detail).getByRole("button", { name: /管理技能/ }),
+    );
+    expect(screen.getByLabelText("窗口路由")).toHaveTextContent("/skills");
+    expect(window.location.pathname).toBe("/ugsci-tools-skills");
+  });
+
+  it("preserves the desktop console basename when opening skill management", async () => {
+    window.QwenPaw!.host.useNavigate = useNavigate;
+    await mountPage("skills", undefined, "/console");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "配置 报告技能 A" }),
+    );
+    const detail = await screen.findByRole("region", { name: /报告技能 A/ });
+    await userEvent.click(
+      within(detail).getByRole("button", { name: /管理技能/ }),
+    );
+    expect(window.location.pathname).toBe("/console/skills");
+    expect(screen.getByLabelText("窗口路由")).toHaveTextContent("/skills");
+  });
+
+  it("opens skill pool management through the desktop window router", async () => {
+    window.QwenPaw!.host.useNavigate = useNavigate;
+    await mountPage("skills");
+    await userEvent.click(screen.getByRole("tab", { name: "技能库" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "pool-report" }),
+    );
+    const detail = await screen.findByRole("region", { name: /pool-report/ });
+    expect(await within(detail).findByText(/技能库完整内容/)).toBeVisible();
+    await userEvent.click(
+      within(detail).getByRole("button", { name: /管理技能/ }),
+    );
+    expect(screen.getByLabelText("窗口路由")).toHaveTextContent("/skills");
+    expect(window.location.pathname).toBe("/ugsci-tools-skills");
   });
 
   it("ignores an old skill response after the configuration agent changes", async () => {

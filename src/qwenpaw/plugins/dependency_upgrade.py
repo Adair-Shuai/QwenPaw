@@ -15,6 +15,7 @@ import sys
 from uuid import uuid4
 
 from packaging.utils import canonicalize_name, parse_wheel_filename
+from packaging.version import Version
 
 from ..utils.io_utils import get_sync_path_lock, run_sync_io
 from ..utils.runtime_environment import CERTIFI_REQUIREMENT, require_pip
@@ -117,7 +118,10 @@ def resolution_constraints(
     ):
         requested.setdefault(name, []).append(req)
     values = set()
-    for name, row in {**snapshot.distributions, **immutable}.items():
+    # Resolve for the actual consumer. The installer can have a different
+    # bundled copy, especially after a desktop dependency-layer update.
+    # Its inventory reserves absent names without replacing observed versions.
+    for name, row in {**immutable, **snapshot.distributions}.items():
         if (
             name in protected
             or name in immutable
@@ -1454,12 +1458,12 @@ class DependencyUpgradeManager:
             ):
                 continue
             name = canonicalize_name(requirement.name)
+            row = snapshot.distributions.get(name) or immutable.get(name)
             if name in immutable and not requirement.specifier.contains(
-                immutable[name]["version"],
+                row["version"],
                 prereleases=True,
             ):
-                context.refuse_immutable_provider(name, immutable[name])
-            row = snapshot.distributions.get(name) or immutable.get(name)
+                context.refuse_immutable_provider(name, row)
             if name in protected and not requirement.specifier.contains(
                 row["version"],
                 prereleases=True,
@@ -1554,7 +1558,7 @@ class DependencyUpgradeManager:
             name, version, _, _ = parse_wheel_filename(path.name)
             name = str(name)
             old = snapshot.distributions.get(name)
-            if old and old["version"] == str(version):
+            if old and Version(old["version"]) == version:
                 continue
             if name in immutable:
                 context.refuse_immutable_provider(name, immutable[name])
@@ -2332,10 +2336,13 @@ async def continue_operation(directory, *, preflight=False):
             allow_install=False,
             probe=True,
         )
-        record = await loader.install_plugin_files(
+        from .downloaded_updates import install_confirmed_update
+
+        record = await install_confirmed_update(
+            loader,
             source,
-            force=operation["force"],
-            installation_source=operation.get("installation_source", ""),
+            operation,
+            files_only=True,
         )
         atomic_json(directory / "continuation.json", install_result(record))
     finally:

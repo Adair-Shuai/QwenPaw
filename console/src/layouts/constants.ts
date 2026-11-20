@@ -106,7 +106,7 @@ export const UPDATE_MD: Record<string, string> = {
 
 Если приложение сообщает, что установлена последняя версия, обновление не требуется.`,
 
-  en: `### Updating UGSci Desktop
+  en: `### Updating UGSci
 
 1. Open the UGSci desktop app and click the version number in the upper-left corner.
 2. If an update is available, review the target version and release notes, then click “Update now”.

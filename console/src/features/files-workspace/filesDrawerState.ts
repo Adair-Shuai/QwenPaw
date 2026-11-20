@@ -13,18 +13,21 @@ export function filesDrawerReducer(
           kind: "workspace",
           target: event.target,
           trigger: event.trigger,
+          ...(event.presentation ? { presentation: event.presentation } : {}),
         };
       }
       return {
         kind: "preview",
         target: event.target,
         trigger: event.trigger,
+        ...(event.presentation ? { presentation: event.presentation } : {}),
       };
     case "OPEN_WORKSPACE":
       return {
         kind: "workspace",
         target: event.target,
         trigger: event.trigger,
+        ...(event.presentation ? { presentation: event.presentation } : {}),
         ...(event.mode ? { mode: event.mode } : {}),
         ...(event.simulationRunId
           ? { simulationRunId: event.simulationRunId }
@@ -33,12 +36,18 @@ export function filesDrawerReducer(
           ? { interactionRequestId: event.interactionRequestId }
           : {}),
       };
+    case "SET_PRESENTATION":
+      return state.kind === "closed" ||
+        state.presentation === event.presentation
+        ? state
+        : { ...state, presentation: event.presentation };
     case "EXPAND_WORKSPACE":
       return state.kind === "preview"
         ? {
             kind: "workspace",
             target: state.target,
             trigger: state.trigger,
+            ...(state.presentation ? { presentation: state.presentation } : {}),
           }
         : state;
     case "COLLAPSE_TO_PREVIEW": {
@@ -49,6 +58,7 @@ export function filesDrawerReducer(
             kind: "preview",
             target,
             trigger: state.trigger,
+            ...(state.presentation ? { presentation: state.presentation } : {}),
           }
         : state;
     }

@@ -1,8 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { buildWorkspaceScopeHeaders } from "../../api/authHeaders";
 import { getApiToken, getApiUrl } from "../../api/config";
+import { request as apiRequest } from "../../api/request";
 import { chatApi } from "../../api/modules/chat";
-import type { SessionFilesScope } from "../../api/modules/turnFiles";
+import {
+  turnFilesSessionId,
+  type SessionFilesScope,
+} from "../../api/modules/turnFiles";
 import { workspaceApi } from "../../api/modules/workspace";
 import {
   isDesktopTauriRuntime,
@@ -23,6 +27,7 @@ export interface DeliveryApplications {
   applications: DeliveryApplication[];
   canOpenDefault: boolean;
   canChooseApplication: boolean;
+  editorOnly?: boolean;
 }
 
 export interface DeliveryNativeOptions {
@@ -36,7 +41,7 @@ interface StagedDeliveryFile {
   path: string;
 }
 
-interface FileRequest {
+export interface DeliveryFileRequest {
   url: string;
   fileName: string;
   headers: Record<string, string>;
@@ -65,7 +70,28 @@ const applicationLists = new Map<
 let cacheRuntime: unknown;
 
 export function isDeliveryNativeAvailable(): boolean {
-  return isDesktopTauriRuntime();
+  if (isDesktopTauriRuntime()) return true;
+  if (typeof window === "undefined") return false;
+  const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
+  return (
+    loopback.has(window.location.hostname) &&
+    loopback.has(new URL(getApiUrl("/"), window.location.href).hostname)
+  );
+}
+
+async function desktopRequest<T>(
+  action: string,
+  scope: SessionFilesScope,
+  body?: unknown,
+  fileName?: string,
+): Promise<T> {
+  const query = new URLSearchParams({ session_id: turnFilesSessionId(scope) });
+  if (fileName) query.set("file_name", fileName);
+  return apiRequest<T>(`/workspace/turn-files/desktop/${action}?${query}`, {
+    method: body ? "POST" : "GET",
+    headers: buildWorkspaceScopeHeaders(scope),
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
 }
 
 function currentRuntime(): unknown {
@@ -103,14 +129,24 @@ function assertCurrent(isCurrent: () => boolean): void {
 /** App associations belong to a suffix, so mounting a history shares enumeration. */
 export async function listDeliveryApplications(
   fileName: string,
+  refresh = false,
+  scope?: SessionFilesScope,
 ): Promise<DeliveryApplications> {
   const runtime = requireRuntime();
   const name = fileName.replace(/\\/g, "/").split("/").pop() || "download";
   const suffix = name.match(/\.[^.]+$/)?.[0].toLowerCase();
-  const key = suffix ?? `name:${name.toLowerCase()}`;
+  const key = JSON.stringify([
+    suffix ?? `name:${name.toLowerCase()}`,
+    getApiUrl("/"),
+    isDesktopTauriRuntime() ? undefined : scope,
+  ]);
   const cached = applicationLists.get(key);
   if (cached?.pending) return cached.pending;
-  if (cached?.value && Date.now() - cached.at < APPLICATION_CACHE_MS) {
+  if (
+    !refresh &&
+    cached?.value &&
+    Date.now() - cached.at < APPLICATION_CACHE_MS
+  ) {
     return cached.value;
   }
   const entry: {
@@ -118,12 +154,19 @@ export async function listDeliveryApplications(
     value?: DeliveryApplications;
     pending?: Promise<DeliveryApplications>;
   } = { at: 0 };
-  entry.pending = invoke<DeliveryApplications>(
-    "list_delivery_file_applications",
-    {
-      fileName: name,
-    },
-  )
+  const listing = isDesktopTauriRuntime()
+    ? invoke<DeliveryApplications>("list_delivery_file_applications", {
+        fileName: name,
+      })
+    : scope
+    ? desktopRequest<DeliveryApplications>(
+        "applications",
+        scope,
+        undefined,
+        name,
+      )
+    : Promise.reject(new Error("Delivery scope is required"));
+  entry.pending = listing
     .then((value) => {
       if (runtime === cacheRuntime) {
         entry.value = value;
@@ -145,10 +188,10 @@ export async function listDeliveryApplications(
   return entry.pending;
 }
 
-function prepareFileRequest(
+export function prepareDeliveryFileRequest(
   target: FileTarget,
   scope: SessionFilesScope,
-): FileRequest {
+): DeliveryFileRequest {
   const artifact = target.artifact;
   if (
     (artifact?.agentId && artifact.agentId !== scope.agentId) ||
@@ -160,6 +203,17 @@ function prepareFileRequest(
   const archived = artifact?.meta?.turnFileArchive === true;
   // An archived target must never be reconstructed from its mutable workspace path.
   let url = artifact?.binaryUrl || target.artifactUrl;
+  const fileName =
+    (artifact?.title || target.path).replace(/\\/g, "/").split("/").pop() ||
+    "download";
+  if (!url && !archived && artifact?.textContent != null) {
+    url = `data:${
+      artifact.mimeType || "text/plain"
+    };charset=utf-8,${encodeURIComponent(artifact.textContent)}`;
+  }
+  if (!archived && url?.startsWith("data:")) {
+    return { url, fileName, headers: {}, credentials: "omit" };
+  }
   if (!url && !archived) {
     if (target.source === "workspace") {
       url = isAbsoluteLocalFilePath(target.path)
@@ -189,9 +243,6 @@ function prepareFileRequest(
       "Archived delivery file must belong to the configured backend",
     );
   }
-  const fileName =
-    (artifact?.title || target.path).replace(/\\/g, "/").split("/").pop() ||
-    "download";
   const headers = trustedBackend ? buildWorkspaceScopeHeaders(scope) : {};
   const credentials: RequestCredentials = trustedBackend
     ? "same-origin"
@@ -239,8 +290,9 @@ function base64Bytes(bytes: Uint8Array): string {
 }
 
 async function stageFile(
-  request: FileRequest,
+  request: DeliveryFileRequest,
   isCurrent: () => boolean,
+  scope: SessionFilesScope,
 ): Promise<StagedDeliveryFile> {
   assertCurrent(isCurrent);
   const response = await fetch(request.url, {
@@ -262,18 +314,20 @@ async function stageFile(
     throw new Error("Delivery file exceeds 32 MiB");
   const contentBase64 = base64Bytes(bytes);
   assertCurrent(isCurrent);
-  const staged = await invoke<StagedDeliveryFile>("stage_delivery_file", {
-    request: { fileName: request.fileName, contentBase64 },
-  });
+  const body = { fileName: request.fileName, contentBase64 };
+  const staged = isDesktopTauriRuntime()
+    ? await invoke<StagedDeliveryFile>("stage_delivery_file", { request: body })
+    : await desktopRequest<StagedDeliveryFile>("stage", scope, body);
   assertCurrent(isCurrent);
   return staged;
 }
 
 async function deliveryToken(
-  request: FileRequest,
+  request: DeliveryFileRequest,
   isCurrent: () => boolean,
+  scope: SessionFilesScope,
 ): Promise<StagedDeliveryFile> {
-  if (!request.cacheKey) return stageFile(request, isCurrent);
+  if (!request.cacheKey) return stageFile(request, isCurrent, scope);
   const key = request.cacheKey;
   let entry = stagedFiles.get(key);
   if (entry?.value) return entry.value;
@@ -284,8 +338,10 @@ async function deliveryToken(
   const shared = entry;
   shared.waiters.add(isCurrent);
   if (!shared.pending) {
-    shared.pending = stageFile(request, () =>
-      [...shared.waiters].some((waiter) => waiter()),
+    shared.pending = stageFile(
+      request,
+      () => [...shared.waiters].some((waiter) => waiter()),
+      scope,
     )
       .then((value) => {
         shared.value = value;
@@ -321,16 +377,24 @@ async function runFileAction(
     (options.isCurrent?.() ?? true);
   assertCurrent(isCurrent);
   // Capture URL, scope, headers and identity synchronously before any await.
-  const request = prepareFileRequest(target, { ...scope });
-  const staged = await deliveryToken(request, isCurrent);
+  const request = prepareDeliveryFileRequest(target, { ...scope });
+  const staged = await deliveryToken(request, isCurrent, scope);
   assertCurrent(isCurrent);
   try {
-    await invoke<void>(command, {
-      token: staged.token,
-      ...(command === "open_delivery_file" && applicationId
-        ? { applicationId }
-        : {}),
-    });
+    if (isDesktopTauriRuntime()) {
+      await invoke<void>(command, {
+        token: staged.token,
+        ...(command === "open_delivery_file" && applicationId
+          ? { applicationId }
+          : {}),
+      });
+    } else {
+      await desktopRequest("action", scope, {
+        token: staged.token,
+        action: command === "open_delivery_file" ? "open" : "reveal",
+        ...(applicationId ? { applicationId } : {}),
+      });
+    }
   } catch (error) {
     // External applications may change or delete a staged copy. A user's next
     // attempt must re-read the archive, without automatically launching twice.

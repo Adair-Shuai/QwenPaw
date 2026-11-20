@@ -70,6 +70,26 @@
   padding: 0;
 }
 
+.refreshControl {
+  display: inline-flex;
+}
+
+.refreshing {
+  animation: plugin-refresh-spin 1s linear infinite;
+}
+
+@keyframes plugin-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refreshing {
+    animation: none;
+  }
+}
+
 .searchHint {
   margin: -8px 0 12px;
   color: var(--app-text-secondary);

@@ -87,13 +87,13 @@ def verify_app(archive, entry):
     return payload
 
 
-def merge_catalog(old, new):
+def merge_catalog(old, new, *, plugin_id=APP, platform="apps"):
     if not isinstance(old.get("files"), dict) or not old["files"]:
         raise ValueError("Existing catalog must be valid and non-empty")
     if len(new.get("files", {})) != 1:
         raise ValueError("Only the storage application may be published")
     file_id, entry = next(iter(new["files"].items()))
-    if entry["plugin_id"] != APP:
+    if entry["plugin_id"] != plugin_id:
         raise ValueError("Wrong catalog application")
     existing = old["files"].get(file_id)
     if existing is not None and {
@@ -101,15 +101,15 @@ def merge_catalog(old, new):
     } != {k: v for k, v in entry.items() if k != "updated_at"}:
         raise ValueError("Version already exists with different metadata")
     for item in old["files"].values():
-        if item.get("plugin_id") == APP and Version(item["version"]) > Version(
-            entry["version"]
-        ):
+        if item.get("plugin_id") == plugin_id and Version(
+            item["version"]
+        ) > Version(entry["version"]):
             raise ValueError("Refusing application downgrade")
     result = copy.deepcopy(old)
     result["files"][file_id] = entry
     versions = (
         result.setdefault("platforms", {})
-        .setdefault("apps", {})
+        .setdefault(platform, {})
         .setdefault("versions", [])
     )
     if file_id not in versions:
@@ -227,6 +227,8 @@ def prepare_target(
     release_id,
     sequence,
     attempt,
+    *,
+    component_id=APP,
 ):
     folder = root / target
     folder.mkdir(parents=True, exist_ok=True)
@@ -262,8 +264,8 @@ def prepare_target(
         folder, generated, target=target, base_url=base, public_key=PUBLIC_KEY
     )
     single = json.loads(generated.read_bytes())
-    incoming = single["components"][APP]
-    previous = old["components"].get(APP)
+    incoming = single["components"][component_id]
+    previous = old["components"].get(component_id)
     if previous and Version(incoming["version"]) < Version(
         previous["version"]
     ):
@@ -278,7 +280,7 @@ def prepare_target(
         )
     merged = copy.deepcopy(old)
     merged["generated_at"] = single["generated_at"]
-    merged["components"][APP] = incoming
+    merged["components"][component_id] = incoming
     if previous:
         incoming["preserve"] = sorted(
             set(incoming["preserve"]) | set(previous.get("preserve", []))
@@ -295,9 +297,9 @@ def prepare_target(
         k: v for k, v in old.items() if k not in {"components", "generated_at"}
     }:
         raise ValueError("Application release changed host metadata")
-    if {k: v for k, v in merged["components"].items() if k != APP} != {
-        k: v for k, v in old["components"].items() if k != APP
-    }:
+    if {
+        k: v for k, v in merged["components"].items() if k != component_id
+    } != {k: v for k, v in old["components"].items() if k != component_id}:
         raise ValueError("Application release changed another component")
     manifest = generated.with_name(f"{target}-{release_id}.json")
     manifest.write_bytes(canonical_json(merged))

@@ -57,7 +57,9 @@ export function RuntimeInstallDialog({
   }, []);
 
   React.useEffect(() => {
-    if (!open || !busy || !task) return;
+    // Keep the mounted engine card current after the progress window closes.
+    // Navigating away still tears down this effect and stops all polling.
+    if (!busy || !task) return;
     const current = ++generation.current;
     let stopped = false;
     const poll = async () => {
@@ -65,7 +67,7 @@ export function RuntimeInstallDialog({
         await new Promise((resolve) => setTimeout(resolve, 1000));
         if (stopped || current !== generation.current) return;
         try {
-          const latest = await fetchEngineInstallTask(task.id);
+          const latest = await fetchEngineInstallTask(task.id, task.engine_id);
           if (stopped || current !== generation.current) return;
           setPollingError("");
           onTaskChange(latest);
@@ -120,7 +122,7 @@ export function RuntimeInstallDialog({
       stopped = true;
       generation.current += 1;
     };
-  }, [open, busy, task?.id, pollRevision, onTaskChange, onCompleted]);
+  }, [busy, task?.id, pollRevision, onTaskChange, onCompleted]);
 
   const start = async () => {
     if (!plan?.installable || starting || busy) return;
@@ -145,11 +147,11 @@ export function RuntimeInstallDialog({
   const failed = task?.status === "failed";
   const status = done
     ? React.createElement(Alert, {
-        type: "success",
+        type: task?.warning ? "warning" : "success",
         showIcon: true,
         message: "安装完成",
         description:
-          task?.message || "运行环境安装完成。请关闭弹窗查看刷新后的工具状态。",
+          task?.warning || task?.message || "运行环境已加载，可以直接使用。",
       })
     : failed
     ? React.createElement(Alert, {
@@ -328,9 +330,9 @@ export function RuntimeInstallDialog({
             Paragraph,
             { style: { marginBottom: 12 } },
             plan.state === "ready"
-              ? "运行依赖已就绪。你可以关闭窗口并刷新状态。"
+              ? "运行环境已就绪，可以直接使用。"
               : plan.installable
-              ? "将把以下依赖安装到 QwenPaw 软件使用的 Python 环境中。安装耗时和下载量取决于所需依赖。"
+              ? "将按需下载以下运行环境，验证通过后自动加载。安装期间可以关闭窗口，稍后继续查看进度。"
               : plan.message || "此运行环境当前无法由软件安装。",
           ),
           plan.packages.length

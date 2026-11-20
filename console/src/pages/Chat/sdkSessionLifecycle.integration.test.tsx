@@ -1,3 +1,4 @@
+import { SessionListPollingController } from "../../components/SessionListPollingController";
 import { ChatSessionActivation } from "./components/ChatSessionActivation";
 import { ChatSessionTransition } from "./components/ChatSessionTransition";
 import SdkRef from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Ref";
@@ -47,6 +48,11 @@ import {
 import { ApiError } from "../../api/request";
 import i18n, { i18nReady } from "../../i18n";
 import { useMessageQueueStore } from "../../stores/messageQueueStore";
+import ChatSessionInitializer from "./components/ChatSessionInitializer";
+import {
+  useSessionListData,
+  type ExtendedChatSession,
+} from "../../layouts/useSidebarSessionListData";
 import { useCreateNewSession } from "./hooks/useCreateNewSession";
 import { useChatRouteResolution } from "./hooks/useChatRouteResolution";
 import { menuRegistry } from "../../plugins/registry/store";
@@ -172,6 +178,7 @@ function mountHost(
   creationGate?: ReturnType<typeof deferred>,
   observeIdle = false,
   withRetryTransition = false,
+  withHistoryBridge = false,
 ) {
   let probe!: Probe;
   const sdkRef = {
@@ -261,6 +268,28 @@ function mountHost(
     return withRetryTransition ? <div data-testid="sdk-loader-probe" /> : null;
   }
 
+  function SidebarHistory() {
+    const history = useSessionListStore((state) => state.sessions);
+    const { sortedSessions } = useSessionListData(
+      history as ExtendedChatSession[],
+      syncSessionsGlobal,
+      {
+        currentSessionId: A,
+        onSessionClick: () => {},
+      },
+    );
+    return (
+      <>
+        <SessionListPollingController />
+        <ul aria-label="Sidebar history">
+          {sortedSessions.map((session) => (
+            <li key={session.id}>{session.name}</li>
+          ))}
+        </ul>
+      </>
+    );
+  }
+
   function RouterHost() {
     const { pathname } = useLocation();
     const navigate = useNavigate();
@@ -305,6 +334,12 @@ function mountHost(
     );
     return (
       <ComposedProvider options={options} cards={{}}>
+        {withHistoryBridge && (
+          <>
+            <ChatSessionInitializer />
+            <SidebarHistory />
+          </>
+        )}
         <ChatSessionActivation
           sessionId={currentSessionId}
           sdkRef={sdkRef}
@@ -497,6 +532,28 @@ function linkedHistory(id: string) {
     ],
   };
 }
+
+it("restores the mounted sidebar history after an empty SDK reload without changing the selected agent", async () => {
+  const host = mountHost(fixture, undefined, false, false, true);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("list", { name: "Sidebar history" }),
+    ).toHaveTextContent(A),
+  );
+  const calls = vi.mocked(api.listChats).mock.calls.length;
+  await act(async () => host.current().sessions.setSessions([]));
+  await waitFor(() => {
+    expect(vi.mocked(api.listChats).mock.calls.length).toBeGreaterThan(calls);
+    expect(host.current().sessions.sessions).toHaveLength(1);
+    expect(
+      screen.getByRole("list", { name: "Sidebar history" }),
+    ).toHaveTextContent(A);
+    expect(useSessionListStore.getState().sessions[0].id).toBe(A);
+  });
+  expect(useAgentStore.getState().selectedAgent).toBe(AGENT);
+  expect(fixture.create).not.toHaveBeenCalled();
+  expect(fixture.transport).not.toHaveBeenCalled();
+});
 
 describe("installed SDK activation after route ownership resolution", () => {
   it.each(["1788357954784-abc123", "9a8f4757-69c8-4179-b8a4-f02471bba385"])(

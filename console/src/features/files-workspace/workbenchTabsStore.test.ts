@@ -37,6 +37,63 @@ describe("workbench content references", () => {
     expect(useWorkbenchTabsStore.getState()).toBe(previous);
   });
 
+  it("protects browser drafts, history and inactive tabs from late start-page replacements", () => {
+    const store = useWorkbenchTabsStore.getState();
+    const blank: WorkbenchTab = {
+      id: "browser:blank",
+      kind: "browser",
+      title: "New tab",
+      browser: { pages: [], index: -1, input: "" },
+    };
+    for (const browser of [
+      { pages: [], index: -1, input: "unfinished address" },
+      {
+        pages: [{ kind: "url" as const, url: "https://example.com/" }],
+        index: 0,
+        input: "",
+      },
+    ]) {
+      store.open(scope, { ...blank, browser });
+      const before = useWorkbenchTabsStore.getState();
+      expect(store.replaceStartTab(scope, blank.id, file)).toBe(false);
+      expect(useWorkbenchTabsStore.getState()).toBe(before);
+    }
+    store.open(scope, blank);
+    store.open(scope, file);
+    const before = useWorkbenchTabsStore.getState();
+    expect(store.replaceStartTab(scope, blank.id, file)).toBe(false);
+    expect(store.replaceStartTab("other", blank.id, file)).toBe(false);
+    expect(useWorkbenchTabsStore.getState()).toBe(before);
+  });
+
+  it("merges duplicate split destinations without leaving stale pane or recent references", () => {
+    const store = useWorkbenchTabsStore.getState();
+    const blank: WorkbenchTab = {
+      id: "browser:blank",
+      kind: "browser",
+      title: "New tab",
+      browser: { pages: [], index: -1, input: "" },
+    };
+    store.open(scope, file);
+    store.open(scope, blank);
+    store.split(scope, blank.id, "vertical");
+    expect(store.replaceStartTab(scope, blank.id, file)).toBe(true);
+    expect(useWorkbenchTabsStore.getState().scopes[scope]).toMatchObject({
+      tabs: [file],
+      activeId: file.id,
+      secondaryId: undefined,
+      recent: [],
+    });
+    store.close(scope, [file.id]);
+    store.open(scope, blank);
+    expect(store.replaceStartTab(scope, blank.id, file)).toBe(true);
+    expect(useWorkbenchTabsStore.getState().scopes[scope]).toMatchObject({
+      tabs: [file],
+      activeId: file.id,
+      recent: [],
+    });
+  });
+
   it("closes adjacent views and retains exact scoped identities in recent content", () => {
     const store = useWorkbenchTabsStore.getState();
     store.open(scope, file);

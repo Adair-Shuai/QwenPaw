@@ -134,3 +134,28 @@ it("collapses a header-opened workspace to the file selected in its navigator", 
     ),
   ).toEqual({ kind: "preview", target, trigger: null });
 });
+
+it("preserves floating presentation while expanding and collapsing and docks on a normal open", () => {
+  const floating = filesDrawerReducer(CLOSED_FILES_DRAWER, {
+    type: "OPEN_PREVIEW",
+    target,
+    trigger: null,
+    presentation: "floating",
+  });
+  const expanded = filesDrawerReducer(floating, { type: "EXPAND_WORKSPACE" });
+  expect(expanded).toMatchObject({
+    kind: "workspace",
+    target,
+    presentation: "floating",
+  });
+  expect(
+    filesDrawerReducer(expanded, { type: "COLLAPSE_TO_PREVIEW" }),
+  ).toMatchObject({ kind: "preview", target, presentation: "floating" });
+  expect(
+    filesDrawerReducer(expanded, {
+      type: "OPEN_PREVIEW",
+      target,
+      trigger: null,
+    }),
+  ).toEqual({ kind: "workspace", target, trigger: null });
+});

@@ -3,14 +3,20 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import ipaddress
 import mimetypes
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
+
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from ...turn_files import get_store
+from ...services import desktop_associations, desktop_delivery
 from ...utils.io_utils import run_sync_io
 from ..agent_context import get_agent_for_request
 
@@ -156,3 +162,83 @@ async def download_turn_files(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+def _require_local_desktop(request: Request) -> None:
+    """Only the local console may request actions on this computer."""
+    try:
+        local_client = bool(
+            request.client
+            and ipaddress.ip_address(request.client.host).is_loopback,
+        )
+    except ValueError:
+        local_client = False
+    origin = request.headers.get("origin")
+    if not local_client or (
+        origin
+        and urlparse(origin).hostname not in {"localhost", "127.0.0.1", "::1"}
+    ):
+        raise HTTPException(
+            403,
+            "Desktop file actions require the local console",
+        )
+
+
+class DesktopStageRequest(BaseModel):
+    fileName: str = Field(min_length=1, max_length=240)
+    contentBase64: str = Field(max_length=44_739_244)
+
+
+class DesktopActionRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=64)
+    action: Literal["open", "reveal"]
+    applicationId: str | None = Field(default=None, max_length=32768)
+
+
+@router.get("/desktop/applications")
+async def desktop_applications(
+    request: Request,
+    session_id: str,
+    file_name: str = Query(min_length=1, max_length=240),
+) -> dict:
+    _require_local_desktop(request)
+    await _scope(request, session_id)
+    return await _read(desktop_associations.list_applications, file_name)
+
+
+@router.post("/desktop/stage")
+async def stage_desktop_file(
+    body: DesktopStageRequest,
+    request: Request,
+    session_id: str,
+) -> dict:
+    _require_local_desktop(request)
+    _, scope = await _scope(request, session_id)
+    try:
+        content = base64.b64decode(body.contentBase64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(422, "Invalid delivery bytes") from exc
+    return await _read(
+        desktop_delivery.stage_file,
+        tuple(sorted(scope.items())),
+        body.fileName,
+        content,
+    )
+
+
+@router.post("/desktop/action")
+async def desktop_file_action(
+    body: DesktopActionRequest,
+    request: Request,
+    session_id: str,
+) -> dict:
+    _require_local_desktop(request)
+    _, scope = await _scope(request, session_id)
+    await _read(
+        desktop_delivery.act_on_file,
+        tuple(sorted(scope.items())),
+        body.token,
+        body.action,
+        body.applicationId,
+    )
+    return {"ok": True}

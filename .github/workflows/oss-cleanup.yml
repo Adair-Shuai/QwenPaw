@@ -158,10 +158,12 @@ jobs:
           keys=(
             "files/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-portable.zip"
             "files/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-updater.exe"
+            "files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.dmg"
             "files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.zip"
             "files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz"
             "metadata/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-portable.zip.json"
             "metadata/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-updater.exe.json"
+            "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.dmg.json"
             "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.zip.json"
             "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz.json"
           )

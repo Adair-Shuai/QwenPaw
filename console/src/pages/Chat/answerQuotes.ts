@@ -1,9 +1,16 @@
+import { getApiBaseUrl } from "../../api/config";
 import type { FileTarget } from "../../features/files-workspace/types";
 import type { FilesWorkspaceScope } from "../../features/files-workspace/filesWorkspaceScope";
 
 type QuoteScope = Extract<FilesWorkspaceScope, { kind: "session" }>;
+export type AnswerFileReferenceSource = {
+  kind: "file-reference";
+  scope: QuoteScope;
+  target: FileTarget;
+};
 export type AnswerQuoteSource =
   | { kind: "file"; scope: QuoteScope; target: FileTarget }
+  | AnswerFileReferenceSource
   | { kind: "terminal"; scope: QuoteScope; terminalId: string; title: string };
 
 export const ANSWER_QUOTES_KEY = "qwenpaw_answer_quotes";
@@ -56,7 +63,11 @@ function parseSource(value: unknown): AnswerQuoteSource | undefined {
       typeof source.title === "string"
       ? source
       : undefined;
-  if (source.kind !== "file" || !source.target) return undefined;
+  if (
+    (source.kind !== "file" && source.kind !== "file-reference") ||
+    !source.target
+  )
+    return undefined;
   const target = source.target;
   if (
     typeof target.path !== "string" ||
@@ -85,21 +96,35 @@ function parseSource(value: unknown): AnswerQuoteSource | undefined {
     if (number !== undefined && (!Number.isSafeInteger(number) || number < 1))
       return undefined;
   }
-  if (target.artifactUrl) {
+  let artifactUrl = target.artifactUrl;
+  if (artifactUrl) {
     try {
-      const url = new URL(target.artifactUrl, window.location.origin);
-      if (
-        url.origin !== window.location.origin ||
-        !/^https?:$/.test(url.protocol)
-      )
+      const url = new URL(artifactUrl, window.location.origin);
+      if (!/^https?:$/.test(url.protocol)) return undefined;
+      if (source.kind === "file-reference") {
+        const api = new URL(getApiBaseUrl(), window.location.origin);
+        if (
+          ![window.location.origin, api.origin].includes(url.origin) ||
+          !url.pathname.startsWith("/api/")
+        )
+          return undefined;
+        // Persist the resource address without a machine's host or login token.
+        for (const key of Array.from(url.searchParams.keys())) {
+          if (!["version", "download", "session_id", "chat_id"].includes(key)) {
+            url.searchParams.delete(key);
+          }
+        }
+        artifactUrl = `${url.pathname}${url.search}`;
+      } else if (url.origin !== window.location.origin) {
         return undefined;
+      }
     } catch {
       return undefined;
     }
   }
   // Only source identity is used for navigation. Embedded media is loaded by the host.
   return {
-    kind: "file",
+    kind: source.kind,
     scope,
     target: {
       source: target.source,
@@ -108,7 +133,7 @@ function parseSource(value: unknown): AnswerQuoteSource | undefined {
       line: target.line,
       endLine: target.endLine,
       column: target.column,
-      artifactUrl: target.artifactUrl,
+      artifactUrl,
       artifact:
         typeof target.artifact?.id === "string"
           ? {
@@ -116,7 +141,17 @@ function parseSource(value: unknown): AnswerQuoteSource | undefined {
               title: target.path,
               source: "tool_call",
               mimeType: target.artifact.mimeType,
-              binaryUrl: target.artifactUrl,
+              binaryUrl: artifactUrl,
+              ...(source.kind === "file-reference" &&
+              target.artifact.meta?.turnFileArchive === true
+                ? {
+                    meta: {
+                      turnFileArchive: true,
+                      version: target.artifact.meta.version,
+                      status: target.artifact.meta.status,
+                    },
+                  }
+                : {}),
             }
           : undefined,
     },
@@ -172,6 +207,7 @@ export function addAnswerQuote(
 ): boolean {
   const current = readAnswerQuotes(scope);
   const source = parseSource(quote.source);
+  if (quote.source?.kind === "file-reference" && !source) return false;
   if (
     current.some(
       (q) =>
@@ -260,20 +296,36 @@ export function quotesFromMessage(
 }
 
 export function formatAnswerQuotes(quotes: readonly AnswerQuote[]) {
-  return (
-    (quotes.some((quote) => quote.source)
-      ? "Quoted passages from workspace and assistant replies:\n"
-      : "Quoted passages from assistant replies:\n") +
-    quotes
-      .map(
-        (q) =>
-          `[${q.messageId}]\n${q.text
-            .split("\n")
-            .map((line) => `> ${line}`)
-            .join("\n")}`,
-      )
-      .join("\n\n")
+  const references = quotes.filter(
+    (quote) => quote.source?.kind === "file-reference",
   );
+  const passages = quotes.filter(
+    (quote) => quote.source?.kind !== "file-reference",
+  );
+  const blocks: string[] = [];
+  if (references.length) {
+    blocks.push(
+      "Referenced files:\n" +
+        references.map((quote) => `- ${quote.text}`).join("\n"),
+    );
+  }
+  if (passages.length) {
+    blocks.push(
+      (passages.some((quote) => quote.source)
+        ? "Quoted passages from workspace and assistant replies:\n"
+        : "Quoted passages from assistant replies:\n") +
+        passages
+          .map(
+            (q) =>
+              `[${q.messageId}]\n${q.text
+                .split("\n")
+                .map((line) => `> ${line}`)
+                .join("\n")}`,
+          )
+          .join("\n\n"),
+    );
+  }
+  return blocks.join("\n\n");
 }
 
 /** Only remove the exact context block described by the message's own metadata. */

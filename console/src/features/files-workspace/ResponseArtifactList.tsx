@@ -4,6 +4,9 @@ import { useTranslation } from "react-i18next";
 import { chatApi } from "../../api/modules/chat";
 import FileGlyph from "./FileGlyph";
 import DeliveryFileActions from "./DeliveryFileActions";
+import InlineFileImage from "./InlineFileImage";
+import { toDisplayUrl } from "../../components/Chat/ToolCards/shared/utils";
+import { mimeFromExtension } from "../../utils/mimeForPreview";
 import type { FileTarget } from "./types";
 import {
   responseArtifactIdentity,
@@ -24,9 +27,10 @@ interface ResponseArtifact {
   path: string;
   target: FileTarget;
   toolName: string;
+  imageTarget?: FileTarget;
 }
 
-const COLLAPSED_FILES = 2;
+const COLLAPSED_FILES = 4;
 const FILE_IO_TOOLS = new Set(["appendfile", "editfile", "writefile"]);
 const TOOL_INPUT_TYPES = new Set([
   "tool_call",
@@ -185,17 +189,17 @@ function targetForPath(path: string): FileTarget | null {
  * Tool results can carry a block array. Chat history carries the same blocks
  * as a JSON string. Both forms use the DataBlock success signal.
  */
-function hasDeliveredFile(output: unknown): boolean {
+function deliveredFileBlock(output: unknown): Record<string, unknown> | null {
   let blocks = output;
   if (typeof blocks === "string") {
     try {
       blocks = JSON.parse(blocks);
     } catch {
-      return false;
+      return null;
     }
   }
-  if (!Array.isArray(blocks)) return false;
-  return blocks.some((block) => record(block)?.type === "data");
+  if (!Array.isArray(blocks)) return null;
+  return record(blocks.find((block) => record(block)?.type === "data"));
 }
 
 /** Some historical tool results wrap an Error TextBlock in a success event. */
@@ -250,8 +254,12 @@ function extractResponseArtifacts(messages: unknown): ResponseArtifact[] {
       firstString(callData, ["name"]) || firstString(item, ["name"]);
     const normalized = normalizedToolName(toolName);
 
+    const delivery =
+      normalized === SEND_FILE_TOOL
+        ? deliveredFileBlock(resultData.output)
+        : null;
     if (normalized === SEND_FILE_TOOL) {
-      if (!hasDeliveredFile(resultData.output)) continue;
+      if (!delivery) continue;
     } else if (!FILE_IO_TOOLS.has(normalized)) {
       continue;
     }
@@ -266,6 +274,18 @@ function extractResponseArtifacts(messages: unknown): ResponseArtifact[] {
     if (!target) continue;
     const name = path.replace(/\\/g, "/").split("/").pop() || "file";
     const id = responseArtifactIdentity(target);
+    const image = mimeFromExtension(name)?.startsWith("image/");
+    const source = record(delivery?.source);
+    const deliveredUrl = firstString(source ?? {}, ["url"]);
+    const data = firstString(source ?? {}, ["data"]);
+    const mime =
+      firstString(source ?? {}, ["media_type"]) || mimeFromExtension(name);
+    const imageUrl =
+      image &&
+      (deliveredUrl ||
+        (data && source?.type === "base64"
+          ? `data:${mime};base64,${data}`
+          : ""));
     artifacts.delete(id);
     artifacts.set(id, {
       id,
@@ -273,6 +293,13 @@ function extractResponseArtifacts(messages: unknown): ResponseArtifact[] {
       path,
       target,
       toolName,
+      ...(imageUrl && {
+        imageTarget: {
+          source: "attachment" as const,
+          path,
+          artifactUrl: toDisplayUrl(imageUrl),
+        },
+      }),
     });
   }
   return Array.from(artifacts.values()).reverse();
@@ -339,12 +366,13 @@ export default function ResponseArtifactList({
           const extension = artifact.name.includes(".")
             ? artifact.name.split(".").pop()?.toUpperCase()
             : undefined;
-          const preview = (trigger: HTMLElement) => {
+          const preview = (trigger: HTMLElement, presentation?: "floating") => {
             window.dispatchEvent(
               new CustomEvent("qwenpaw:open-file-preview", {
                 detail: {
-                  target: artifact.target,
+                  target: artifact.imageTarget ?? artifact.target,
                   trigger,
+                  ...(presentation ? { presentation } : {}),
                   ...(scope && {
                     agentId: scope.agentId,
                     sessionId: scope.sessionId,
@@ -355,70 +383,91 @@ export default function ResponseArtifactList({
             );
           };
           return (
-            <div key={artifact.id} className={styles.file}>
-              <button
-                key={artifact.id}
-                type="button"
-                className={styles.previewButton}
-                title={artifact.path}
-                aria-label={`${artifact.name} ${artifact.path}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  preview(event.currentTarget);
-                }}
-              >
-                <i className={styles.icon} aria-hidden="true">
-                  <FileGlyph name={artifact.name} size={27} />
-                </i>
-                <span className={styles.details}>
-                  <strong>{artifact.name}</strong>
-                  <span className={styles.meta}>
-                    <small className={styles.status} data-change={change}>
-                      {t(CHANGE_LABEL_KEY[change])}
-                    </small>
-                    {extension && (
-                      <small className={styles.fileType}>{extension}</small>
-                    )}
-                    <small className={styles.path} title={artifact.path}>
-                      {artifact.path}
-                    </small>
-                  </span>
-                </span>
-              </button>
-              <div className={styles.actions}>
-                <DeliveryFileActions
-                  name={artifact.name}
-                  target={artifact.target}
-                  scope={scope}
-                  onPreview={preview}
-                  moreActions={[
-                    {
-                      key: "legacy-location",
-                      label: t(
-                        "workspace.revealInFileManager",
-                        "在文件夹中打开",
-                      ),
-                      icon: <FolderOpen size={15} aria-hidden="true" />,
-                      onSelect: () => {
-                        window.dispatchEvent(
-                          new CustomEvent("qwenpaw:reveal-file", {
-                            detail: {
-                              target: artifact.target,
-                              ...(scope && {
-                                agentId: scope.agentId,
-                                sessionId: scope.sessionId,
-                                chatId: scope.chatId,
-                              }),
-                            },
+            <DeliveryFileActions
+              key={artifact.id}
+              compact
+              name={artifact.name}
+              target={artifact.imageTarget ?? artifact.target}
+              scope={scope}
+              onPreview={preview}
+              moreActions={[
+                {
+                  key: "legacy-location",
+                  label: t("workspace.revealInFileManager", "在文件夹中打开"),
+                  icon: <FolderOpen size={15} aria-hidden="true" />,
+                  onSelect: () => {
+                    window.dispatchEvent(
+                      new CustomEvent("qwenpaw:reveal-file", {
+                        detail: {
+                          target: artifact.target,
+                          ...(scope && {
+                            agentId: scope.agentId,
+                            sessionId: scope.sessionId,
+                            chatId: scope.chatId,
                           }),
-                        );
-                      },
-                    },
-                  ]}
-                />
-              </div>
-            </div>
+                        },
+                      }),
+                    );
+                  },
+                },
+              ]}
+            >
+              {(actions) => (
+                <div
+                  className={styles.file}
+                  onClick={(event) => {
+                    if (
+                      event.target instanceof Element &&
+                      event.currentTarget.contains(event.target) &&
+                      !event.target.closest("button, a, input, summary")
+                    )
+                      preview(event.currentTarget);
+                  }}
+                >
+                  {mimeFromExtension(artifact.name)?.startsWith("image/") && (
+                    <div className={styles.imagePreview}>
+                      <InlineFileImage
+                        thumbnail
+                        target={artifact.imageTarget ?? artifact.target}
+                        alt={artifact.name}
+                        scope={scope}
+                      />
+                    </div>
+                  )}
+                  <button
+                    key={artifact.id}
+                    type="button"
+                    className={styles.previewButton}
+                    title={artifact.path}
+                    aria-label={`${artifact.name} ${artifact.path}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      preview(event.currentTarget);
+                    }}
+                  >
+                    <i className={styles.icon} aria-hidden="true">
+                      <FileGlyph name={artifact.name} size={20} />
+                    </i>
+                    <span className={styles.details}>
+                      <strong>{artifact.name}</strong>
+                      <span className={styles.meta}>
+                        <small className={styles.status} data-change={change}>
+                          {t(CHANGE_LABEL_KEY[change])}
+                        </small>
+                        {extension && (
+                          <small className={styles.fileType}>{extension}</small>
+                        )}
+                        <small className={styles.path} title={artifact.path}>
+                          {artifact.path}
+                        </small>
+                      </span>
+                    </span>
+                  </button>
+                  <div className={styles.actions}>{actions}</div>
+                </div>
+              )}
+            </DeliveryFileActions>
           );
         })}
       </div>

@@ -24,8 +24,17 @@ export type PluginType =
 /**
  * A single plugin record returned by `GET /api/plugins`.
  */
+export interface PendingPluginUpdate {
+  version: string;
+  source: string;
+  sha256?: string;
+  channel?: string;
+  confirmation: "dependencies";
+}
+
 export interface PluginInfo {
   installation_origin?: InstallationOrigin | null;
+  pending_update?: PendingPluginUpdate | null;
   id: string;
   name: string;
   version: string;
@@ -508,6 +517,7 @@ export interface RuntimePluginReplaceResult {
   status?: string;
   diagnostics?: string[];
   backup_path?: string;
+  queued?: boolean;
 }
 
 export async function replaceInstalledPlugin(options: {
@@ -515,6 +525,7 @@ export async function replaceInstalledPlugin(options: {
   pluginId: string;
   version?: string;
   sha256?: string;
+  deferIfNeeded?: boolean;
 }): Promise<RuntimePluginReplaceResult> {
   const response = await requestWithPluginBusyConfirmation(
     (interruptTasks) =>
@@ -529,6 +540,7 @@ export async function replaceInstalledPlugin(options: {
           plugin_id: options.pluginId,
           version: options.version,
           sha256: options.sha256,
+          ...(options.deferIfNeeded ? { defer_if_needed: true } : {}),
           ...(interruptTasks ? { interrupt_tasks: true } : {}),
         }),
       }),
@@ -568,8 +580,8 @@ export type UGSciUpgradeResult =
 /**
  * Upgrade an installed UGSci plugin/app.
  *
- * Primary path: the signed component updater (queued, applied at the next
- * safe restart). Fallback: the sha256-verified `/plugins/replace` hot swap,
+ * Primary path: signed hot loading with downloaded restart fallback.
+ * Fallback: the sha256-verified `/plugins/replace` hot swap,
  * used only when the signed path says the component is not managed (HTTP
  * 409). Network/5xx errors and an up-to-date signed answer do not fall
  * through to hot replace.
@@ -612,8 +624,31 @@ export async function upgradeInstalledUGSciPlugin(
   entry: UGSciUpgradeSource,
 ): Promise<UGSciUpgradeResult> {
   try {
-    const result = await componentsApi.queueComponentUpdate(entry.plugin_id);
+    const result = await componentsApi.queueComponentUpdate(
+      entry.plugin_id,
+      true,
+    );
+    if (result.dependency_operation) {
+      throw new PluginApiError(
+        result.dependency_operation.message ||
+          "Shared dependencies require confirmation",
+        409,
+        {
+          code: "DEPENDENCY_UPGRADE_REQUIRED",
+          operation: result.dependency_operation,
+        },
+      );
+    }
     if (result.queued) return { method: "queued" };
+    if (result.updated && result.version) {
+      notifyPluginChange();
+      return {
+        method: "replaced",
+        version: result.version,
+        loaded: result.loaded,
+        restart_required: result.restart_required,
+      };
+    }
     // Signed path answered; do not hot-replace just because the catalog is newer.
     return { method: "up-to-date" };
   } catch (error) {
@@ -632,7 +667,9 @@ export async function upgradeInstalledUGSciPlugin(
     pluginId: entry.plugin_id,
     version: entry.version,
     sha256: requireUGSciUpgradeDigest(entry.sha256),
+    deferIfNeeded: true,
   });
+  if (replaced.queued) return { method: "queued" };
   return {
     method: "replaced",
     version: replaced.version,
@@ -660,7 +697,9 @@ export async function upgradeInstalledPlugin(
     source: update.source,
     version: update.version,
     sha256: update.sha256,
+    deferIfNeeded: true,
   });
+  if (replaced.queued) return { method: "queued" };
   return {
     method: "replaced",
     version: replaced.version,

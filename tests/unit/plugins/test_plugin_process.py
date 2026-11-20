@@ -1505,6 +1505,130 @@ def test_dependency_preparation_rejects_protected_environment(
     assert _inventory(tmp_path) == before
 
 
+@pytest.mark.parametrize(
+    ("host_version", "xml_requirement"),
+    [
+        ("6.1.1", "lxml>=3.1.0"),
+        ("6.1.1", "lxml<6.1.2"),
+        ("6.1.3.0", "lxml==6.1.3"),
+    ],
+)
+def test_dependency_resolution_reuses_consumer_bundled_provider(
+    tmp_path,
+    monkeypatch,
+    host_version,
+    xml_requirement,
+):
+    """A separate installer runtime must not choose the host's XML version."""
+    from qwenpaw.plugins.dependency_upgrade import resolution_constraints
+
+    wheels = tmp_path / "available-wheels"
+    host_site, runtime_site, target = (
+        tmp_path / name for name in ("host-site", "runtime-site", "target")
+    )
+    host_wheel = _local_dependency_wheel(
+        wheels,
+        "lxml",
+        host_version,
+        {"lxml/__init__.py": b"VALUE = 'host XML'\n"},
+    )
+    runtime_wheel = _local_dependency_wheel(
+        wheels,
+        "lxml",
+        "6.1.3",
+        {"lxml/__init__.py": b"VALUE = 'installer XML'\n"},
+    )
+    # Wheel filenames can normalize equivalent versions independently of
+    # installed METADATA, as happens across package managers.
+    for wheel, site in (
+        (host_wheel, host_site),
+        (runtime_wheel, runtime_site),
+    ):
+        with zipfile.ZipFile(wheel) as archive:
+            archive.extractall(site)
+    if host_version == "6.1.3.0":
+        host_wheel.unlink()
+    _local_dependency_wheel(
+        wheels,
+        "docxtpl",
+        "0.20.2",
+        {"docxtpl/__init__.py": b"import lxml\n"},
+        requires=("lxml>=3.1.0",),
+    )
+    certifi = local_certifi_wheel(wheels)
+    with zipfile.ZipFile(certifi) as archive:
+        archive.extractall(host_site)
+    target.mkdir()
+    snapshot = DependencySnapshot(
+        sys.executable,
+        sys.prefix,
+        tuple(map(str, (host_site, target))),
+        default_environment(),
+        ("py3-none-any",),
+        _installed_metadata((host_site,))[0],
+        dependency_sites=tuple(map(str, (host_site, target))),
+    )
+    context = DependencyEnvironmentContext(
+        sys.executable,
+        ROOT / "src",
+        (runtime_site, target),
+        target,
+        (runtime_site,),
+    )
+    operation = tmp_path / "operations" / "current"
+    operation.mkdir(parents=True)
+    requirements = tmp_path / "requirements.txt"
+    goals = ("docxtpl>=0.20,<0.21", xml_requirement)
+    requirements.write_text("\n".join(goals) + "\n", encoding="utf-8")
+    before = {site: _inventory(site) for site in (host_site, runtime_site)}
+    for key, value in {
+        "PIP_NO_INDEX": "1",
+        "PIP_FIND_LINKS": str(wheels),
+        "PIP_CACHE_DIR": str(tmp_path / "pip-cache"),
+    }.items():
+        monkeypatch.setenv(key, value)
+    _, command = DependencyUpgradeManager._prepare_resolution(
+        operation,
+        snapshot,
+        goals,
+        requirements,
+        context,
+    )
+    constraints = resolution_constraints(
+        snapshot,
+        goals,
+        immutable=context.immutable_providers(),
+    )
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    (
+        changed,
+        changes,
+        inventory,
+        _payload,
+    ) = DependencyUpgradeManager._prepare_payload(
+        operation,
+        snapshot,
+        goals,
+        target,
+        context,
+    )
+    assert set(changed) == {"docxtpl"}
+    assert [row["name"] for row in changes] == ["docxtpl"]
+    assert inventory["lxml"] == snapshot.distributions["lxml"]
+    assert f"lxml=={host_version}\n" in constraints
+    assert f"lxml=={host_version}\n" in (
+        operation / "required-constraints.txt"
+    ).read_text(encoding="utf-8")
+    assert {site: _inventory(site) for site in before} == before
+
+
 @pytest.mark.parametrize("scripts", ["bin", "Scripts"])
 def test_overlay_rejects_record_outside_target(
     tmp_path,

@@ -8,6 +8,8 @@ import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/common_setup";
 import SettingsCenter from "@/pages/SettingsCenter";
+import DualSidebarNavigation from "@/layouts/DualSidebarNavigation";
+import { sidebarDensityPreference } from "@/utils/sidebarDensityPreference";
 import { menuRegistry, routeRegistry } from "./registry/store";
 
 vi.mock("@/plugins/PluginContext", () => ({
@@ -68,6 +70,7 @@ describe.each([
       value: {
         host: {
           React,
+          sidebarDensity: sidebarDensityPreference,
           antd: { ...antd, message: feedback },
           antdIcons: {},
           getApiUrl: (value: string) => `/api${value}`,
@@ -145,6 +148,63 @@ describe.each([
     expect(
       await screen.findByRole("switch", { name: "启用 GenUI" }),
     ).not.toBeChecked();
+  });
+
+  it("changes sidebar density from packaged settings without remounting navigation", async () => {
+    await loadPlugin();
+    const renderSettings = () =>
+      renderWithProviders(
+        <>
+          <SettingsCenter />
+          <DualSidebarNavigation
+            entries={[]}
+            selectedKey="core.chat"
+            footer={<button>Account</button>}
+            onHome={vi.fn()}
+            onNavigate={vi.fn()}
+            onSettings={vi.fn()}
+            inboxIcon={null}
+          >
+            {null}
+          </DualSidebarNavigation>
+        </>,
+        { initialEntries: ["/settings/ugsci"] },
+      );
+    const view = renderSettings();
+    const navigation = screen.getByRole("navigation", {
+      name: "Feature navigation",
+    });
+    const account = screen.getByRole("button", {
+      name: "Account",
+    });
+    expect(navigation).toHaveAttribute("data-sidebar-density", "medium");
+    expect(screen.getByRole("radio", { name: "中等" })).toBeChecked();
+    for (const [label, value] of [
+      ["宽松", "comfortable"],
+      ["中等", "medium"],
+      ["紧凑", "compact"],
+    ]) {
+      await userEvent.click(
+        screen.getByRole("radio", { name: label }).closest("label")!,
+      );
+      expect(navigation).toHaveAttribute("data-sidebar-density", value);
+      expect(localStorage.getItem("ugsci_sidebar_density")).toBe(value);
+      expect(screen.getByRole("button", { name: "Account" })).toBe(account);
+    }
+    localStorage.setItem("ugsci_sidebar_density", "comfortable");
+    act(() =>
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "ugsci_sidebar_density" }),
+      ),
+    );
+    expect(screen.getByRole("radio", { name: "宽松" })).toBeChecked();
+    expect(navigation).toHaveAttribute("data-sidebar-density", "comfortable");
+    view.unmount();
+    renderSettings();
+    expect(screen.getByRole("radio", { name: "宽松" })).toBeChecked();
+    expect(
+      screen.getByRole("navigation", { name: "Feature navigation" }),
+    ).toHaveAttribute("data-sidebar-density", "comfortable");
   });
 
   it("redirects the old GenUI address into UGSci settings", async () => {

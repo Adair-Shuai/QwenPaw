@@ -1,6 +1,10 @@
 //! Windows Shell associations. No command-line templates or registry writes.
 
-use std::{mem::size_of, path::Path};
+use std::{
+    mem::size_of,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use windows::core::{w, HSTRING, PCWSTR, PWSTR};
@@ -28,6 +32,77 @@ use windows::Win32::{
 use super::{DeliveryApplication, DeliveryApplications};
 
 const SYSTEM_DEFAULT: &str = "system-default";
+type ScriptEditor = (
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+    &'static str,
+);
+const SCRIPT_EDITORS: [ScriptEditor; 3] = [
+    (
+        "editor:vscode",
+        "Visual Studio Code",
+        Some("Microsoft VS Code"),
+        "Code.exe",
+    ),
+    ("editor:cursor", "Cursor", Some("cursor"), "Cursor.exe"),
+    ("editor:notepad", "Notepad", None, "notepad.exe"),
+];
+
+fn script_editor_path(folder: Option<&str>, executable: &str) -> Option<PathBuf> {
+    let roots = match folder {
+        Some(folder) => vec![
+            ("LOCALAPPDATA", Path::new("Programs").join(folder)),
+            ("ProgramFiles", PathBuf::from(folder)),
+            ("ProgramFiles(x86)", PathBuf::from(folder)),
+            ("ProgramW6432", PathBuf::from(folder)),
+        ],
+        None => vec![("SystemRoot", PathBuf::from("System32"))],
+    };
+    roots.into_iter().find_map(|(variable, directory)| {
+        let root = PathBuf::from(std::env::var_os(variable)?);
+        if !root.is_absolute() {
+            return None;
+        }
+        let candidate = root.join(directory).join(executable);
+        candidate.is_file().then_some(candidate)
+    })
+}
+
+pub(super) fn script_editor_applications(extension: &str) -> Vec<DeliveryApplication> {
+    let extension = extension.to_owned();
+    let default_executable =
+        on_shell_thread(move || Ok(association(&extension, ASSOCSTR_EXECUTABLE)))
+            .ok()
+            .flatten();
+    SCRIPT_EDITORS
+        .iter()
+        .filter_map(|&(id, name, folder, executable)| {
+            let path = script_editor_path(folder, executable)?;
+            Some(DeliveryApplication {
+                id: id.into(),
+                name: name.into(),
+                icon_data_url: path.to_str().and_then(|path| icon_data_url(path, 0)),
+                is_default: default_executable
+                    .as_ref()
+                    .is_some_and(|default| default.eq_ignore_ascii_case(&path.to_string_lossy())),
+            })
+        })
+        .collect()
+}
+
+pub(super) fn open_script_in_editor(path: &Path, application_id: &str) -> Result<(), String> {
+    let executable = SCRIPT_EDITORS
+        .iter()
+        .find(|editor| editor.0 == application_id)
+        .and_then(|&(_, _, folder, executable)| script_editor_path(folder, executable))
+        .ok_or("The selected script editor is unavailable")?;
+    Command::new(executable)
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| format!("The selected editor could not open this file: {err}"))
+}
 
 struct ComApartment;
 impl ComApartment {
@@ -221,6 +296,7 @@ fn applications_in_apartment(extension: &str) -> Result<DeliveryApplications, St
         applications,
         can_open_default,
         can_choose_application: true,
+        editor_only: false,
     })
 }
 
@@ -244,9 +320,16 @@ fn open_in_apartment(
         // Re-enumerate before invocation: arbitrary paths/commands supplied by
         // a webview cannot be used as application ids, and uninstall races fail.
         for handler in handlers(extension)? {
-            let name = unsafe { handler.GetName() }
+            let name = match unsafe { handler.GetName() }
                 .map_err(|err| err.to_string())
-                .and_then(owned_shell_string)?;
+                .and_then(owned_shell_string)
+            {
+                Ok(value) if !value.is_empty() => value,
+                // Discovery omits broken registrations too. They must not
+                // prevent matching another installed application or rejecting
+                // an unknown id without ever invoking a Shell handler.
+                _ => continue,
+            };
             if name == application_id {
                 let item: IShellItem =
                     unsafe { SHCreateItemFromParsingName(&HSTRING::from(path.as_os_str()), None) }
@@ -458,13 +541,13 @@ mod tests {
                 assert!(icon.starts_with("data:image/x-icon;base64,"));
             }
         }
-        assert!(open(
+        let error = open(
             Path::new("C:\\not-used.txt"),
             ".txt",
-            Some("not-a-registered-application")
+            Some("not-a-registered-application"),
         )
-        .unwrap_err()
-        .contains("no longer available"));
+        .unwrap_err();
+        assert!(error.contains("no longer available"), "{error}");
         let unknown = applications(".ugsci-no-association-test-6eec15").unwrap();
         assert!(!unknown.can_open_default);
         assert!(open(

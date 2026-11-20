@@ -64,6 +64,8 @@
   }
 }
 .morePanel {
+  // Initial dialog focus stays on the panel. Buttons retain focus-visible rings.
+  outline: none;
   width: min(320px, calc(100vw - 36px));
   max-height: min(540px, 70dvh);
   overflow-y: auto;
@@ -107,5 +109,38 @@
   .navigation > button,
   .morePanel button {
     min-height: 44px;
+  }
+}
+.entry {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: 7px;
+  &:hover,
+  &:focus-within {
+    background: var(--app-fill);
+    .pin {
+      opacity: 1;
+    }
+  }
+  > button:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+  .pin {
+    flex: 0 0 28px;
+    width: 28px;
+    min-height: 30px;
+    padding: 6px;
+    opacity: 0;
+    > svg {
+      width: 14px;
+      height: 14px;
+    }
+  }
+}
+@media (hover: none) {
+  .entry .pin {
+    opacity: 1;
   }
 }

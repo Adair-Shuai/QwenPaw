@@ -11,16 +11,12 @@ import {
   fetchDomainEngines,
   fetchBuiltinToolStatuses,
   fetchMcpProviderStatuses,
-  fetchNeqSimInstallTask,
-  fetchNeqSimRuntime,
-  installNeqSimRuntime,
   fetchEngineRuntimePlan,
   type McpProviderStatus,
 } from "./domainEngineApi";
 import { buildEngineView } from "./runtimeStatus";
 import type {
   DomainEngineView,
-  NeqSimInstallTask,
   EngineRuntimePlan,
   RuntimeInstallTask,
 } from "./types";
@@ -30,11 +26,6 @@ import { BUSINESS_GROUPS, businessGroupFor } from "./presentationGroups";
 import { getOperationPresentation } from "./OperationList";
 import { ENGINE_PRESENTATIONS } from "./operationPresentation";
 import { RuntimeInstallDialog } from "./RuntimeInstallDialog";
-
-function isMissingInstallTaskError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return /Install task not found|HTTP 404/i.test(error.message);
-}
 
 export function DomainEngineSection({
   onNavigateToMcp,
@@ -70,8 +61,6 @@ export function DomainEngineSection({
   const [collapsedGroups, setCollapsedGroups] = useState<
     Record<string, boolean>
   >({ general: true });
-  const [neqsimInstallState, setNeqsimInstallState] =
-    useState<NeqSimInstallTask | null>(null);
   const [runtimeDialogView, setRuntimeDialogView] =
     useState<DomainEngineView | null>(null);
   const [runtimePlan, setRuntimePlan] = useState<EngineRuntimePlan | null>(
@@ -89,14 +78,12 @@ export function DomainEngineSection({
   agentIdRef.current = agentId;
   const activeViewRef = useRef<DomainEngineView | null>(activeView);
   activeViewRef.current = activeView;
-  const installPollGenerationRef = useRef(0);
   const runtimePlanGenerationRef = useRef(0);
 
   // Let the backend installation continue, but stop this component's polling
   // and state updates after the user navigates away.
   useEffect(
     () => () => {
-      installPollGenerationRef.current += 1;
       runtimePlanGenerationRef.current += 1;
     },
     [],
@@ -263,104 +250,23 @@ export function DomainEngineSection({
     onNavigateToSkills?.();
   }, [onNavigateToSkills]);
 
-  const handleInstallNeqsim = useCallback(async () => {
-    if (
-      neqsimInstallState?.status === "queued" ||
-      neqsimInstallState?.status === "running"
-    )
-      return;
-    const pollGeneration = ++installPollGenerationRef.current;
-    const isCurrentPoll = () =>
-      pollGeneration === installPollGenerationRef.current;
+  const handleRuntimeInstall = useCallback(async (view: DomainEngineView) => {
+    setRuntimeDialogView(view);
+    setRuntimePlan(null);
+    setRuntimeTask(null);
+    setRuntimeError("");
+    setRuntimeDialogOpen(true);
+    const generation = ++runtimePlanGenerationRef.current;
     try {
-      let task = await installNeqSimRuntime();
-      if (!isCurrentPoll()) return;
-      setNeqsimInstallState(task);
-      while (task.status === "queued" || task.status === "running") {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        if (!isCurrentPoll()) return;
-        try {
-          task = await fetchNeqSimInstallTask(task.id);
-        } catch (pollError: unknown) {
-          if (!isMissingInstallTaskError(pollError)) throw pollError;
-          const runtime = await fetchNeqSimRuntime(true);
-          if (!isCurrentPoll()) return;
-          if (runtime.ready) {
-            task = {
-              ...task,
-              status: "completed",
-              progress: 100,
-              message: "后端重启后已恢复 NeqSim 运行环境状态",
-              error: "",
-              runtime,
-              recovered: true,
-            };
-          } else {
-            task = {
-              ...task,
-              status: "failed",
-              message: "安装进程因后端重启中断",
-              error: "后端重启后未发现完整的 NeqSim 运行环境，请重新安装",
-              runtime,
-              recovered: true,
-            };
-          }
-        }
-        if (!isCurrentPoll()) return;
-        setNeqsimInstallState(task);
-      }
-      if (!isCurrentPoll()) return;
-      if (task.status === "completed") {
-        if (task.warning) {
-          antdMsg.warning(task.warning);
-        } else {
-          antdMsg.success("NeqSim 运行环境已安装并启用");
-        }
-        await loadEngines(true, true);
-      } else {
-        antdMsg.error(task.error || "NeqSim 安装失败");
-      }
+      const plan = await fetchEngineRuntimePlan(view.definition.id);
+      if (generation !== runtimePlanGenerationRef.current) return;
+      setRuntimePlan(plan);
+      setRuntimeTask(plan.active_task);
     } catch (err: unknown) {
-      if (!isCurrentPoll()) return;
-      antdMsg.error(err instanceof Error ? err.message : "NeqSim 安装失败");
+      if (generation !== runtimePlanGenerationRef.current) return;
+      setRuntimeError(err instanceof Error ? err.message : "读取运行环境失败");
     }
-  }, [loadEngines, neqsimInstallState]);
-
-  const handleRuntimeInstall = useCallback(
-    async (view: DomainEngineView) => {
-      if (view.definition.id === "neqsim") {
-        if (
-          neqsimInstallState?.status === "queued" ||
-          neqsimInstallState?.status === "running"
-        ) {
-          activeViewRef.current = view;
-          setActiveView(view);
-          setDrawerOpen(true);
-        } else {
-          void handleInstallNeqsim();
-        }
-        return;
-      }
-      setRuntimeDialogView(view);
-      setRuntimePlan(null);
-      setRuntimeTask(null);
-      setRuntimeError("");
-      setRuntimeDialogOpen(true);
-      const generation = ++runtimePlanGenerationRef.current;
-      try {
-        const plan = await fetchEngineRuntimePlan(view.definition.id);
-        if (generation !== runtimePlanGenerationRef.current) return;
-        setRuntimePlan(plan);
-        setRuntimeTask(plan.active_task);
-      } catch (err: unknown) {
-        if (generation !== runtimePlanGenerationRef.current) return;
-        setRuntimeError(
-          err instanceof Error ? err.message : "读取运行环境失败",
-        );
-      }
-    },
-    [handleInstallNeqsim, neqsimInstallState],
-  );
+  }, []);
 
   const refreshRuntimePlan = useCallback(
     async (message?: string) => {
@@ -518,20 +424,8 @@ export function DomainEngineSection({
                           onConfigure: () => configureEngine(view),
                           onRefresh: () => void loadEngines(true),
                           installTask:
-                            view.definition.id === "neqsim"
-                              ? neqsimInstallState
-                                ? {
-                                    id: neqsimInstallState.id,
-                                    engine_id: "neqsim",
-                                    status: neqsimInstallState.status,
-                                    progress: neqsimInstallState.progress,
-                                    message: neqsimInstallState.message,
-                                    error: neqsimInstallState.error,
-                                    warning: neqsimInstallState.warning,
-                                  }
-                                : null
-                              : runtimeDialogView?.definition.id ===
-                                view.definition.id
+                            runtimeDialogView?.definition.id ===
+                            view.definition.id
                               ? runtimeTask
                               : null,
                         }),
@@ -549,8 +443,13 @@ export function DomainEngineSection({
       onNavigateToMcp: handleNavigateToMcp,
       onNavigateToTools: handleNavigateToTools,
       onNavigateToSkills: handleNavigateToSkills,
-      onInstallNeqsim: handleInstallNeqsim,
-      neqsimInstallState,
+      onInstallNeqsim: () => {
+        if (activeView) void handleRuntimeInstall(activeView);
+      },
+      neqsimInstallState:
+        runtimeTask?.engine_id === "neqsim"
+          ? { ...runtimeTask, progress: runtimeTask.progress ?? 0 }
+          : null,
     }),
     React.createElement(RuntimeInstallDialog, {
       open: runtimeDialogOpen,

@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider, useTheme } from "../contexts/ThemeContext";
 import {
   PAGE_STYLES,
@@ -14,6 +14,49 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 
 describe("independent appearance preferences", () => {
   beforeEach(() => localStorage.clear());
+
+  it("starts a fresh installation in the light Yanjing dual-sidebar appearance", () => {
+    const { result } = renderHook(() => useTheme(), { wrapper });
+    expect(result.current.pageStyle).toBe("dual-sidebar");
+    expect(result.current.interfaceStyle).toBe("warm-minimal");
+    expect(result.current.themeMode).toBe("light");
+    expect(result.current.isDark).toBe(false);
+    expect(document.documentElement).toHaveAttribute(
+      "data-page-style",
+      "dual-sidebar",
+    );
+    expect(document.documentElement).toHaveAttribute(
+      "data-interface-style",
+      "warm-minimal",
+    );
+    expect(
+      document.documentElement.style.getPropertyValue("--app-shell-bg"),
+    ).toBe("#f5f5f3");
+  });
+  it("restores an existing classic appearance and dark mode after the default changes", () => {
+    localStorage.setItem(PAGE_STYLE_STORAGE_KEY, "classic");
+    localStorage.setItem("qwenpaw-interface-style", "classic");
+    localStorage.setItem("qwenpaw-theme", "dark");
+    const { result } = renderHook(() => useTheme(), { wrapper });
+    expect(result.current.pageStyle).toBe("classic");
+    expect(result.current.interfaceStyle).toBe("classic");
+    expect(result.current.isDark).toBe(true);
+  });
+  it("uses the installed Yanjing defaults when local storage is unavailable", () => {
+    const read = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("Storage unavailable");
+      });
+    try {
+      const { result } = renderHook(() => useTheme(), { wrapper });
+      expect(result.current.pageStyle).toBe("dual-sidebar");
+      expect(result.current.interfaceStyle).toBe("warm-minimal");
+      expect(result.current.isDark).toBe(false);
+    } finally {
+      read.mockRestore();
+    }
+  });
 
   it("keeps the theme, layout and light-dark mode independent across switches and reloads", () => {
     localStorage.setItem("qwenpaw-interface-style", "warm-minimal");
@@ -61,19 +104,19 @@ describe("independent appearance preferences", () => {
       "deepseek",
     );
     expect(PAGE_STYLES.map((style) => style.label)).toEqual([
+      "UGSci Yanjing layout",
       "Original layout",
       "Simple style",
-      "Dual sidebar",
     ]);
     expect(parsePageStyle("deepseek")).toBe("deepseek");
-    expect(parsePageStyle("unknown")).toBe("classic");
+    expect(parsePageStyle("unknown")).toBe("dual-sidebar");
   });
 
   it("synchronizes layout between windows without changing the color theme", () => {
     localStorage.setItem("qwenpaw-interface-style", "cool-workspace");
     localStorage.setItem(PAGE_STYLE_STORAGE_KEY, "invalid");
     const { result } = renderHook(() => useTheme(), { wrapper });
-    expect(result.current.pageStyle).toBe("classic");
+    expect(result.current.pageStyle).toBe("dual-sidebar");
     act(() =>
       window.dispatchEvent(
         new StorageEvent("storage", {
@@ -85,7 +128,7 @@ describe("independent appearance preferences", () => {
     expect(result.current.pageStyle).toBe("deepseek");
     expect(result.current.interfaceStyle).toBe("cool-workspace");
     act(() => window.dispatchEvent(new StorageEvent("storage", { key: null })));
-    expect(result.current.pageStyle).toBe("classic");
+    expect(result.current.pageStyle).toBe("dual-sidebar");
   });
 
   it("persists Dual sidebar independently from the palette and restores it after reload", () => {

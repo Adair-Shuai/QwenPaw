@@ -1,4 +1,5 @@
 .ff-editor {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -20,14 +21,23 @@
 .ff-diagnostic:not(:disabled):hover {
   text-decoration: underline;
 }
-.ff-diagnostic:disabled { cursor: default; opacity: 1; }
-.ff-diagnostic:focus-visible { outline: 2px solid var(--ant-color-primary, #2563eb); }
+.ff-diagnostic:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.ff-diagnostic:focus-visible {
+  outline: 2px solid var(--ant-color-primary, #2563eb);
+}
 .ff-bindings {
   margin-top: 20px;
   padding-top: 12px;
   border-top: 1px solid var(--ant-color-border-secondary, #ddd);
 }
-.ff-binding-row { display: grid; gap: 5px; margin: 12px 0; }
+.ff-binding-row {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+}
 .ff-binding-row select {
   width: 100%;
   min-width: 0;
@@ -37,7 +47,12 @@
   background: var(--ant-color-bg-container, #fff);
   color: inherit;
 }
-.ff-errors { max-height: 150px; overflow: auto; margin: 0; padding-left: 20px; }
+.ff-errors {
+  max-height: 150px;
+  overflow: auto;
+  margin: 0;
+  padding-left: 20px;
+}
 .ff-center {
   height: 100%;
   min-height: 340px;
@@ -84,6 +99,564 @@
   min-height: 0;
   position: relative;
 }
+.ff-assistant {
+  position: relative;
+  flex-shrink: 0;
+  min-width: 320px;
+  max-width: 50%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid
+    var(--app-border, var(--ant-color-border-secondary, #e5e5e5));
+  background: var(--app-surface, var(--ant-color-bg-container, #fff));
+  color: var(--app-text, var(--ant-color-text, #242424));
+  font-size: var(--app-font-secondary, 14px);
+  line-height: 1.65;
+  z-index: 12;
+}
+.ff-assistant-resize {
+  position: absolute;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+.ff-assistant-head {
+  min-height: 56px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ff-assistant-title,
+.ff-assistant-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.ff-assistant-title {
+  min-width: 0;
+}
+.ff-assistant-title strong {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ff-assistant-title > svg {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+}
+.ff-assistant-actions {
+  flex-wrap: wrap;
+}
+.ff-assistant-icon,
+.ff-assistant-attach,
+.ff-assistant-tabs button,
+.ff-assistant-suggestions button,
+.ff-assistant-reference button,
+.ff-assistant-reference-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-text-secondary, var(--ant-color-text-secondary, #737373));
+  font: inherit;
+  cursor: pointer;
+}
+.ff-assistant-icon {
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+}
+.ff-assistant button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.ff-assistant-icon:not(:disabled):hover,
+.ff-assistant-attach:not(:disabled):hover,
+.ff-assistant-tabs button:hover,
+.ff-assistant-reference button:hover,
+.ff-assistant-reference-more:hover,
+.ff-assistant-suggestions button:hover {
+  color: var(--app-text, var(--ant-color-text, #242424));
+  background: var(--app-fill, var(--ant-color-fill-tertiary, #f0f0f0));
+}
+.ff-assistant button:focus-visible,
+.ff-assistant-resize:focus-visible {
+  outline: 2px solid var(--app-focus-ring, var(--ant-color-primary, #777));
+  outline-offset: 2px;
+}
+.ff-assistant-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid
+    var(--app-border-subtle, var(--ant-color-border-secondary, #ededed));
+  margin: 0 14px;
+  padding: 0 0 9px;
+}
+.ff-assistant-tabs button {
+  min-height: 29px;
+  padding: 3px 12px;
+  font-size: var(--app-font-caption, 12px);
+}
+.ff-assistant-tabs button[aria-pressed="true"] {
+  color: var(--app-text, var(--ant-color-text, #242424));
+  background: var(--app-fill, var(--ant-color-fill-tertiary, #f0f0f0));
+}
+.ff-assistant-log {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-scrollbar-thumb, #c9c9c9) transparent;
+}
+.ff-assistant-history {
+  gap: 5px;
+}
+.ff-assistant-history > button {
+  flex-shrink: 0;
+  text-align: left;
+  justify-content: flex-start;
+  white-space: normal;
+  height: auto;
+  padding: 10px 12px;
+}
+.ff-assistant-history > button[aria-current="true"] {
+  background: var(--app-fill, var(--ant-color-fill-tertiary, #f0f0f0));
+}
+.ff-assistant-empty {
+  flex: 1;
+  min-height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 0;
+  color: var(--app-text-secondary, var(--ant-color-text-secondary, #737373));
+}
+.ff-assistant-empty > svg {
+  width: 30px;
+  height: 30px;
+}
+.ff-assistant-empty h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--app-text, var(--ant-color-text, #242424));
+}
+.ff-assistant-suggestions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.ff-assistant-suggestions button {
+  font-size: var(--app-font-caption, 12px);
+  border: 1px solid
+    var(--app-border-subtle, var(--ant-color-border-secondary, #e5e5e5));
+  padding: 6px 10px;
+}
+.ff-assistant-turn {
+  display: grid;
+  gap: 18px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.ff-assistant-user {
+  justify-self: end;
+  max-width: 94%;
+  min-width: 0;
+  background: var(
+    --app-surface-subtle,
+    var(--ant-color-fill-tertiary, #f4f4f4)
+  );
+  padding: 10px 13px;
+  border-radius: 16px;
+}
+.ff-assistant-user > p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.ff-assistant-user .ff-assistant-references {
+  padding: 0 0 7px;
+}
+.ff-assistant-reply {
+  min-width: 0;
+  line-height: 1.75;
+}
+.ff-assistant-reply > :first-child {
+  margin-top: 0;
+}
+.ff-assistant-reply > :last-child {
+  margin-bottom: 0;
+}
+.ff-assistant-plain {
+  white-space: pre-wrap;
+}
+.ff-assistant-reply p,
+.ff-assistant-reply ul,
+.ff-assistant-reply ol {
+  margin: 0 0 12px;
+}
+.ff-assistant-reply ul,
+.ff-assistant-reply ol {
+  padding-left: 22px;
+}
+.ff-assistant-reply h1,
+.ff-assistant-reply h2,
+.ff-assistant-reply h3 {
+  margin: 20px 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.ff-assistant-reply a {
+  color: var(--app-accent-text, var(--ant-color-link, #3268cf));
+}
+.ff-assistant-reply pre {
+  overflow: auto;
+  max-width: 100%;
+  border: 1px solid
+    var(--app-border-subtle, var(--ant-color-border-secondary, #e5e5e5));
+  border-radius: 10px;
+  background: var(--app-bg, var(--ant-color-fill-quaternary, #f7f7f7));
+  padding: 12px;
+  font-size: var(--app-font-caption, 12px);
+}
+.ff-assistant-reply code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+.ff-assistant-reply :not(pre) > code {
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--app-fill, var(--ant-color-fill-tertiary, #f0f0f0));
+}
+.ff-assistant-reply blockquote {
+  margin: 12px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--app-border, var(--ant-color-border, #ddd));
+  color: var(--app-text-secondary, var(--ant-color-text-secondary, #737373));
+}
+.ff-assistant-reply table {
+  display: block;
+  overflow: auto;
+  border-collapse: collapse;
+  max-width: 100%;
+  font-size: var(--app-font-caption, 12px);
+}
+.ff-assistant-reply th,
+.ff-assistant-reply td {
+  border: 1px solid var(--app-border, var(--ant-color-border, #ddd));
+  padding: 6px 9px;
+}
+.ff-assistant-card {
+  padding: 12px;
+  border: 1px solid
+    var(--app-border-subtle, var(--ant-color-border-secondary, #e5e5e5));
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.ff-assistant-card pre {
+  max-width: 100%;
+  overflow: auto;
+}
+.ff-assistant-card summary {
+  cursor: pointer;
+  font-size: var(--app-font-caption, 12px);
+  color: var(--app-text-secondary, var(--ant-color-text-secondary, #737373));
+}
+.ff-assistant-sessionbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px 0;
+  flex-shrink: 0;
+}
+.ff-assistant-sessionbar > .ff-assistant-actions {
+  justify-self: end;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.ff-assistant-session-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 3px;
+  min-width: 0;
+  scrollbar-width: thin;
+}
+.ff-assistant-session-tabs > button {
+  appearance: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 30px;
+  height: 30px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-secondary, var(--ant-color-text-secondary, #737373));
+  font: inherit;
+  font-size: var(--app-font-caption, 12px);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.ff-assistant-session-tabs > button:hover {
+  background: var(--app-fill, var(--ant-color-fill-tertiary, #f0f0f0));
+}
+.ff-assistant-session-tabs > button[aria-selected="true"] {
+  color: var(--app-text, var(--ant-color-text, #242424));
+  font-weight: 600;
+}
+.ff-assistant-session-tabs > button[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  bottom: 1px;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.ff-assistant-session-status {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--app-accent, var(--ant-color-primary, #666));
+}
+.ff-assistant-session-tabs
+  > button[data-state="running"]
+  .ff-assistant-session-status {
+  background: transparent;
+  border: 1px solid currentColor;
+  border-right-color: transparent;
+  animation: ff-assistant-session-spin 0.8s linear infinite;
+}
+.ff-assistant-session-tabs
+  > button[data-state="error"]
+  .ff-assistant-session-status {
+  background: var(--app-danger-text, var(--ant-color-error, #c33));
+}
+@keyframes ff-assistant-session-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ff-assistant-session-tabs
+    > button[data-state="running"]
+    .ff-assistant-session-status {
+    animation: none;
+  }
+}
+.ff-assistant-compose {
+  flex-shrink: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px 14px;
+}
+.ff-assistant-compose > small {
+  color: var(--app-text-secondary, var(--ant-color-text-secondary, #737373));
+}
+.ff-assistant-input {
+  min-width: 0;
+  padding: 7px 9px 9px;
+  border: 1px solid var(--app-border, var(--ant-color-border, #dedede));
+  border-radius: 16px;
+  background: var(--app-composer-bg, var(--ant-color-bg-container, #fff));
+}
+.ff-assistant-input:focus-within {
+  border-color: var(--app-accent-border, var(--ant-color-border, #aaa));
+}
+.ff-assistant-input textarea {
+  padding: 8px 4px 6px;
+  border: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0;
+  background: transparent !important;
+  color: inherit;
+  font: inherit;
+  line-height: 1.65;
+  resize: none;
+}
+.ff-assistant-input textarea::placeholder {
+  color: var(--app-text-secondary, var(--ant-color-text-secondary, #8a8a8a));
+  opacity: 1;
+}
+.ff-assistant-compose-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+.ff-assistant-compose-tools > .ant-select,
+.ff-assistant-compose-tools > .qwenpaw-select {
+  min-width: 68px;
+}
+.ff-assistant-attach {
+  height: 30px;
+  font-size: var(--app-font-caption, 12px);
+  padding: 4px 7px;
+  white-space: nowrap;
+}
+.ff-assistant-compose-tools .ff-assistant-send {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 6px;
+  border-radius: 9px;
+}
+.ff-assistant-references {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 3px 2px;
+}
+.ff-assistant-reference-list {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.ff-assistant-reference-more {
+  flex-shrink: 0;
+  font-size: var(--app-font-caption, 12px);
+  white-space: nowrap;
+  padding: 4px 6px;
+}
+.ff-assistant-references[data-collapsible="true"][data-expanded="false"]
+  .ff-assistant-reference {
+  flex: 1 1 0;
+}
+.ff-assistant-references[data-expanded="true"] {
+  flex-direction: column;
+  align-items: stretch;
+}
+.ff-assistant-references[data-expanded="true"] .ff-assistant-reference-list {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-height: 132px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.ff-assistant-references[data-expanded="true"] .ff-assistant-reference-more {
+  align-self: flex-end;
+}
+.ff-assistant-reference {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--app-border, var(--ant-color-border, #e0e0e0));
+  border-radius: 8px;
+  background: var(--app-bg, var(--ant-color-fill-quaternary, #f7f7f7));
+  color: var(--app-text-secondary, var(--ant-color-text-secondary, #737373));
+}
+.ff-assistant-reference button {
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: var(--app-font-caption, 12px);
+  border-radius: 7px;
+}
+.ff-assistant-reference button:first-child {
+  flex: 1;
+  justify-content: flex-start;
+  max-width: 220px;
+  padding-left: 8px;
+}
+.ff-assistant-reference button:not(:first-child) {
+  flex-shrink: 0;
+}
+.ff-assistant-references[data-expanded="true"]
+  .ff-assistant-reference
+  button:first-child {
+  max-width: none;
+}
+.ff-assistant-reference button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ff-assistant-reference svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.ff-assistant-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--app-text-secondary, var(--ant-color-text-secondary, #737373));
+  font-size: var(--app-font-caption, 12px);
+}
+.ff-assistant-progress > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+@media (pointer: coarse) {
+  .ff-assistant-icon,
+  .ff-assistant-reference button,
+  .ff-assistant-reference-more,
+  .ff-assistant-attach,
+  .ff-assistant-compose-tools .ff-assistant-send {
+    min-height: 40px;
+    min-width: 36px;
+  }
+}
+.ff-editor-body:has(.ff-assistant) > .ff-properties {
+  position: absolute;
+  right: min(400px, 50%);
+  top: 0;
+  bottom: 0;
+  z-index: 13;
+}
+@media (max-width: 1100px) {
+  .ff-assistant {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    max-width: 100%;
+    box-shadow: -4px 0 12px #00000014;
+  }
+}
+@media (max-width: 600px) {
+  .ff-assistant {
+    width: 100% !important;
+    min-width: 0;
+  }
+}
 .ff-palette {
   width: 248px;
   flex-shrink: 0;
@@ -94,9 +667,6 @@
 }
 .ff-palette-closed {
   display: none;
-}
-.ff-palette p {
-  margin: 10px 2px 14px;
 }
 .ff-node-list {
   overflow: auto;
@@ -387,9 +957,79 @@
 }
 .ff-properties-content {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.ff-node-inspector {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.ff-inspector-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid var(--ant-color-border-secondary, #e8edf3);
+}
+.ff-inspector-tabs > button {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ant-color-text-secondary, #666);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ff-inspector-tabs > button:hover {
+  color: var(--ant-color-text, #222);
+  background: var(--ant-color-fill-quaternary, #fafafa);
+}
+.ff-inspector-tabs > button[aria-selected="true"] {
+  color: var(--ant-color-primary, #2563eb);
+  border-bottom-color: currentColor;
+  font-weight: 600;
+}
+.ff-inspector-tabs > button:focus-visible,
+.ff-inspector-tabpanel:focus-visible {
+  outline: 2px solid var(--ant-color-primary, #2563eb);
+  outline-offset: -2px;
+}
+.ff-inspector-tab-error {
+  color: var(--ant-color-error, #c33);
+  font-size: 10px;
+  min-width: 14px;
+  line-height: 14px;
+  border-radius: 7px;
+  background: var(--ant-color-error-bg, #fff2f0);
+}
+.ff-inspector-tabpanel {
+  flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 16px;
+}
+.ff-inspector-tabpanel[hidden] {
+  display: none;
+}
+.ff-inspector-tabpanel .ff-bindings {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 .ff-properties-resize {
   position: absolute;
@@ -498,4 +1138,455 @@
   .ff-editor:has(.ff-debug-workspace) .ff-debug-workspace {
     max-height: 32vh;
   }
+}
+
+/* Workflow identity and primary actions stay above the editing commands. */
+.ff-toolbar {
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 16px 18px 14px;
+}
+.ff-title {
+  flex: 1;
+  min-width: 180px;
+  max-width: none;
+  gap: 4px;
+}
+.ff-title-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.ff-title strong {
+  font-size: 14px;
+  max-width: 100%;
+}
+.ff-title .ff-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.ff-save-status::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ant-color-success, #588267);
+}
+.ff-save-status.ff-unsaved::before {
+  background: var(--ant-color-warning, #a78742);
+}
+.ff-toolbar-summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--ant-color-text-secondary, #727872);
+}
+.ff-toolbar-summary .ff-agent-scope {
+  display: inline;
+  font-size: 11px;
+}
+.ff-toolbar-actions {
+  margin-left: auto;
+  align-items: center;
+  gap: 7px;
+}
+.ff-toolbar .ant-btn,
+.ff-commandbar .ant-btn,
+.ff-selectionbar .ant-btn {
+  border-radius: 8px;
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.ff-commandbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--ant-color-border-secondary, #e7e9e5);
+  flex-shrink: 0;
+}
+.ff-command-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.ff-commandbar .ant-btn {
+  padding-inline: 8px;
+}
+.ff-commandbar [aria-pressed="true"],
+.ff-canvas-modes [aria-pressed="true"] {
+  background: var(--ant-color-fill-tertiary, #f0f2ee);
+}
+.ff-command-divider {
+  width: 1px;
+  height: 17px;
+  margin-inline: 5px;
+  background: var(--ant-color-border-secondary, #e7e9e5);
+}
+.ff-command-observe {
+  margin-left: auto;
+}
+.ff-command-menu {
+  gap: 5px;
+}
+.ff-command-label {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  justify-content: space-between;
+}
+.ff-command-label kbd {
+  font: 11px inherit;
+  color: var(--ant-color-text-tertiary, #8b908b);
+}
+.ff-selectionbar {
+  position: absolute;
+  z-index: 6;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 5px 6px 5px 12px;
+  border: 1px solid var(--ant-color-border-secondary, #e7e9e5);
+  border-radius: 10px;
+  background: var(--ant-color-bg-container, #fff);
+  box-shadow: 0 4px 16px #0000000a;
+}
+.ff-selectionbar > span {
+  font-size: 11px;
+  color: var(--ant-color-text-secondary);
+  margin-right: 6px;
+}
+.ff-selectionbar .ant-btn {
+  height: 30px;
+  padding-inline: 7px;
+  font-size: 12px;
+}
+.ff-canvas:has(.ff-canvas-search) .ff-selectionbar {
+  display: none;
+}
+.ff-canvas-search {
+  position: absolute;
+  z-index: 8;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 360px;
+  max-width: calc(100% - 24px);
+  background: var(--ant-color-bg-container, #fff);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 4px 18px #00000012;
+}
+.ff-search-results {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow: auto;
+  margin-top: 6px;
+}
+.ff-search-results .ant-btn {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  height: auto;
+  min-height: 32px;
+  white-space: normal;
+}
+.ff-search-results small {
+  font-size: 10px;
+  color: var(--ant-color-text-tertiary);
+  overflow-wrap: anywhere;
+}
+.ff-canvas-modes {
+  position: absolute;
+  z-index: 5;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--ant-color-bg-container, #fff);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+}
+.ff-canvas-modes .ant-btn {
+  padding: 0;
+  width: 28px;
+  height: 28px;
+}
+.ff-canvas-modes > span {
+  font-size: 11px;
+  padding-inline: 4px;
+}
+.ff-canvas .react-flow__controls {
+  left: 94px;
+  bottom: 12px;
+  margin: 0;
+  display: flex;
+  flex-direction: row;
+  border-radius: 7px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--ant-color-border-secondary);
+}
+.ff-canvas:has(.ff-canvas-modes > span) .react-flow__controls {
+  left: 140px;
+}
+.ff-canvas-group {
+  border: 1px dashed var(--ant-color-text-tertiary, #9ba69e);
+  border-radius: 12px;
+  background: var(--ant-color-fill-quaternary, #f2f4f240);
+}
+.ff-canvas-group-label {
+  display: block;
+  padding: 7px 12px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+.ff-canvas-note {
+  width: 280px;
+  padding: 12px;
+  border: 1px solid var(--ant-color-warning-border, #ddd8c4);
+  border-radius: 9px;
+  background: var(--ant-color-warning-bg, #faf8ee);
+  color: var(--ant-color-text);
+}
+.ff-note-handle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.ff-note-handle button {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: flex;
+  padding: 4px;
+}
+.ff-canvas-note textarea {
+  width: 100%;
+  min-height: 70px;
+  resize: vertical;
+  font: 12px/1.7 inherit;
+  color: inherit;
+  border: 0;
+  background: transparent;
+}
+.ff-node-card[data-execution-mode="mute"] {
+  opacity: 0.58;
+}
+@media (max-width: 1050px) {
+  .ff-commandbar {
+    padding-inline: 9px;
+  }
+  .ff-commandbar .ant-btn {
+    padding-inline: 6px;
+    gap: 4px;
+  }
+  .ff-command-divider {
+    margin-inline: 2px;
+  }
+}
+@media (max-width: 720px) {
+  .ff-toolbar {
+    padding: 12px;
+    gap: 8px;
+  }
+  .ff-title {
+    min-width: 0;
+    flex-basis: calc(100% - 52px);
+  }
+  .ff-title strong {
+    white-space: normal;
+    font-size: 13px;
+  }
+  .ff-toolbar-actions {
+    margin-left: auto;
+  }
+  .ff-toolbar-actions .ant-btn {
+    height: 32px;
+    padding-inline: 7px;
+    gap: 4px;
+    font-size: 12px;
+  }
+  .ff-toolbar-actions {
+    gap: 5px;
+  }
+  .ff-commandbar {
+    padding: 6px 9px;
+    gap: 5px;
+  }
+  .ff-command-observe {
+    margin-left: 0;
+  }
+  .ff-commandbar .ant-btn {
+    font-size: 12px;
+  }
+  .ff-selectionbar {
+    top: 10px;
+    padding: 5px;
+  }
+  .ff-selectionbar > span {
+    flex-basis: 100%;
+    text-align: center;
+  }
+  .ff-palette-open {
+    max-width: calc(100% - 36px);
+  }
+}
+
+.ff-ai-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.ff-ai-scope [aria-pressed="true"] {
+  background: var(--ant-color-fill-secondary, #ecefed);
+  border-color: var(--ant-color-text-secondary, #777);
+}
+.ff-ai-selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.ff-ai-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 280px;
+  overflow: auto;
+  margin-bottom: 18px;
+}
+.ff-ai-turn {
+  border: 1px solid var(--ant-color-border-secondary, #e7e9e5);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.ff-ai-turn p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0 0 8px;
+}
+.ff-ai-turn > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+.ff-ai-turn-current {
+  border-color: var(--ant-color-primary, #4b6455);
+}
+.ff-ai-previewbar {
+  position: absolute;
+  z-index: 7;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--ant-color-border-secondary, #e7e9e5);
+  border-radius: 9px;
+  background: var(--ant-color-bg-container, #fff);
+  box-shadow: 0 4px 16px #0000000a;
+  font-size: 12px;
+}
+.ff-ai-legend-added {
+  color: var(--ant-color-success, #389e0d);
+}
+.ff-ai-legend-modified {
+  color: var(--ant-color-info, #1677ff);
+}
+.ff-ai-legend-removed {
+  color: var(--ant-color-error, #cf1322);
+}
+.ff-ai-node-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.ff-ai-added .ff-node-card {
+  outline: 3px solid var(--ant-color-success, #389e0d);
+}
+.ff-ai-modified .ff-node-card {
+  outline: 3px solid var(--ant-color-info, #1677ff);
+}
+.ff-ai-removed .ff-node-card {
+  outline: 3px dashed var(--ant-color-error, #cf1322);
+  opacity: 0.58;
+}
+.ff-ai-edge-added .ff-edge-path,
+.ff-ai-edge-added .react-flow__edge-path {
+  stroke: var(--ant-color-success, #389e0d);
+  stroke-width: 3;
+}
+.ff-ai-edge-removed .ff-edge-path,
+.ff-ai-edge-removed .react-flow__edge-path {
+  stroke: var(--ant-color-error, #cf1322);
+  stroke-dasharray: 7 5;
+  stroke-width: 2;
+}
+
+.ff-node-repair {
+  margin-top: 8px;
+  padding: 3px 9px;
+  border: 1px solid var(--ant-color-error-border, #ffccc7);
+  border-radius: 6px;
+  background: var(--ant-color-error-bg, #fff2f0);
+  color: var(--ant-color-error-text, #cf1322);
+  cursor: pointer;
+  font: inherit;
+}
+.ff-node-repair:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ff-ai-repair-source {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--ant-color-border-secondary, #e7e9e5);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.ff-ai-repair-source > strong {
+  display: block;
+  margin-bottom: 8px;
+}
+.ff-ai-repair-source summary {
+  cursor: pointer;
+}
+.ff-ai-repair-explanation {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

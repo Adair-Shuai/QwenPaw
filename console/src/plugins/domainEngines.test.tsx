@@ -604,4 +604,116 @@ describe.each([
     await waitFor(() => expect(within(card).getByText("可用")).toBeVisible());
     expect(installStarts).toBe(1);
   });
+  it("downloads NeqSim from the real card and resumes progress before automatically exposing tools", async () => {
+    const previous = fetchHost.getMockImplementation()!;
+    let ready = false;
+    let finish = false;
+    let starts = 0;
+    const task = () => ({
+      id: "neqsim-task",
+      engine_id: "neqsim",
+      status: ready ? "completed" : "running",
+      progress: ready ? 100 : 55,
+      message: ready ? "运行环境已加载" : "正在下载 NeqSim",
+      error: "",
+    });
+    fetchHost.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/ugsci/domain-engines/list") {
+        const data = engine(
+          "neqsim",
+          "PVT 与流体热力学",
+          "fluid_thermodynamics",
+          [operation("fluid.flash", "闪蒸计算", "ugsci_neqsim_flash")],
+          {
+            overall: ready ? "available" : "unavailable",
+            dependencies: [
+              {
+                name: "java-runtime",
+                status: ready ? "available" : "unavailable",
+                reason: "",
+              },
+            ],
+          },
+        );
+        data.engine.provider = { kind: "driver", id: "ugsci-neqsim" };
+        data.engine.dependencies = ["java-runtime", "neqsim-mcp-server"];
+        const existing = await (await previous(url, init)).json();
+        return new Response(
+          JSON.stringify({ engines: [...existing.engines, data] }),
+        );
+      }
+      if (url === "/ugsci/domain-engines/neqsim/runtime")
+        return new Response(
+          JSON.stringify({
+            ready,
+            installable: true,
+            java_version: "21",
+            neqsim_version: "3.17.0",
+            active_task: starts && !ready ? task() : null,
+          }),
+        );
+      if (
+        url === "/ugsci/domain-engines/neqsim/install" &&
+        init?.method === "POST"
+      ) {
+        starts++;
+        return new Response(JSON.stringify(task()), { status: 202 });
+      }
+      if (url === "/ugsci/domain-engines/neqsim/install/neqsim-task") {
+        ready = finish;
+        return new Response(JSON.stringify(task()));
+      }
+      if (url === "/mcp")
+        return new Response(
+          JSON.stringify([{ key: "ugsci-neqsim", enabled: ready }]),
+        );
+      if (url === "/mcp/tools/ugsci-neqsim")
+        return new Response(
+          JSON.stringify([{ name: "runFlash", enabled: true }]),
+        );
+      return previous(url, init);
+    });
+    await renderPage();
+    const card = (
+      await screen.findByText("PVT 与流体热力学")
+    ).closest<HTMLElement>(".ant-card")!;
+    await userEvent.click(
+      within(card).getByRole("button", { name: "安装 NeqSim 运行环境" }),
+    );
+    let dialog = await screen.findByRole("dialog", { name: /运行环境/ });
+    expect(await within(dialog).findByText("Java 21")).toBeVisible();
+    expect(within(dialog).getByText("NeqSim 3.17.0")).toBeVisible();
+    expect(starts).toBe(0);
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: /^开始安装/ }),
+    );
+    await waitFor(() => expect(starts).toBe(1));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "关闭安装进度" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await userEvent.click(
+      within(card).getByRole("button", { name: "查看安装进度" }),
+    );
+    dialog = await screen.findByRole("dialog", { name: /运行环境/ });
+    expect(await within(dialog).findByText("正在下载 NeqSim")).toBeVisible();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "关闭安装进度" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    finish = true;
+    await waitFor(() => expect(within(card).getByText("可用")).toBeVisible(), {
+      timeout: 6000,
+    });
+    expect(starts).toBe(1);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(fetchHost).toHaveBeenCalledWith(
+      "/mcp/tools/ugsci-neqsim",
+      expect.anything(),
+    );
+  });
 });

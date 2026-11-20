@@ -3,15 +3,18 @@
 # Outputs BASE_URL to $GITHUB_ENV for subsequent steps.
 set -euo pipefail
 
-# 1. Unpack the freshly built Tauri zip.
-echo "[launch_tauri_macos] Unpacking zip..."
+# Verify the actual DMG, then copy its app as Finder drag-install does.
+echo "[launch_tauri_macos] Verifying drag-install DMG..."
 TAURI_VERIFY_ROOT="$(mktemp -d "${RUNNER_TEMP:-/tmp}/qwenpaw-verify-tauri.XXXXXX")"
-unzip -q dist/UGSci-Tauri-*-macOS.zip -d "$TAURI_VERIFY_ROOT"
-APP="$(find "$TAURI_VERIFY_ROOT" -mindepth 1 -maxdepth 1 -name '*.app' -type d | head -1)"
-if [ -z "$APP" ]; then
-  echo "::error::Tauri .app not found inside zip"
+shopt -s nullglob
+dmgs=(dist/UGSci-Tauri-*-macOS.dmg)
+if [ "${#dmgs[@]}" -ne 1 ]; then
+  echo "::error::Expected exactly one macOS DMG"
   exit 1
 fi
+APP="$(python3 scripts/pack-tauri/macos_dmg.py install-for-verification \
+  --dmg "${dmgs[0]}" --destination "$TAURI_VERIFY_ROOT")"
+
 echo "[launch_tauri_macos] Found app: $APP"
 
 # 2. Remove macOS quarantine (CI download marks it).

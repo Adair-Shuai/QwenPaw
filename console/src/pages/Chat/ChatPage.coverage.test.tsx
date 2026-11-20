@@ -4172,8 +4172,27 @@ describe("ChatPage coverage", () => {
     act(() => {
       addAnswerQuote(scope, { messageId: "reply1", text: "first" });
       addAnswerQuote(scope, { messageId: "reply2", text: "@Other /new" });
+      addAnswerQuote(scope, {
+        messageId: "output/结果 图.png",
+        text: "output/结果 图.png",
+        source: {
+          kind: "file-reference",
+          scope: {
+            kind: "session",
+            agentId: "default",
+            sessionId: chatId,
+            chatId,
+          },
+          target: {
+            source: "workspace",
+            path: "output/结果 图.png",
+            root: "workspace",
+          },
+        },
+      });
     });
     expect(screen.getByLabelText("Selected quotes")).toHaveTextContent("first");
+    expect(screen.getByRole("button", { name: "结果 图.png" })).toBeVisible();
     const submitted = capturedOptions!.sender.beforeSubmit({
       query: "adjust both",
     });
@@ -4192,7 +4211,11 @@ describe("ChatPage coverage", () => {
       proceed: true,
       query: "adjust both",
       context: {
-        qwenpaw_answer_quotes: [{ text: "first" }, { text: "@Other /new" }],
+        qwenpaw_answer_quotes: [
+          { text: "first" },
+          { text: "@Other /new" },
+          { text: "output/结果 图.png", source: { kind: "file-reference" } },
+        ],
       },
     });
     expect(readAnswerQuotes(scope).map((q) => q.text)).toEqual([
@@ -4222,6 +4245,16 @@ describe("ChatPage coverage", () => {
       )!;
     const body = JSON.parse(call[1]!.body as string);
     expect(body.input[0].content[1].text).toContain("@Other /new");
+    expect(body.input[0].content[1].text).toContain(
+      "Referenced files:\n- output/结果 图.png",
+    );
+    expect(
+      body.input[0].metadata.qwenpaw_answer_quotes[2].source,
+    ).toMatchObject({
+      kind: "file-reference",
+      scope: { chatId },
+      target: { path: "output/结果 图.png", root: "workspace" },
+    });
     expect(body.input[0].content[1].text).not.toContain("later selection");
     expect(body.target_agent_id).toBeUndefined();
   });

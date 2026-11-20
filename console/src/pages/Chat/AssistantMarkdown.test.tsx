@@ -5,6 +5,8 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssistantMarkdown } from "./AssistantMarkdown";
@@ -12,6 +14,7 @@ import { chatExtensions } from "../../plugins/registry/chatExtensions";
 import type { ChatCodeBlockProps } from "../../plugins/types/qwenpaw";
 import { getAnswerSelection } from "./components/AnswerQuoteComposer";
 import { TurnFilesScopeProvider } from "../../features/files-workspace/TurnFilesScope";
+import { Markdown } from "@agentscope-ai/chat";
 
 vi.mock("@agentscope-ai/design", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -37,10 +40,331 @@ vi.mock("../../components/RenderableCodeBlock/RenderableCodeBlock", () => ({
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   chatExtensions.__resetForTests();
 });
 
 describe("assistant code block plugins", () => {
+  it.each([false, true])(
+    "keeps single tildes literal in streamed ranges and history with plugins=%s",
+    (plugins) => {
+      if (plugins)
+        chatExtensions.addCodeBlock("test", "custom-ui", () => <span>UI</span>);
+      const content = "压力 10~20 MPa，温度 30~40 ℃，~约数~。";
+      const view = render(
+        <AssistantMarkdown messageId="tilde-stream" content="" cursor />,
+      );
+      for (let end = 1; end <= content.length; end++) {
+        view.rerender(
+          <AssistantMarkdown
+            messageId="tilde-stream"
+            content={content.slice(0, end)}
+            cursor
+          />,
+        );
+        expect(view.container.querySelector("del")).toBeNull();
+      }
+      view.rerender(
+        <AssistantMarkdown
+          messageId="tilde-stream"
+          content={content}
+          cursor={false}
+        />,
+      );
+      expect(view.container.querySelector("p")?.textContent).toBe(content);
+      view.unmount();
+      const history = render(
+        <AssistantMarkdown
+          messageId="tilde-history"
+          content={content}
+          cursor={false}
+        />,
+      );
+      expect(history.container.querySelector("p")?.textContent).toBe(content);
+      expect(history.container.querySelector("del")).toBeNull();
+    },
+  );
+
+  it("preserves escaped tildes backslashes and tilde-bearing file destinations", () => {
+    const view = render(
+      <AssistantMarkdown
+        messageId="tilde-escaping"
+        cursor={false}
+        content={String.raw`Literal \~one\~ and \\~two~. See report~old~.csv.`}
+      />,
+    );
+    expect(view.container.querySelector("p")?.textContent).toBe(
+      String.raw`Literal ~one~ and \~two~. See report~old~.csv.`,
+    );
+    expect(view.container.querySelector("del")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "report~old~.csv" }),
+    ).toHaveAttribute("data-file-reference", "report~old~.csv");
+  });
+
+  it.each([false, true])(
+    "preserves double-tilde formatting code links tables and math with plugins=%s",
+    (plugins) => {
+      const seen: string[] = [];
+      if (plugins)
+        chatExtensions.addCodeBlock("test", "custom-ui", ({ source }) => {
+          seen.push(source);
+          return <code>{source}</code>;
+        });
+      const math = String.raw`$a~b$ and $$c~d$$ and \(e~f\) and \[g~h\]`;
+      const content = [
+        "10~20 MPa；30~40 ℃；~~旧方案~~；**新方案**。",
+        "[~说明~](https://example.com/~user?q=~value~)",
+        "`~inline~` 和 `~~inline~~` 和 \\~escaped\\~。",
+        "~~~text\n~code~ and ~~code~~\n~~~",
+        '```custom-ui\nvalue = "~original~"\n```',
+        "| 参数 | 区间 |\n| --- | --- |\n| 压力 | 10~20 |\n| 温度 | 30~40 |",
+        math,
+        "注释[^note]。\n\n[^note]: 范围 ~note~。",
+      ].join("\n\n");
+      const view = render(
+        <AssistantMarkdown
+          messageId="tilde-syntax"
+          content={content}
+          cursor={false}
+        />,
+      );
+      expect(view.container.querySelectorAll("del")).toHaveLength(1);
+      expect(view.container.querySelector("del")).toHaveTextContent("旧方案");
+      expect(view.container.querySelector("strong")).toHaveTextContent(
+        "新方案",
+      );
+      expect(screen.getByRole("link", { name: "~说明~" })).toHaveAttribute(
+        "href",
+        "https://example.com/~user?q=~value~",
+      );
+      const code = Array.from(view.container.querySelectorAll("code")).map(
+        (node) => node.textContent,
+      );
+      expect(code).toEqual(
+        expect.arrayContaining([
+          "~inline~",
+          "~~inline~~",
+          "~code~ and ~~code~~\n",
+          'value = "~original~"\n',
+        ]),
+      );
+      expect(view.container.textContent).toContain("~escaped~");
+      expect(view.container.textContent).toContain("~note~");
+      expect(view.container.querySelectorAll("table")).toHaveLength(1);
+      const actualMath = Array.from(
+        view.container.querySelectorAll(".katex"),
+      ).map((node) => node.outerHTML);
+      const control = render(<Markdown content={math} cursor={false} />);
+      expect(actualMath).toHaveLength(4);
+      expect(actualMath).toEqual(
+        Array.from(control.container.querySelectorAll(".katex")).map(
+          (node) => node.outerHTML,
+        ),
+      );
+      if (plugins) expect(seen).toContain('value = "~original~"\n');
+    },
+  );
+
+  it("previews explicit image file links in the answer while keeping filename mentions as references", async () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:linked-image");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const fetchImage = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => new Blob(["image"], { type: "image/png" }),
+    });
+    vi.stubGlobal("fetch", fetchImage);
+    render(
+      <AssistantMarkdown
+        messageId="image-links"
+        cursor={false}
+        content={
+          "[查看图](output/figure.png)\n\n[Windows 图](C:/Work/figure.png)\n\n[引用链接][figure]\n\n[figure]: file:///tmp/figure.png\n\n源文件是 `output/reference.png`。"
+        }
+      />,
+    );
+    expect(await screen.findByRole("img", { name: "查看图" })).toHaveAttribute(
+      "src",
+      "blob:linked-image",
+    );
+    expect(screen.getByRole("link", { name: "查看图" })).toHaveAttribute(
+      "data-file-reference",
+      "output/figure.png",
+    );
+    expect(screen.getByRole("link", { name: "reference.png" })).toBeVisible();
+    expect(
+      await screen.findByRole("img", { name: "Windows 图" }),
+    ).toHaveAttribute("src", "blob:linked-image");
+    expect(
+      await screen.findByRole("img", { name: "引用链接" }),
+    ).toHaveAttribute("src", "blob:linked-image");
+    expect(fetchImage).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([false, true])(
+    "renders scoped local Markdown images and reference images with plugins=%s",
+    async (plugins) => {
+      if (plugins)
+        chatExtensions.addCodeBlock("test", "custom-ui", () => <span>UI</span>);
+      let id = 0;
+      vi.spyOn(URL, "createObjectURL").mockImplementation(
+        () => `blob:image-${++id}`,
+      );
+      const revoke = vi
+        .spyOn(URL, "revokeObjectURL")
+        .mockImplementation(() => {});
+      const fetchImage = vi.fn().mockResolvedValue({
+        ok: true,
+        blob: async () => new Blob(["image"], { type: "image/png" }),
+      });
+      vi.stubGlobal("fetch", fetchImage);
+      localStorage.setItem("qwenpaw_auth_token", "image-token");
+      const open = vi.fn();
+      window.addEventListener("qwenpaw:open-file-preview", open);
+      try {
+        const view = render(
+          <TurnFilesScopeProvider
+            value={{
+              kind: "session",
+              agentId: "owner",
+              sessionId: "session",
+              chatId: "chat",
+            }}
+          >
+            <AssistantMarkdown
+              messageId="images"
+              cursor={false}
+              content={[
+                "图片如下。",
+                "![相对图片](./output/结果%20图.png)",
+                "![本地图片](file:///C:/Work/result%20one.png)",
+                "![Windows 图片](C:/Work/result.png)",
+                "![引用图片][figure]",
+                "[figure]: file:///tmp/figure.png",
+              ].join("\n\n")}
+            />
+          </TurnFilesScopeProvider>,
+        );
+        const image = await screen.findByRole("img", { name: "相对图片" });
+        expect(image.getAttribute("src")).toMatch(/^blob:image-/);
+        expect(
+          await screen.findByRole("img", { name: "本地图片" }),
+        ).toHaveAttribute("src", expect.stringMatching(/^blob:image-/));
+        expect(
+          await screen.findByRole("img", { name: "Windows 图片" }),
+        ).toBeVisible();
+        expect(
+          await screen.findByRole("img", { name: "引用图片" }),
+        ).toBeVisible();
+        expect(fetchImage).toHaveBeenCalledTimes(4);
+        const paths = fetchImage.mock.calls.map(([url]) =>
+          decodeURIComponent(String(url)).replace(/\+/g, " "),
+        );
+        expect(paths.some((url) => url.includes("output/结果 图.png"))).toBe(
+          true,
+        );
+        expect(
+          paths.some((url) => url.includes("C:/Work/result one.png")),
+        ).toBe(true);
+        for (const [, options] of fetchImage.mock.calls)
+          expect(options.headers).toMatchObject({
+            Authorization: "Bearer image-token",
+            "X-Agent-Id": "owner",
+            "X-Chat-Id": "chat",
+          });
+        fireEvent.click(image);
+        const viewer = await screen.findByRole("dialog", { name: /相对图片/ });
+        expect(
+          within(viewer).getByRole("img", { name: "相对图片" }),
+        ).toHaveAttribute("src", image.getAttribute("src"));
+        expect(open).not.toHaveBeenCalled();
+        expect(fetchImage).toHaveBeenCalledTimes(4);
+        view.unmount();
+        expect(revoke).toHaveBeenCalledTimes(4);
+      } finally {
+        localStorage.removeItem("qwenpaw_auth_token");
+        window.removeEventListener("qwenpaw:open-file-preview", open);
+      }
+    },
+  );
+
+  it("keeps external and embedded images inline without authenticated requests", async () => {
+    const fetchImage = vi.fn();
+    vi.stubGlobal("fetch", fetchImage);
+    render(
+      <AssistantMarkdown
+        messageId="external-images"
+        cursor={false}
+        content={
+          "![远程图片](https://images.example.com/chart.png)\n\n![嵌入图片](data:image/png;base64,aW1hZ2U=)"
+        }
+      />,
+    );
+    expect(
+      await screen.findByRole("img", { name: "远程图片" }),
+    ).toHaveAttribute("src", "https://images.example.com/chart.png");
+    expect(
+      await screen.findByRole("img", { name: "嵌入图片" }),
+    ).toHaveAttribute("src", "data:image/png;base64,aW1hZ2U=");
+    expect(fetchImage).not.toHaveBeenCalled();
+  });
+
+  it("retries failed inline image loads and discards late image responses after content changes", async () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:loaded-image");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const fetchImage = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue({ ok: true, blob: async () => new Blob(["image"]) });
+    vi.stubGlobal("fetch", fetchImage);
+    const view = render(
+      <AssistantMarkdown
+        messageId="retry-image"
+        cursor={false}
+        content="![图片](output/figure.png)"
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "重试" }));
+    expect(await screen.findByRole("img", { name: "图片" })).toHaveAttribute(
+      "src",
+      "blob:loaded-image",
+    );
+    let finish: (value: unknown) => void = () => {};
+    fetchImage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    view.rerender(
+      <AssistantMarkdown
+        messageId="retry-image"
+        cursor={false}
+        content="![旧图片](output/old.png)"
+      />,
+    );
+    await waitFor(() => expect(fetchImage).toHaveBeenCalledTimes(3));
+    view.rerender(
+      <AssistantMarkdown
+        messageId="retry-image"
+        cursor={false}
+        content="![新图片](output/new.png)"
+      />,
+    );
+    expect(await screen.findByRole("img", { name: "新图片" })).toHaveAttribute(
+      "src",
+      "blob:loaded-image",
+    );
+    await act(async () =>
+      finish({ ok: true, blob: async () => new Blob(["old"]) }),
+    );
+    expect(
+      screen.queryByRole("img", { name: "旧图片" }),
+    ).not.toBeInTheDocument();
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+  });
+
   it("does not rerender unchanged answer plugins during unrelated composer updates", () => {
     const seen = vi.fn();
     chatExtensions.addCodeBlock("performance", "custom-ui", (props) => {

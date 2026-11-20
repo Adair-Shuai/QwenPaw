@@ -24,6 +24,8 @@ import {
 } from "./AssistantFileLink";
 import { useTurnFilesScope } from "../../features/files-workspace/TurnFilesScope";
 import { prepareFileReferenceMarkdown } from "./fileReferenceMarkdown";
+import { preserveLiteralTildes } from "./literalTildeMarkdown";
+import { AssistantImage } from "./AssistantImage";
 
 import type { ComponentProps } from "@ant-design/x-markdown";
 
@@ -130,10 +132,12 @@ function AssistantCodeBlock(
 const assistantCodeComponents = {
   code: AssistantCodeBlock,
   a: AssistantFileLink,
+  img: AssistantImage,
 };
 const assistantMarkdownComponents = {
   ...renderableCodeComponents,
   a: AssistantFileLink,
+  img: AssistantImage,
 };
 
 const MemoizedAssistantMarkdown = React.memo(function AssistantMarkdown({
@@ -149,7 +153,7 @@ const MemoizedAssistantMarkdown = React.memo(function AssistantMarkdown({
 }) {
   const deferredContent = useDeferredValue(content);
   const markdownContent = useMemo(
-    () => prepareFileReferenceMarkdown(deferredContent),
+    () => preserveLiteralTildes(prepareFileReferenceMarkdown(deferredContent)),
     [deferredContent],
   );
   const baseFontSize = useEffectiveFontSize();

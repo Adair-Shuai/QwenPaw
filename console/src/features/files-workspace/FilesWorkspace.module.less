@@ -248,6 +248,8 @@
 }
 
 .workspace {
+  container-type: inline-size;
+  container-name: files-workspace;
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -2760,4 +2762,29 @@
   height: 32px;
   flex: 0 0 auto;
   color: var(--app-text-secondary);
+}
+
+/* Floating previews keep the same workbench and archived file identity. */
+.drawer.drawerFloating {
+  position: fixed;
+  inset: 72px 24px 24px auto;
+  width: 560px;
+  min-width: min(280px, calc(100vw - 24px));
+  max-width: calc(100vw - 48px);
+  height: auto;
+  border: 1px solid var(--files-line);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 16%);
+  z-index: 90;
+}
+.drawer.drawerFloating.drawerMaximized {
+  inset: 12px;
+  width: auto !important;
+  max-width: none !important;
+}
+@media (max-width: 600px) {
+  .drawer.drawerFloating {
+    inset: 56px 12px 12px;
+    max-width: calc(100vw - 24px);
+  }
 }

@@ -44,6 +44,7 @@ def test_windows_update_assistant_changes_require_a_host_upgrade(tmp_path):
     from component_host import HOST_INPUTS
 
     inputs = (
+        "console/src-tauri/tauri.macos.conf.json",
         "scripts/pack-tauri/windows_update_assistant.cs",
         "scripts/pack-tauri/build_windows_update_assistant.ps1",
         "scripts/pack-tauri/windows_portable_bootstrap.cs",

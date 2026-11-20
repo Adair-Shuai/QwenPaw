@@ -15,6 +15,7 @@ import { ExpertAvatar } from "../components/avatars";
 import { MCPConnectModal } from "./MCPConnectModal";
 import { safeMcpLink } from "./mcpConnection";
 import { ExpertPublishModal } from "./ExpertPublishModal";
+import { ExpertPackageInstaller } from "./ExpertPackageInstaller";
 import {
   extractPromptFromSkills,
   installSkillFromPool,
@@ -283,6 +284,7 @@ export function MarketplacePage({
   const [expertSelectedCategory, setExpertSelectedCategory] = useState("");
   const [ossAgentCreating, setOssAgentCreating] = useState(false);
   const [agentDetail, setAgentDetail] = useState<OssAgent | null>(null);
+  const [packageManifest, setPackageManifest] = useState<string | null>(null);
 
   // ── Dynamic skill categories (from OSS manifest tag_groups) ──
   const [ossSkillCategories, setOssSkillCategories] = useState<
@@ -1340,6 +1342,10 @@ export function MarketplacePage({
   }, [ossAgents, expertSearchText, expertSelectedCategory]);
 
   const handleCreateOssAgent = async (agent: OssAgent) => {
+    if (agent.package_manifest) {
+      setPackageManifest(agent.package_manifest);
+      return;
+    }
     if (ossAgentCreating) return;
     setOssAgentCreating(true);
     try {
@@ -2287,6 +2293,10 @@ export function MarketplacePage({
       activeKey: activeTab,
       onChange: (k: string) => setActiveTab(k),
     }),
+    React.createElement(ExpertPackageInstaller, {
+      manifestPath: packageManifest,
+      onClose: () => setPackageManifest(null),
+    }),
     // Skill source config modal
     React.createElement(SourceConfigModal, {
       open: sourceConfigOpen,
@@ -2410,7 +2420,7 @@ export function MarketplacePage({
                     setAgentDetail(null);
                   },
                 },
-                "创建专家",
+                agentDetail.package_manifest ? "安装专家包" : "创建专家",
               ),
             ),
           },

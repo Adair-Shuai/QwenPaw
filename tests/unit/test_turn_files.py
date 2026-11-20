@@ -764,8 +764,11 @@ def test_unavailable_snapshot_bytes_do_not_manufacture_a_file_modification(
     )
     result = store.finish(capture)
     assert result["files"] == []
-    assert result["incomplete"]
-    assert result["warnings"]
+    assert not result["incomplete"]
+    assert result["warnings"] == []
+    assert result["scan_warnings"] == [
+        "Snapshot byte budget reached; some contents unavailable",
+    ]
 
 
 # pylint: disable-next=line-too-long
@@ -836,3 +839,157 @@ def test_legacy_runtime_rows_are_filtered_without_hiding_project_databases(
     with pytest.raises(FileNotFoundError):
         store.get_file(result["id"], "a" * 32, session_id="session-a")
     assert len(json.loads(path.read_text("utf-8"))["files"]) == 2
+
+
+@pytest.mark.parametrize("workspace_root", [False, True])
+def test_unchanged_capacity_omissions_do_not_mark_deliveries_incomplete(
+    directories,
+    monkeypatch,
+    workspace_root,
+):
+    """Keep real deliveries complete despite unrelated scan capacity limits."""
+    workspace, project = directories
+    root = workspace if workspace_root else project
+    monkeypatch.setattr(scanner, "MAX_FILE_BYTES", 12)
+    monkeypatch.setattr(scanner, "MAX_TOTAL_BYTES", 24)
+    (root / "large.GRID").write_bytes(b"grid" * 20)
+    for name in ("a.bin", "b.bin", "c.bin"):
+        (root / name).write_bytes(b"existing")
+    image = root / "z.png"
+    image.write_bytes(b"\x89PNG")
+    store = TurnFileStore(workspace)
+    capture = start(
+        store,
+        root,
+        roots=[
+            ("workspace" if workspace_root else f"project:{project}", root),
+        ],
+    )
+    assert capture.before.incomplete
+    assert store.record_delivery(capture, image)
+    result = store.finish(capture)
+    assert result["status"] == "completed"
+    assert not result["incomplete"] and result["warnings"] == []
+    assert set(result["scan_warnings"]) == {
+        "File exceeds snapshot size limit: large.GRID",
+        "Snapshot byte budget reached; some contents unavailable",
+    }
+    assert len(result["files"]) == 1
+    row = result["files"][0]
+    assert row["path"] == "z.png" and row["delivered"]
+    assert row["status"] == "delivered" and row["after_available"]
+    assert (
+        store.get_file(capture.id, row["id"], session_id="session-a")[0]
+        == b"\x89PNG"
+    )
+    path = store.directory / "turns" / f"{capture.id}.json"
+    persisted = json.loads(path.read_text("utf-8"))
+    assert persisted["incomplete"] and persisted["warnings"]
+    assert store.get_turn(capture.id, session_id="session-a") == result
+    assert store.list_turns(session_id="session-a")[0] == result
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["create", "modify", "delete", "deliver"],
+)
+def test_capacity_omissions_remain_errors_for_changed_or_delivered_files(
+    directories,
+    monkeypatch,
+    operation,
+):
+    """Keep unavailable changed and explicitly delivered versions visible."""
+    workspace, project = directories
+    path = project / "large.GRID"
+    monkeypatch.setattr(scanner, "MAX_FILE_BYTES", 8)
+    if operation != "create":
+        path.write_bytes(b"original grid bytes")
+    store = TurnFileStore(workspace)
+    capture = start(store, project)
+    if operation in {"create", "modify"}:
+        path.write_bytes(b"new large grid content")
+    elif operation == "delete":
+        path.unlink()
+    else:
+        assert not store.record_delivery(capture, path)
+    result = store.finish(capture)
+    assert result["incomplete"]
+    assert "File exceeds snapshot size limit: large.GRID" in result["warnings"]
+    row = next(row for row in result["files"] if row["path"] == "large.GRID")
+    version = "before" if operation == "delete" else "after"
+    assert not row[f"{version}_available"]
+    with pytest.raises(FileNotFoundError):
+        store.get_file(
+            capture.id,
+            row["id"],
+            session_id="session-a",
+            version=version,
+        )
+
+
+def test_unavailable_baseline_does_not_invent_a_modification_for_delivery(
+    directories,
+    monkeypatch,
+):
+    """A metadata-stable delivery does not require a missing before version."""
+    workspace, project = directories
+    path = project / "report.txt"
+    path.write_bytes(b"unchanged delivery")
+    store = TurnFileStore(workspace)
+    with monkeypatch.context() as limited:
+        limited.setattr(scanner, "MAX_TOTAL_BYTES", 0)
+        capture = start(store, project)
+    assert store.record_delivery(capture, path)
+    result = store.finish(capture)
+    row = result["files"][0]
+    assert row["status"] == "delivered" and row["after_available"]
+    assert not row["before_available"]
+    assert not result["incomplete"] and result["warnings"] == []
+    assert result["scan_warnings"]
+
+
+def test_legacy_capacity_diagnostics_are_normalized_without_rewriting_evidence(
+    directories,
+):
+    """Normalize historical read views while preserving original manifests."""
+    workspace, project = directories
+    store = TurnFileStore(workspace)
+    capture = start(store, project)
+    (project / "report.txt").write_bytes(b"archived report")
+    result = store.finish(capture)
+    path = store.directory / "turns" / f"{capture.id}.json"
+    original = json.loads(path.read_text("utf-8"))
+    original.update(
+        incomplete=True,
+        warnings=[
+            "File exceeds snapshot size limit: unrelated.GRID",
+            "Snapshot byte budget reached; some contents unavailable",
+        ],
+    )
+    path.write_text(json.dumps(original), encoding="utf-8")
+    saved = path.read_bytes()
+    corrected = store.get_turn(capture.id, session_id="session-a")
+    assert not corrected["incomplete"] and corrected["warnings"] == []
+    assert corrected["scan_warnings"] == original["warnings"]
+    assert (
+        store.get_file(
+            capture.id,
+            result["files"][0]["id"],
+            session_id="session-a",
+        )[0]
+        == b"archived report"
+    )
+    assert path.read_bytes() == saved
+    original["warnings"].append("Directory scan limit reached")
+    path.write_text(json.dumps(original), encoding="utf-8")
+    corrected = store.get_turn(capture.id, session_id="session-a")
+    assert corrected["incomplete"]
+    assert corrected["warnings"] == ["Directory scan limit reached"]
+    original["warnings"] = [
+        f"File exceeds snapshot size limit: old-{index}.GRID"
+        for index in range(100)
+    ]
+    path.write_text(json.dumps(original), encoding="utf-8")
+    corrected = store.get_turn(capture.id, session_id="session-a")
+    assert corrected["incomplete"] and len(corrected["warnings"]) == 100
+    assert "scan_warnings" not in corrected

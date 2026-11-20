@@ -400,7 +400,7 @@ class Host:
         await ws.channel_manager.start_all()
 
 
-def _local_dependency_wheel(directory, name, version, payload):
+def _local_dependency_wheel(directory, name, version, payload, *, requires=()):
     directory.mkdir(parents=True, exist_ok=True)
     module = name.replace("-", "_")
     info = f"{module}-{version}.dist-info"
@@ -408,6 +408,7 @@ def _local_dependency_wheel(directory, name, version, payload):
         **payload,
         f"{info}/METADATA": (
             f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n"
+            + "".join(f"Requires-Dist: {value}\n" for value in requires)
         ).encode(),
         f"{info}/WHEEL": (
             b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\n"

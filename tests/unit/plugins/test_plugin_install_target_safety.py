@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Install targets must always remain child directories of the plugin root."""
 
+# Pytest fixture parameters intentionally use their registered public names.
+# pylint: disable=redefined-outer-name
 from __future__ import annotations
 
 import asyncio
@@ -25,7 +27,11 @@ from qwenpaw.plugins.updates import (
     write_updating_marker,
 )
 
+from . import conftest as plugin_fixtures
 from .timing import WAIT_TIMEOUT
+
+# Keep registry isolation explicit in mixed app/host regression collection.
+fresh_registry = plugin_fixtures.fresh_registry
 
 
 def _snapshot(root):

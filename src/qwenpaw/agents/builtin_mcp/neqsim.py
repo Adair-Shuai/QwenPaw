@@ -58,6 +58,8 @@ async def _load_card(driver_manager: Any, name: str) -> Any | None:
 async def ensure_neqsim_driver_registered(
     workspace: Any,
     driver_manager: Any,
+    *,
+    strict: bool = False,
 ) -> None:
     """Ensure the built-in Driver card exists before runtime installation.
 
@@ -144,6 +146,8 @@ async def ensure_neqsim_driver_registered(
             status.state,
         )
     except Exception:
+        if strict:
+            raise
         logger.warning(
             "Failed to register built-in NeqSim Driver",
             exc_info=True,

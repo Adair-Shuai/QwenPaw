@@ -45,6 +45,10 @@ internal static class InstallerProbe
                 result = UGSciInstallerIO.DirectorySize(args[1]);
             else if (args[0] == "copy")
                 result = UGSciInstallerIO.CopyDirectory(args[1], args[2]);
+            else if (args[0] == "copy-progress")
+                result = UGSciInstallerIO.CopyDirectory(args[1], args[2],
+                    false,
+                    UGSciInstallerIO.DirectorySize(args[1]));
             else if (args[0] == "copy-user")
                 result = UGSciInstallerIO.CopyDirectory(
                     args[1], args[2], true);
@@ -113,6 +117,91 @@ def _run(probe, operation, *paths):
     )
     assert completed.stdout, completed.stderr
     return completed.returncode, json.loads(completed.stdout.splitlines()[-1])
+
+
+@pytest.mark.parametrize(
+    ("deferred", "previous", "disabled", "expected"),
+    [
+        (True, "none", False, False),
+        (True, "current", False, True),
+        (True, "legacy", False, True),
+        (True, "prefix", False, False),
+        (True, "current", True, False),
+        (False, "none", False, True),
+    ],
+)
+def test_deferred_installer_preserves_cli_path_preference(
+    tmp_path,
+    deferred,
+    previous,
+    disabled,
+    expected,
+):
+    source = BUILDER.read_text(encoding="utf-8")
+    decision = source.split("  $cliScripts = Join-Path $installDir", 1)[1]
+    decision = (
+        "  $cliScripts = Join-Path $installDir"
+        + decision.split(
+            "  $version = [string]$packageVersion.version",
+            1,
+        )[0]
+    )
+    (tmp_path / "binaries/cli").mkdir(parents=True)
+    (tmp_path / "binaries/cli/qwenpaw.exe").write_bytes(
+        b"isolated CLI fixture",
+    )
+    helper = tmp_path / "update-qwenpaw-path.ps1"
+    helper.write_text(
+        "param([string]$Action, [string]$Path)\n"
+        "Write-Host ('[PATH-ACTION] ' + $Action + '|' + $Path)\n",
+        encoding="utf-8-sig",
+    )
+    root = str(tmp_path).replace("'", "''")
+    entry = {
+        "none": "C:\\unrelated\\bin",
+        "current": str(tmp_path / "binaries/cli"),
+        "legacy": str(tmp_path / "binaries/python-runtime/python/Scripts"),
+        "prefix": str(tmp_path / "binaries/cli-extra"),
+    }[previous]
+    # Historical PATH spelling is matched without writing the user's registry.
+    entry = (' "' + entry.swapcase() + '\\" ').replace("'", "''")
+    script = tmp_path / "cli-choice.ps1"
+    script.write_text(
+        "$ErrorActionPreference = 'Stop'\n"
+        "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n"
+        f"$installDir = '{root}'\n$existingInstallDir = $installDir\n"
+        f"$previousUserPath = '{entry}'\n$Silent = $true\n"
+        f"$DeferredCommit = ${str(deferred).lower()}\n"
+        f"$NoCliPath = ${str(disabled).lower()}\n"
+        + decision
+        + "\n@{enabled=$enableCliPath; marker="
+        "(Test-Path -LiteralPath (Join-Path $installDir 'cli-path.txt'))} "
+        "| ConvertTo-Json -Compress | Write-Host\n",
+        encoding="utf-8-sig",
+    )
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(script),
+        ],
+        capture_output=True,
+        encoding="utf-8-sig",
+        check=False,
+        timeout=30,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout.splitlines()[-1]) == {
+        "enabled": expected,
+        "marker": expected,
+    }
+    cli_action = "Add" if expected else "Remove"
+    assert f"[PATH-ACTION] {cli_action}|{tmp_path}\\binaries\\cli" in (
+        result.stdout
+    )
 
 
 def test_installer_replaces_legacy_shortcut_icons_on_upgrade(tmp_path):
@@ -612,3 +701,59 @@ def test_installer_streams_child_log_before_exit_and_preserves_failure_status(
             if process.poll() is None:
                 process.kill()
                 process.communicate(timeout=10)
+
+
+def test_compiled_copy_reports_real_bytes_and_preserves_file_metadata(
+    tmp_path,
+    installer_probe,
+):
+    source, destination = tmp_path / "source", tmp_path / "destination"
+    source.mkdir()
+    large = source / "large.bin"
+    large.write_bytes(b"native copy progress\n" * 500000)
+    read_only = source / "read-only.txt"
+    read_only.write_bytes(b"metadata retained")
+    os.utime(read_only, (1700000000, 1700000000))
+    read_only.chmod(0o444)
+    command = [
+        str(installer_probe),
+        "copy-progress",
+        str(source),
+        str(destination),
+    ]
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    progress = [
+        tuple(map(int, line.split("|")[1:]))
+        for line in completed.stdout.splitlines()
+        if line.startswith("[UGSCI-PROGRESS] copy|")
+    ]
+    total = sum(path.stat().st_size for path in source.iterdir())
+    assert progress[-1] == (total, total)
+    assert all(done < size for done, size in progress[:-1])
+    assert (destination / large.name).read_bytes() == large.read_bytes()
+    copied = destination / read_only.name
+    assert copied.read_bytes() == read_only.read_bytes()
+    assert abs(copied.stat().st_mtime - read_only.stat().st_mtime) < 0.001
+    assert copied.stat().st_file_attributes & 1
+    # An overwrite of a read-only destination must fail, with no successful
+    # completion event, preserving the previous native copy behavior.
+    failed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    assert failed.returncode == 2
+    assert f"[UGSCI-PROGRESS] copy|{total}|{total}" not in failed.stdout

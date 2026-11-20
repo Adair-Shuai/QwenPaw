@@ -33,6 +33,14 @@ _HASH = re.compile(r"^[a-f0-9]{64}$")
 _REGISTRY_LOCK = threading.RLock()
 _STORES: dict[str, "TurnFileStore"] = {}
 _ACTIVE: dict[str, "Capture"] = {}
+_REQUIRED_VERSIONS = {
+    "created": ("after",),
+    "modified": ("before", "after"),
+    "deleted": ("before",),
+    "delivered": ("after",),
+}
+_SIZE_WARNING = "File exceeds snapshot size limit: "
+_SCAN_BUDGET_WARNING = "Snapshot byte budget reached"
 
 
 def _now() -> str:
@@ -63,6 +71,43 @@ def _public(value: dict) -> dict:
         {key: item for key, item in entry.items() if not key.startswith("_")}
         for entry in result.get("files", [])
     ]
+    # Capacity limits still inventory file metadata. Once the final comparison
+    # is complete, omissions outside the actual changes/deliveries describe
+    # the scan scope. Keep them available without reporting a failed archive.
+    # Read-time normalization also covers existing immutable manifests.
+    warnings = result.get("warnings", [])
+    # A saturated list can omit additional read or directory-scan failures.
+    if (
+        result.get("status") != "completed"
+        or not warnings
+        or len(warnings) >= 100
+    ):
+        return result
+    unavailable = set()
+    for row in result["files"]:
+        versions = _REQUIRED_VERSIONS.get(
+            row.get("status"),
+            ("before", "after"),
+        )
+        if any(not row.get(f"{version}_available") for version in versions):
+            unavailable.add(row["path"])
+    archive_warnings = []
+    scan_warnings = list(result.get("scan_warnings", []))
+    for warning in warnings:
+        outside_archive = (
+            warning.startswith(_SIZE_WARNING)
+            and warning[len(_SIZE_WARNING) :] not in unavailable
+        ) or (warning.startswith(_SCAN_BUDGET_WARNING) and not unavailable)
+        if outside_archive:
+            scan_warnings.append(warning)
+        else:
+            archive_warnings.append(warning)
+    if scan_warnings:
+        result.update(
+            warnings=archive_warnings,
+            scan_warnings=list(dict.fromkeys(scan_warnings)),
+            incomplete=bool(archive_warnings or unavailable),
+        )
     return result
 
 
@@ -383,7 +428,7 @@ class TurnFileStore:
                     continue
                 if before is None and self._unknown(capture.before, key):
                     warnings.append(f"Initial version unavailable: {key[1]}")
-                if (
+                unchanged = bool(
                     before
                     and end
                     and (
@@ -394,9 +439,9 @@ class TurnFileStore:
                             and before.metadata_fingerprint
                             == end.metadata_fingerprint
                         )
-                    )
-                    and not delivered
-                ):
+                    ),
+                )
+                if unchanged and not delivered:
                     continue
                 state = (
                     "created"
@@ -404,11 +449,7 @@ class TurnFileStore:
                     else (
                         "deleted"
                         if end is None
-                        else (
-                            "delivered"
-                            if before.fingerprint == end.fingerprint
-                            else "modified"
-                        )
+                        else ("delivered" if unchanged else "modified")
                     )
                 )
                 candidates.append((key, before, end, state, delivered, False))

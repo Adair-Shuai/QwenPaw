@@ -92,7 +92,11 @@ export default function WorkbenchTabBar({
   );
 
   return (
-    <header className={styles.tabBar}>
+    <header
+      className={styles.tabBar}
+      data-workbench-tabbar
+      data-tauri-drag-region
+    >
       {tabs.length ? (
         <div
           className={styles.tabViewport}
@@ -194,6 +198,12 @@ export default function WorkbenchTabBar({
               >
                 <ContentIcon tab={tab} />
                 <span className={styles.tabTitle}>{tab.title}</span>
+                {tab.target?.artifact?.meta?.turnFileArchive === true &&
+                  tab.target.artifact.meta.version === "before" && (
+                    <small className={styles.archiveVersion}>
+                      {t("turnFiles.previousVersionLabel")}
+                    </small>
+                  )}
                 {tab.filePath && changedPaths.has(tab.filePath) && (
                   <GitCompareArrows
                     size={13}

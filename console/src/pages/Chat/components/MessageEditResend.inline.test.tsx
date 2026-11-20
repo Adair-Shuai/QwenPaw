@@ -19,7 +19,7 @@ import i18n, { i18nReady } from "../../../i18n";
 import { useMessageQueueStore } from "../../../stores/messageQueueStore";
 import { extractClientMessageId } from "../../../utils/clientMessageId";
 import { useMessageEditResend } from "../hooks/useMessageEditResend";
-import { applyAnswerQuotePayload } from "../answerQuotes";
+import { applyAnswerQuotePayload, type AnswerQuote } from "../answerQuotes";
 import { renderQuotedRequest } from "./AnswerQuoteRequest";
 
 // Preserve the actual Request/Card, native action dispatcher, Bubble and SDK
@@ -463,11 +463,29 @@ describe("inline message editing through the installed SDK request card", () => 
     expect(useMessageQueueStore.getState().getQueue("chat-inline")).toEqual([]);
   });
   it("preserves quoted passages when editing and resending a real SDK request", async () => {
-    const quotes = [
+    const quotes: AnswerQuote[] = [
       {
         id: "quote-edit",
         messageId: "source",
         text: "Quoted original guidance",
+      },
+      {
+        id: "file-edit",
+        messageId: "output/结果 图.png",
+        text: "output/结果 图.png",
+        source: {
+          kind: "file-reference",
+          scope: {
+            kind: "session",
+            agentId: "default",
+            sessionId: "chat-inline",
+          },
+          target: {
+            source: "workspace",
+            path: "output/结果 图.png",
+            root: "workspace",
+          },
+        },
       },
     ];
     const data = applyAnswerQuotePayload(
@@ -481,6 +499,7 @@ describe("inline message editing through the installed SDK request card", () => 
       name: "Edit message content",
     });
     expect(editor).toHaveValue("Identical original question");
+    expect(screen.getByRole("button", { name: "结果 图.png" })).toBeVisible();
     fireEvent.change(editor, { target: { value: "Revised question" } });
     fireEvent.click(screen.getByRole("button", { name: "Resend" }));
     expect(

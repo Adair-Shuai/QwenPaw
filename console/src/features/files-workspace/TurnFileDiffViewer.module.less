@@ -1,0 +1,33 @@
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--app-border);
+  color: var(--app-text-secondary);
+  font-size: var(--app-font-caption);
+  button {
+    padding: 3px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: 6px;
+    color: inherit;
+    background: var(--app-surface);
+    cursor: pointer;
+    &[aria-pressed="true"] {
+      color: var(--app-text);
+      background: var(--app-fill-subtle);
+    }
+  }
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+  }
+  button:focus-visible,
+  input:focus-visible {
+    outline: 2px solid var(--app-selected-border);
+    outline-offset: 2px;
+  }
+}

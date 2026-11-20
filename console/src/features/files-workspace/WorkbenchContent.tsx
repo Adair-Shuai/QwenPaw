@@ -41,8 +41,10 @@ import {
   WorkbenchContentPanel,
   WorkbenchNavigation,
 } from "./WorkbenchExtensions";
+import WorkbenchFileActions from "./WorkbenchFileActions";
 import WorkbenchTabBar from "./WorkbenchTabBar";
 import WorkbenchStartPage from "./WorkbenchStartPage";
+import type { WorkbenchBrowserStartContent } from "./WorkbenchPanels";
 import {
   EMPTY_WORKBENCH,
   useWorkbenchTabsStore,
@@ -87,7 +89,7 @@ function ToolTab({
   onOpenFiles: () => void;
   onClose: () => void;
   onRequestsChange: (requests: InteractionRequest[]) => void;
-  browserStartContent: ReactNode;
+  browserStartContent: WorkbenchBrowserStartContent;
 }) {
   const scopeKey = filesWorkspaceScopeKey(scope);
   const browserChanged = useCallback(
@@ -153,6 +155,7 @@ export default function WorkbenchContent({
   state,
   scope,
   runtimeSessionId,
+  onToggleFilePresentation,
   panelActions,
   footerActions,
   onActiveTargetChange,
@@ -161,6 +164,7 @@ export default function WorkbenchContent({
   state: Exclude<FilesDrawerState, { kind: "closed" }>;
   scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
   runtimeSessionId?: string;
+  onToggleFilePresentation: () => void;
   panelActions: ReactNode;
   footerActions: ReactNode;
   onActiveTargetChange: (target: FileTarget | undefined) => void;
@@ -176,6 +180,14 @@ export default function WorkbenchContent({
   const nativeDiffs = useDiffsForScope(scopeKey);
   const nativeActive = useActiveTabPathForScope(scopeKey);
   const activeTab = model.tabs.find((tab) => tab.id === model.activeId);
+  const browserPage = activeTab?.browser?.pages[activeTab.browser.index];
+  const toolbarPath =
+    activeTab?.kind === "files"
+      ? activeTab.filePath
+      : activeTab?.kind === "browser" && browserPage?.kind === "file"
+      ? browserPage.tabPath
+      : undefined;
+  const toolbarFile = nativeTabs.find((tab) => tab.path === toolbarPath);
   const secondaryTab = model.tabs.find(
     (tab) => tab.id === model.secondaryId && tab.id !== model.activeId,
   );
@@ -211,6 +223,7 @@ export default function WorkbenchContent({
   );
   const browsingRef = useRef(browsing);
   browsingRef.current = browsing;
+  const fileStartTab = useRef<string>();
   const [requests, setRequests] = useState<InteractionRequest[]>([]);
   const [closing, setClosing] = useState<WorkbenchTab[]>([]);
   const [saving, setSaving] = useState(false);
@@ -263,6 +276,7 @@ export default function WorkbenchContent({
 
   const select = useCallback(
     (tab: WorkbenchTab) => {
+      fileStartTab.current = undefined;
       if (tab.kind === "terminal")
         useTerminalSurfaceStore.getState().setSessionOpen(scopeKey, false);
       useWorkbenchTabsStore.getState().select(scopeKey, tab.id);
@@ -274,35 +288,53 @@ export default function WorkbenchContent({
     },
     [scopeKey],
   );
-  const openFiles = useCallback(() => {
-    const store = useWorkbenchTabsStore.getState();
-    const files =
-      store.scopes[scopeKey]?.tabs.filter(
-        (tab) => tab.kind === "files" || tab.kind === "graph",
-      ) ?? [];
-    const file =
-      files.find(
-        (tab) =>
-          tab.filePath ===
-          useCodingTabsStore.getState().activeTabByAgent[scopeKey],
-      ) ?? files[files.length - 1];
-    if (file) select(file);
-    else setBrowsing(true);
-    controller.current?.showFiles();
-  }, [scopeKey, select]);
+  const openFiles = useCallback(
+    (startTabId?: string) => {
+      fileStartTab.current = startTabId;
+      const store = useWorkbenchTabsStore.getState();
+      const files =
+        store.scopes[scopeKey]?.tabs.filter(
+          (tab) => tab.kind === "files" || tab.kind === "graph",
+        ) ?? [];
+      const file =
+        files.find(
+          (tab) =>
+            tab.filePath ===
+            useCodingTabsStore.getState().activeTabByAgent[scopeKey],
+        ) ?? files[files.length - 1];
+      if (file) {
+        if (startTabId && store.replaceStartTab(scopeKey, startTabId, file)) {
+          fileStartTab.current = undefined;
+          setBrowsing(false);
+          if (file.filePath) controller.current?.select(file.filePath);
+          if (file.kind === "graph")
+            controller.current?.showGraph(file.graphRoot ?? null);
+        } else select(file);
+      } else setBrowsing(true);
+      controller.current?.showFiles();
+    },
+    [scopeKey, select],
+  );
   const openTool = useCallback(
     (
       kind: WorkbenchMode,
       fresh = false,
       details: Partial<WorkbenchTab> = {},
+      startTabId?: string,
     ) => {
+      fileStartTab.current = undefined;
       if (kind === "terminal")
         useTerminalSurfaceStore.getState().setSessionOpen(scopeKey, false);
       if (kind === "files") {
-        openFiles();
+        openFiles(startTabId);
         return;
       }
       const store = useWorkbenchTabsStore.getState();
+      const open = (tab: WorkbenchTab) => {
+        if (!startTabId || !store.replaceStartTab(scopeKey, startTabId, tab))
+          store.open(scopeKey, tab);
+        setBrowsing(false);
+      };
       const existing = store.scopes[scopeKey]?.tabs.find(
         (tab) => tab.kind === kind,
       );
@@ -311,19 +343,18 @@ export default function WorkbenchContent({
           (tab) => tab.kind === kind && tab.requestId === details.requestId,
         );
         if (matching) {
-          select(matching);
+          open(matching);
           return;
         }
         const inbox = store.scopes[scopeKey]?.tabs.find(
           (tab) => tab.kind === kind && !tab.requestId,
         );
         if (inbox) {
-          store.open(scopeKey, {
+          open({
             ...inbox,
             ...details,
             title: details.title ?? inbox.title,
           });
-          setBrowsing(false);
           return;
         }
       }
@@ -335,7 +366,7 @@ export default function WorkbenchContent({
         !details.taskId &&
         existing
       ) {
-        select(existing);
+        open(existing);
         return;
       }
       const identity =
@@ -358,23 +389,38 @@ export default function WorkbenchContent({
                 ? "workbench.tabs.newTab"
                 : `workbench.activity.${kind}`,
             ));
-      store.open(scopeKey, {
+      open({
         id,
         kind,
         title,
         ...details,
         ...(kind === "browser" ? { browser: EMPTY_BROWSER } : {}),
       });
-      setBrowsing(false);
     },
-    [scopeKey, openFiles, select, t],
+    [scopeKey, openFiles, t],
   );
 
-  const lastNavigation = useRef<FilesDrawerState>();
+  const lastNavigation = useRef<typeof state>();
   // Only explicit navigation changes focus. Hydration and background updates do not.
   useLayoutEffect(() => {
-    if (lastNavigation.current === state) return;
+    const previous = lastNavigation.current;
+    if (previous === state) return;
     lastNavigation.current = state;
+    if (
+      previous &&
+      previous.presentation !== state.presentation &&
+      previous.kind === state.kind &&
+      previous.target === state.target &&
+      previous.trigger === state.trigger &&
+      (state.kind === "preview" ||
+        (previous.kind === "workspace" &&
+          previous.mode === state.mode &&
+          previous.simulationRunId === state.simulationRunId &&
+          previous.interactionRequestId === state.interactionRequestId))
+    ) {
+      return;
+    }
+    fileStartTab.current = undefined;
     setRequestedFile(
       state.target?.preferredView === "visualization"
         ? undefined
@@ -402,23 +448,31 @@ export default function WorkbenchContent({
         .getState()
         .tabsByAgent[scopeKey]?.find((item) => item.path === path);
       if (!tab) return;
+      const reference: WorkbenchTab = {
+        id: fileId(path),
+        kind: "files",
+        filePath: path,
+        title: basename(tab.displayPath ?? path),
+        target: fileTabTarget(tab),
+      };
+      const startTabId = fileStartTab.current;
+      fileStartTab.current = undefined;
+      if (
+        startTabId &&
+        useWorkbenchTabsStore
+          .getState()
+          .replaceStartTab(scopeKey, startTabId, reference)
+      ) {
+        setBrowsing(false);
+        return;
+      }
       const current = activeRef.current;
       const focus =
         browsingRef.current ||
         !current ||
         current.kind === "files" ||
         current.kind === "graph";
-      useWorkbenchTabsStore.getState().open(
-        scopeKey,
-        {
-          id: fileId(path),
-          kind: "files",
-          filePath: path,
-          title: basename(tab.displayPath ?? path),
-          target: fileTabTarget(tab),
-        },
-        focus,
-      );
+      useWorkbenchTabsStore.getState().open(scopeKey, reference, focus);
       if (focus) setBrowsing(false);
     },
     [scopeKey],
@@ -530,6 +584,7 @@ export default function WorkbenchContent({
   }, [scope.agentId, runtimeSessionId]);
 
   const finishClose = (tabs: WorkbenchTab[]) => {
+    fileStartTab.current = undefined;
     closingRef.current = true;
     for (const tab of tabs) {
       if (tab.kind === "files" && tab.filePath) {
@@ -615,67 +670,91 @@ export default function WorkbenchContent({
       if (alive.current) setSaving(false);
     }
   };
-  const reopen = (tab: WorkbenchTab) => {
+  const reopen = (tab: WorkbenchTab, startTabId?: string) => {
+    fileStartTab.current = undefined;
     if (tab.kind === "files" && tab.target) {
+      fileStartTab.current = startTabId;
       setBrowsing(true);
       setRequestedFile({ ...tab.target });
     } else {
-      useWorkbenchTabsStore.getState().open(scopeKey, tab);
-      select(tab);
+      const store = useWorkbenchTabsStore.getState();
+      if (startTabId && store.replaceStartTab(scopeKey, startTabId, tab)) {
+        if (tab.kind === "terminal")
+          useTerminalSurfaceStore.getState().setSessionOpen(scopeKey, false);
+        setBrowsing(false);
+      } else {
+        store.open(scopeKey, tab);
+        select(tab);
+      }
     }
   };
   const hasBackground = pending.length + tasks.length > 0;
-  const background = hasBackground ? (
-    <div className={styles.emptyRows}>
-      {pending.map((request) => (
-        <button
-          type="button"
-          key={request.id}
-          className={styles.emptyRow}
-          onClick={() =>
-            openTool("interactions", false, {
-              requestId: request.id,
-              title: request.title,
-            })
-          }
-        >
-          <ListChecks size={17} />
-          <span>
-            <strong>{request.title}</strong>
-            <small>{t("workbench.empty.pending", "待填写")}</small>
-          </span>
-          <ArrowUpRight size={15} />
-        </button>
-      ))}
-      {tasks.map((task) => (
-        <button
-          type="button"
-          key={task.toolCallId}
-          className={styles.emptyRow}
-          onClick={() =>
-            openTool("agents", false, {
-              taskId: task.toolCallId,
-              title: task.taskSummary || task.toolName,
-            })
-          }
-        >
-          <Network size={17} />
-          <span>
-            <strong>{task.taskSummary || task.toolName}</strong>
-            <small>{t("workbench.empty.running", "运行中")}</small>
-          </span>
-          <ArrowUpRight size={15} />
-        </button>
-      ))}
-    </div>
-  ) : undefined;
+  const background = (startTabId?: string) =>
+    hasBackground ? (
+      <div className={styles.emptyRows}>
+        {pending.map((request) => (
+          <button
+            type="button"
+            key={request.id}
+            className={styles.emptyRow}
+            onClick={() =>
+              openTool(
+                "interactions",
+                false,
+                {
+                  requestId: request.id,
+                  title: request.title,
+                },
+                startTabId,
+              )
+            }
+          >
+            <ListChecks size={17} />
+            <span>
+              <strong>{request.title}</strong>
+              <small>{t("workbench.empty.pending", "待填写")}</small>
+            </span>
+            <ArrowUpRight size={15} />
+          </button>
+        ))}
+        {tasks.map((task) => (
+          <button
+            type="button"
+            key={task.toolCallId}
+            className={styles.emptyRow}
+            onClick={() =>
+              openTool(
+                "agents",
+                false,
+                {
+                  taskId: task.toolCallId,
+                  title: task.taskSummary || task.toolName,
+                },
+                startTabId,
+              )
+            }
+          >
+            <Network size={17} />
+            <span>
+              <strong>{task.taskSummary || task.toolName}</strong>
+              <small>{t("workbench.empty.running", "运行中")}</small>
+            </span>
+            <ArrowUpRight size={15} />
+          </button>
+        ))}
+      </div>
+    ) : undefined;
   const launch = (kind: WorkbenchMode) => openTool(kind, kind === "browser");
-  const startContent = (
+  const startContent = (startTabId: string) => (focusAddress: () => void) => (
     <WorkbenchStartPage
       recent={model.recent}
-      onOpen={launch}
-      onReopen={reopen}
-      background={background}
+      onOpen={(kind) =>
+        kind === "browser"
+          ? focusAddress()
+          : openTool(kind, false, {}, startTabId)
+      }
+      onReopen={(tab) => reopen(tab, startTabId)}
+      background={background(startTabId)}
     />
   );
   const empty = (
@@ -684,7 +763,7 @@ export default function WorkbenchContent({
       recent={model.recent}
       onOpen={launch}
       onReopen={reopen}
-      background={background}
+      background={background()}
     />
   );
   const filesVisible =
@@ -732,7 +811,7 @@ export default function WorkbenchContent({
             onOpenFiles={openFiles}
             onClose={() => requestClose([secondaryTab])}
             onRequestsChange={setRequests}
-            browserStartContent={startContent}
+            browserStartContent={startContent(secondaryTab.id)}
           />
         )}
       </div>
@@ -762,7 +841,20 @@ export default function WorkbenchContent({
         }
         onMerge={() => useWorkbenchTabsStore.getState().merge(scopeKey)}
         onNew={() => openTool("browser", true)}
-        actions={panelActions}
+        actions={
+          <>
+            {toolbarFile && (
+              <WorkbenchFileActions
+                file={toolbarFile}
+                scope={scope}
+                runtimeSessionId={runtimeSessionId}
+                floating={state.presentation === "floating"}
+                onTogglePresentation={onToggleFilePresentation}
+              />
+            )}
+            {panelActions}
+          </>
+        }
       />
       <div className={workspaceStyles.workspace}>
         <WorkbenchNavigation
@@ -914,7 +1006,7 @@ export default function WorkbenchContent({
                         runtimeSessionId={runtimeSessionId}
                         onOpenFiles={openFiles}
                         onClose={() => requestClose([tab])}
-                        browserStartContent={startContent}
+                        browserStartContent={startContent(tab.id)}
                         onRequestsChange={setRequests}
                       />
                     </div>

@@ -132,7 +132,9 @@ export default function TurnReviewPanel({
               ))}
             </select>
           </label>
-          {turn && <TurnFileDetails key={turn.id} scope={scope} turn={turn} />}
+          {turn && (
+            <TurnFileDetails key={turn.id} scope={scope} turn={turn} review />
+          )}
         </>
       )}
     </section>

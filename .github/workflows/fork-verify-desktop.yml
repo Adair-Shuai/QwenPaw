@@ -108,13 +108,23 @@ jobs:
           dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
           allow-flaky-llm: "true"
 
+      - name: Test native macOS drag-install packaging
+        run: |
+          python -m pip install pytest
+          python -m pytest --confcutdir=tests/unit/tauri tests/unit/tauri/test_macos_dmg_native.py -q
+
+      - name: Verify drag-install envelope
+        run: python scripts/pack-tauri/macos_dmg.py verify-envelope --dmg dist/UGSci-Tauri-*-macOS.dmg
+
       - name: Stop desktop server
         if: always()
         run: |
           pkill -f "UGSci Desktop" 2>/dev/null || true
+          pkill -x "UGSci" 2>/dev/null || true
           pkill -f "qwenpaw-backend" 2>/dev/null || true
           sleep 2
           pkill -9 -f "UGSci Desktop" 2>/dev/null || true
+          pkill -9 -x "UGSci" 2>/dev/null || true
           pkill -9 -f "qwenpaw-backend" 2>/dev/null || true
 
   tauri-windows:

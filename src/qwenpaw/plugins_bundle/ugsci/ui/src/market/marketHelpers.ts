@@ -259,6 +259,7 @@ export interface OssAgent {
   config?: string;
   instructions?: string;
   skills_manifest?: string;
+  package_manifest?: string;
   drivers?: Record<string, string[]>;
   /** Computed: which tag_group this agent belongs to */
   category?: string;
@@ -973,6 +974,7 @@ export async function fetchOSSAgentsManifest(refresh = false): Promise<{
       config: a.config,
       instructions: a.instructions,
       skills_manifest: a.skills_manifest,
+      package_manifest: a.package_manifest,
       drivers: a.drivers,
       category,
     } as OssAgent;

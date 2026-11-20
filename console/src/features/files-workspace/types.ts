@@ -54,9 +54,15 @@ export interface WorkbenchBrowserFile {
 
 export type FilesDrawerState =
   | { kind: "closed" }
-  | { kind: "preview"; target: FileTarget; trigger: HTMLElement | null }
+  | {
+      kind: "preview";
+      target: FileTarget;
+      trigger: HTMLElement | null;
+      presentation?: "floating";
+    }
   | {
       kind: "workspace";
+      presentation?: "floating";
       target?: FileTarget;
       mode?: WorkbenchMode;
       simulationRunId?: string;
@@ -67,17 +73,20 @@ export type FilesDrawerState =
 export type FilesDrawerEvent =
   | {
       type: "OPEN_PREVIEW";
+      presentation?: "floating";
       target: FileTarget;
       trigger: HTMLElement | null;
     }
   | {
       type: "OPEN_WORKSPACE";
+      presentation?: "floating";
       target?: FileTarget;
       mode?: WorkbenchMode;
       simulationRunId?: string;
       interactionRequestId?: string;
       trigger: HTMLElement | null;
     }
+  | { type: "SET_PRESENTATION"; presentation?: "floating" }
   | { type: "EXPAND_WORKSPACE" }
   | { type: "COLLAPSE_TO_PREVIEW"; target?: FileTarget }
   | { type: "CLOSE" };

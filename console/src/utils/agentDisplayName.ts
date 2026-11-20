@@ -18,6 +18,14 @@ export function getAgentDisplayName(
     // Otherwise, fall back to localized default name
     return t("agent.defaultDisplayName");
   }
-  // For other agents, use user-defined name or fallback to id
-  return agent.name || agent.id;
+  const presets = [
+    "QwenPaw-Data",
+    "QA Agent",
+    "CloudPaw-Master",
+    "CloudPaw-Executor",
+    "CloudPaw-Verifier",
+  ];
+  return presets.includes(agent.name)
+    ? t(`agent.presetNames.${agent.name}`, { defaultValue: agent.name })
+    : agent.name || agent.id;
 }

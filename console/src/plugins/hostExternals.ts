@@ -17,6 +17,7 @@ type ToolRendererMap = NonNullable<
 >;
 import type { harnessNamespace } from "./harnesses";
 import i18n from "../i18n";
+import { sidebarDensityPreference } from "../utils/sidebarDensityPreference";
 import ReactDOM from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import * as antd from "antd";
@@ -66,6 +67,7 @@ import {
 
 /** Shared host dependencies exposed to plugin bundles via `window.QwenPaw.host`. */
 export interface HostExternals {
+  sidebarDensity?: typeof sidebarDensityPreference;
   React: typeof React;
   ReactDOM: typeof ReactDOM;
   antd: typeof antd;
@@ -391,6 +393,7 @@ export function installHostExternals(): void {
     window.QwenPaw.host.refreshAgents = (options?: { force?: boolean }) =>
       useAgentStore.getState().refreshAgents(options);
   }
+  window.QwenPaw.host.sidebarDensity = sidebarDensityPreference;
   window.QwenPaw.host.useNavigate = useNavigate;
   window.QwenPaw.host.useLocation = useLocation;
 

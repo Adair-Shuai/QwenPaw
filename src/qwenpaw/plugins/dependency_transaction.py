@@ -73,8 +73,8 @@ def authenticate_plan(directory, operation, *, seal=False):
             if key in operation
             or key
             not in {
-                "installation_source",
                 "dependency_context",
+                "installation_source",
                 "continuation_command",
                 "host_bundle_identity",
                 "dependency_state_dir",
@@ -882,6 +882,7 @@ def _copy_source_file(source, target):
 
 
 def _sync_source(root):
+    # This also syncs owned files modified after a copy, on every platform.
     for path in root.rglob("*"):
         if path.is_file():
             _sync_source_file(path)
@@ -1444,10 +1445,9 @@ async def apply_operation(manager, operation_id):
                 fresh,
                 admissions,
             )
-            record = await loader.load_plugin_from_path(
-                source,
-                force=operation["force"],
-            )
+            from .downloaded_updates import install_confirmed_update
+
+            record = await install_confirmed_update(loader, source, operation)
             if record.status not in {"active", "inactive", "registered"}:
                 raise RuntimeError(
                     "DEPENDENCY_CONTINUATION_FAILED: plugin "

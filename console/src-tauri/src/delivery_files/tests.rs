@@ -107,6 +107,28 @@ fn rejects_path_traversal_reserved_names_and_unlaunchable_extensions() {
 }
 
 #[test]
+fn scripts_require_an_explicit_installed_editor() {
+    assert_eq!(script_extension("example.PY").as_deref(), Some(".py"));
+    assert!(script_extension("example.exe").is_none());
+    assert!(script_extension("example.docx").is_none());
+    let listing = script_applications(".py");
+    assert!(listing.editor_only);
+    assert!(!listing.can_open_default);
+    assert!(
+        listing
+            .applications
+            .iter()
+            .filter(|app| app.is_default)
+            .count()
+            <= 1
+    );
+    let script = Path::new("example.PY");
+    assert!(open_script_in_editor(script, None).is_err());
+    assert!(open_script_in_editor(script, Some("system-default")).is_err());
+    assert!(open_script_in_editor(script, Some("C:\\Windows\\cmd.exe")).is_err());
+}
+
+#[test]
 fn invalid_content_and_session_limits_fail_without_evicting_open_files() {
     let mut store = DeliveryStore::default();
     assert!(store

@@ -4,7 +4,11 @@ import { setRuntimeApiBaseUrl } from "../../api/config";
 import type { SessionFilesScope } from "../../api/modules/turnFiles";
 import type { FileTarget } from "./types";
 
-const mocks = vi.hoisted(() => ({ native: vi.fn(() => true), fetch: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  native: vi.fn(() => true),
+  fetch: vi.fn(),
+  api: vi.fn(),
+}));
 vi.mock("../../utils/openExternalLink", () => ({
   isDesktopTauriRuntime: mocks.native,
   resolveExternalUrl: (url: string) => {
@@ -17,6 +21,14 @@ vi.mock("../../utils/openExternalLink", () => ({
   isHttpExternalUrl: (url: string) => /^https?:\/\//.test(url),
 }));
 
+vi.mock("../../api/request", () => ({ request: mocks.api }));
+vi.mock("../../pages/Chat/sessionApi", () => ({
+  default: {
+    getSessionIdentity: (id: string) => ({
+      sessionId: id === "route-chat-a" ? "session-a" : id,
+    }),
+  },
+}));
 import {
   isDeliveryNativeAvailable,
   listDeliveryApplications,
@@ -322,11 +334,13 @@ describe("native delivery file byte and identity boundary", () => {
 
   it("rejects browser runtimes and unsafe URLs without invoking a native program", async () => {
     mocks.native.mockReturnValue(false);
+    setRuntimeApiBaseUrl("https://remote.example");
     expect(isDeliveryNativeAvailable()).toBe(false);
     await expect(openDeliveryFile(target(), scope)).rejects.toThrow(
       "unavailable",
     );
     mocks.native.mockReturnValue(true);
+    setRuntimeApiBaseUrl("");
     const file = target();
     file.artifact!.binaryUrl = "file:///private/report.csv";
     await expect(openDeliveryFile(file, scope)).rejects.toThrow("binary URL");
@@ -569,4 +583,89 @@ describe("delivery application association cache", () => {
     await listDeliveryApplications("third.csv");
     expect(calls("list_delivery_file_applications")).toHaveLength(3);
   });
+});
+
+it("refreshes cached associations when explicitly requested", async () => {
+  await listDeliveryApplications("report.csv");
+  await listDeliveryApplications("report.csv");
+  expect(calls("list_delivery_file_applications")).toHaveLength(1);
+  await listDeliveryApplications("report.csv", true);
+  expect(calls("list_delivery_file_applications")).toHaveLength(2);
+});
+it("stages saved inline image bytes without using a mutable workspace path", async () => {
+  await openDeliveryFile(
+    {
+      source: "attachment",
+      path: "image.png",
+      artifactUrl: "data:image/png;base64,AP+ACg==",
+    },
+    scope,
+  );
+  expect(mocks.fetch).toHaveBeenCalledWith(
+    "data:image/png;base64,AP+ACg==",
+    expect.objectContaining({
+      headers: {},
+      credentials: "omit",
+      redirect: "error",
+    }),
+  );
+  expect(calls("stage_delivery_file")[0][1]).toMatchObject({
+    request: { fileName: "image.png", contentBase64: "AP+ACg==" },
+  });
+});
+
+it("opens local browser deliveries through scoped host associations and staged tokens", async () => {
+  mocks.native.mockReturnValue(false);
+  const chatScope = { ...scope, sessionId: "route-chat-a" };
+  mocks.api.mockImplementation(async (url: string) => {
+    if (url.includes("applications")) return applications;
+    if (url.includes("stage"))
+      return { token: "local-token", fileName: "report.csv" };
+    return { ok: true };
+  });
+  expect(isDeliveryNativeAvailable()).toBe(true);
+  await listDeliveryApplications("report.csv", true, chatScope);
+  expect(mocks.api).toHaveBeenCalledWith(
+    expect.stringContaining(
+      "/desktop/applications?session_id=session-a&file_name=report.csv",
+    ),
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        "X-Agent-Id": "agent-a",
+        "X-Chat-Id": "chat-a",
+      }),
+    }),
+  );
+  const file = target();
+  await openDeliveryFile(
+    {
+      ...file,
+      artifact: { ...file.artifact!, sessionId: chatScope.sessionId },
+    },
+    chatScope,
+  );
+  expect(mocks.api).toHaveBeenCalledWith(
+    expect.stringContaining("/desktop/stage?session_id=session-a"),
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        fileName: "report.csv",
+        contentBase64: "AP+ACg==",
+      }),
+    }),
+  );
+  expect(mocks.api).toHaveBeenLastCalledWith(
+    expect.stringContaining("/desktop/action?session_id=session-a"),
+    expect.objectContaining({
+      body: JSON.stringify({ token: "local-token", action: "open" }),
+    }),
+  );
+  await revealDeliveryFile(target(), scope);
+  expect(mocks.api).toHaveBeenLastCalledWith(
+    expect.stringContaining("/desktop/action?session_id=session-a"),
+    expect.objectContaining({
+      body: JSON.stringify({ token: "local-token", action: "reveal" }),
+    }),
+  );
+  expect(nativeInvoke).not.toHaveBeenCalled();
 });

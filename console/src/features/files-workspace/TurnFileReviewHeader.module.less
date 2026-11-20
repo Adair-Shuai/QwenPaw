@@ -1,0 +1,106 @@
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface-subtle);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.selector {
+  flex: 1;
+  min-width: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  padding: 4px 6px;
+  border-radius: 5px;
+  color: var(--app-text);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  svg {
+    flex-shrink: 0;
+  }
+  &:hover {
+    background: var(--app-hover-bg);
+  }
+}
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  > button {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 5px;
+    color: var(--app-text-secondary);
+    background: transparent;
+    cursor: pointer;
+    &[aria-pressed="true"],
+    &:hover {
+      background: var(--app-accent-soft);
+      color: var(--app-text);
+    }
+    &:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+  }
+}
+.menu :global(.ant-dropdown-menu),
+.menu :global(.qwenpaw-dropdown-menu) {
+  padding: 4px !important;
+  border: 1px solid var(--app-border);
+  border-radius: 9px !important;
+  background: var(--app-surface) !important;
+  max-height: min(360px, calc(100dvh - 100px));
+  overflow-y: auto;
+}
+.menu :global(.ant-dropdown-menu-item),
+.menu :global(.qwenpaw-dropdown-menu-item) {
+  min-height: 30px !important;
+  padding: 4px 8px !important;
+  color: var(--app-text) !important;
+  font-size: 12px !important;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  svg {
+    flex-shrink: 0;
+  }
+}
+.path {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.counts {
+  display: inline-flex;
+  gap: 6px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  span:first-child {
+    color: var(--app-success, #169b62);
+  }
+  span:last-child {
+    color: var(--app-error, #d74d4d);
+  }
+}

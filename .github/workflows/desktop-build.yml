@@ -481,6 +481,16 @@ jobs:
           test -s dist/UGSci-Tauri-*-macOS.app.tar.gz.sig
           test -s dist/tauri-darwin-*-updater.json
 
+      - name: Test native macOS drag-install packaging
+        run: |
+          python -m pip install pytest
+          python -m pytest --confcutdir=tests/unit/tauri tests/unit/tauri/test_macos_dmg_native.py -q
+
+      - name: Require drag-install DMG
+        run: |
+          set -euo pipefail
+          test -s dist/UGSci-Tauri-*-macOS.dmg
+
       - name: Verify desktop (Tauri macOS)
         timeout-minutes: 25
         uses: ./.github/actions/verify-tauri-macos
@@ -507,6 +517,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           artifacts=(
+            dist/UGSci-Tauri-*-macOS.dmg
             dist/UGSci-Tauri-*-macOS.zip
             dist/UGSci-Tauri-*-macOS.app.tar.gz
             dist/UGSci-Tauri-*-macOS.app.tar.gz.sig
@@ -556,7 +567,9 @@ jobs:
         with:
           name: UGSci-Desktop-Tauri-macOS-${{ steps.version.outputs.version }}
           path: |
+            dist/UGSci-Tauri-*-macOS.dmg
             dist/UGSci-Tauri-*-macOS.zip
+            dist/UGSci-Tauri-*-macOS.dmg.sha256
             dist/UGSci-Tauri-*-macOS.zip.sha256
           if-no-files-found: error
           compression-level: 0

@@ -85,6 +85,7 @@ export interface DomainEngineView {
 }
 
 export interface NeqSimRuntimeStatus {
+  active_task?: RuntimeInstallTask | null;
   state: "ready" | "partial" | "needs_install" | "incompatible" | string;
   ready: boolean;
   installable: boolean;

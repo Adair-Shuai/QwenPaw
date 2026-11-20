@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({
@@ -15,6 +15,10 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+vi.mock("./deliveryFileNative", async (original) => ({
+  ...(await original<typeof import("./deliveryFileNative")>()),
+  isDeliveryNativeAvailable: () => false,
+}));
 import ResponseArtifactList from "./ResponseArtifactList";
 import {
   useResponseArtifacts,
@@ -129,6 +133,44 @@ function failedSendFile(path: string, serializedOutput = false) {
 }
 
 describe("ResponseArtifactList", () => {
+  it("shows delivered image bytes inline for legacy history without a turn archive", async () => {
+    const open = vi.fn();
+    window.addEventListener("qwenpaw:open-file-preview", open);
+    try {
+      render(
+        <ResponseArtifactList
+          messages={successfulSendFile("output/figure.png", true)}
+          scope={{
+            kind: "session",
+            agentId: "owner",
+            sessionId: "session",
+            chatId: "chat",
+          }}
+        />,
+      );
+      const image = await screen.findByRole("img", { name: "figure.png" });
+      expect(image).toHaveAttribute(
+        "src",
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg",
+      );
+      fireEvent.error(image);
+      fireEvent.click(
+        screen.getByRole("button", { name: /figure.png.*workspace.retry/ }),
+      );
+      const retriedImage = await screen.findByRole("img", {
+        name: "figure.png",
+      });
+      expect(retriedImage).toHaveAttribute("src", image.getAttribute("src"));
+      fireEvent.click(retriedImage);
+      const viewer = await screen.findByRole("dialog", { name: /figure.png/ });
+      expect(
+        within(viewer).getByRole("img", { name: "figure.png" }),
+      ).toHaveAttribute("src", retriedImage.getAttribute("src"));
+      expect(open).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("qwenpaw:open-file-preview", open);
+    }
+  });
   it("isolates response files by agent and session and scopes file actions", async () => {
     const scope: ResponseArtifactScope = {
       kind: "session",
@@ -326,7 +368,7 @@ describe("ResponseArtifactList", () => {
   it("collapses files beyond two rows and allows expanding them", () => {
     render(
       <ResponseArtifactList
-        messages={Array.from({ length: 3 }, (_, index) =>
+        messages={Array.from({ length: 5 }, (_, index) =>
           successfulFileIo(`file-${index}.md`),
         ).flat()}
       />,
@@ -354,11 +396,9 @@ describe("ResponseArtifactList", () => {
     expect(
       screen.queryByRole("button", { name: "wide-0.md wide-0.md" }),
     ).not.toBeInTheDocument();
-    // Keep the historical regression name while guarding the approved
-    // single-column layout: widening the reply cannot expose more than two rows.
     expect(
       container.querySelectorAll('button[class*="previewButton"]'),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
     expect(
       screen.getByRole("button", { name: "wide-4.md wide-4.md" }),
     ).toBeInTheDocument();
@@ -366,8 +406,11 @@ describe("ResponseArtifactList", () => {
       screen.getByRole("button", { name: "wide-3.md wide-3.md" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "wide-2.md wide-2.md" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "wide-2.md wide-2.md" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "wide-1.md wide-1.md" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /展开更多/ }),
     ).toBeInTheDocument();

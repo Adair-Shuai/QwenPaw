@@ -140,7 +140,7 @@ describe("ThemeProvider + useTheme", () => {
   it("falls back for invalid stored styles and synchronizes another window", () => {
     localStorage.setItem("qwenpaw-interface-style", "unknown-style");
     const { result } = renderHook(() => useTheme(), { wrapper });
-    expect(result.current.interfaceStyle).toBe("classic");
+    expect(result.current.interfaceStyle).toBe("warm-minimal");
     act(() =>
       window.dispatchEvent(
         new StorageEvent("storage", {
@@ -155,7 +155,7 @@ describe("ThemeProvider + useTheme", () => {
       "soft-focus",
     );
     act(() => window.dispatchEvent(new StorageEvent("storage", { key: null })));
-    expect(result.current.interfaceStyle).toBe("classic");
+    expect(result.current.interfaceStyle).toBe("warm-minimal");
   });
   it("updates readable card action roles live across all palettes and modes without changing layout", () => {
     const { result } = renderHook(() => useTheme(), { wrapper });

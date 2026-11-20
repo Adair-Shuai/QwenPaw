@@ -225,9 +225,13 @@ class RuntimeInstallManager:
         from qwenpaw.plugins import loader
 
         if os.environ.get("QWENPAW_RUNTIME_PROVISIONER") == "local":
-            raise ValueError("当前 Python 环境由管理员管理，请联系管理员安装依赖")
+            raise ValueError(
+                "当前 Python 环境由管理员管理，请联系管理员安装依赖",
+            )
         if not loader.has_dependency_install_runtime():
-            raise ValueError("桌面 Python 安装组件不可用，请修复或重新安装 QwenPaw")
+            raise ValueError(
+                "桌面 Python 安装组件不可用，请修复或重新安装 QwenPaw",
+            )
         missing = _probe_missing(engine)
         with _guard:
             tasks = self._load()
@@ -282,12 +286,9 @@ class RuntimeInstallManager:
                 self._save(dict(list(tasks.items())[-20:]))
 
     def _install_missing(self, task_id: str, missing: list[str]) -> None:
-        fd, name = tempfile.mkstemp(prefix="ugsci-domain-", suffix=".txt")
-        cfd, constraints_name = tempfile.mkstemp(
-            prefix="ugsci-host-constraints-",
-            suffix=".txt",
-        )
-        try:
+        # The host audits the requirements' parent directory. Give this task
+        # its own bounded source, rather than auditing the system temp tree.
+        with tempfile.TemporaryDirectory(prefix="ugsci-domain-") as directory:
             target_dists = {d.lower().replace("_", "-") for d in missing}
             constraints = []
             for dist in _HOST_DISTRIBUTIONS:
@@ -302,51 +303,61 @@ class RuntimeInstallManager:
                 ):
                     continue
                 constraints.append(f"{dist}=={installed}")
-            with os.fdopen(cfd, "w", encoding="utf-8") as constraint_file:
-                constraint_file.write("\n".join(constraints) + "\n")
-            with os.fdopen(fd, "w", encoding="utf-8") as req:
-                req.write("--only-binary=:all:\n")
-                req.write(
-                    f'--constraint "{Path(constraints_name).as_posix()}"\n',
-                )
-                req.write("\n".join(PACKAGE_REQUIREMENTS[p] for p in missing))
-                req.write("\n")
+            requirements = Path(directory) / "requirements.txt"
+            constraint_file = Path(directory) / "constraints.txt"
+            constraint_file.write_text(
+                "\n".join(constraints) + "\n",
+                encoding="utf-8",
+            )
+            # Both files are part of the same bounded source audit. Pins
+            # constrain resolution without requesting unrelated host packages.
+            requirements.write_text(
+                "--only-binary=:all:\n"
+                + f'--constraint "{constraint_file.as_posix()}"\n'
+                + "\n".join(PACKAGE_REQUIREMENTS[p] for p in missing)
+                + "\n",
+                encoding="utf-8",
+            )
             from qwenpaw.plugins.loader import PluginLoader
 
-            self._update(task_id, progress=20, message="正在下载并安装运行依赖")
+            self._update(
+                task_id,
+                progress=20,
+                message="正在下载并安装运行依赖",
+            )
             PluginLoader([]).install_runtime_requirements(
-                Path(name),
+                requirements,
                 "ugsci-domain-runtime",
             )
-        finally:
-            try:
-                os.unlink(name)
-            except OSError:
-                pass
-            try:
-                os.unlink(constraints_name)
-            except OSError:
-                pass
 
     def _run(self, task_id: str, engine: Any) -> None:
-        self._update(task_id, status="running", progress=5, message="正在准备依赖")
+        self._update(
+            task_id,
+            status="running",
+            progress=5,
+            message="正在准备依赖",
+        )
         try:
             missing = _probe_missing(engine)
             if missing:
                 self._install_missing(task_id, missing)
             from qwenpaw.plugins.loader import _ensure_plugin_site_on_path
 
-            self._update(task_id, progress=85, message="正在重新检测依赖")
+            self._update(
+                task_id,
+                progress=85,
+                message="正在加载并验证运行依赖",
+            )
             _ensure_plugin_site_on_path()
             importlib.invalidate_caches()
-            if any(
-                importlib.util.find_spec(
-                    _IMPORT_NAMES.get(p, p.replace("-", "_")),
+            for package in engine.dependencies:
+                # A spec alone also exists for broken binary wheels or missing
+                # transitive dependencies. Import in this live worker before
+                # advertising immediate availability; do not reload modules
+                # already used by running tasks.
+                importlib.import_module(
+                    _IMPORT_NAMES.get(package, package.replace("-", "_")),
                 )
-                is None
-                for p in engine.dependencies
-            ):
-                raise RuntimeError("安装后仍有依赖无法导入")
             final = probe_engine(engine)
             if final.overall != "available":
                 raise RuntimeError("安装完成后依赖检查仍未通过")
@@ -354,7 +365,7 @@ class RuntimeInstallManager:
                 task_id,
                 status="completed",
                 progress=100,
-                message="安装完成，依赖检测已通过",
+                message="运行环境已加载并验证，可以直接使用",
                 error="",
             )
         except Exception as exc:
@@ -366,8 +377,10 @@ class RuntimeInstallManager:
             elif (
                 "runtime is unavailable" in text
                 or "qwenpaw_desktop_py_runtime" in text
+                or "unsafe pip" in text
+                or "dependency_installer_unavailable" in text
             ):
-                msg = "桌面 Python 安装组件不可用，请修复或重新安装 QwenPaw"
+                msg = "Python 安装组件不可用或版本过旧，请更新或修复 UGSci 后重试"
             else:
                 msg = "依赖安装或安装后验证失败，请检查网络与运行环境后重试"
             self._update(task_id, status="failed", message=msg, error=msg)

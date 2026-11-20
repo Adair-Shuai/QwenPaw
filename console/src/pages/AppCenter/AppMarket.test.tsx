@@ -205,6 +205,7 @@ describe("AppMarket", () => {
         pluginId: "qwenpaw-creator",
         version: "1.3.0",
         sha256: "a".repeat(64),
+        deferIfNeeded: true,
       }),
     );
     expect(onInstalled).toHaveBeenCalled();

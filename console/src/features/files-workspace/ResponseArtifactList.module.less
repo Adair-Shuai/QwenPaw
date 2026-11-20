@@ -4,33 +4,35 @@
 }
 
 .list {
+  container-type: inline-size;
   width: min(100%, 720px);
   min-width: 0;
   display: grid;
   justify-items: start;
-  gap: 8px;
-  margin: 12px 0;
+  gap: 6px;
+  margin: 6px 0;
 }
 
 .grid {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .file {
+  position: relative;
   width: 100%;
   min-width: 0;
-  min-height: max(80px, calc(80px * var(--app-font-scale)));
   height: auto;
-  padding: 0 10px 0 0;
+  min-height: max(60px, calc(60px * var(--app-font-scale)));
+  padding: 0 10px;
   display: flex;
   align-items: center;
   gap: 6px;
   color: inherit;
-  border: 1px solid var(--app-border);
-  border-radius: 12px;
+  border: 0.5px solid var(--app-border);
+  border-radius: 16px;
   background: var(--app-fill-faint);
   text-align: left;
 
@@ -45,14 +47,23 @@
   }
 }
 
+.imagePreview {
+  position: absolute;
+  z-index: 1;
+  left: 10px;
+  top: calc((max(60px, calc(60px * var(--app-font-scale))) - 40px) / 2);
+  width: 40px;
+  height: 40px;
+}
+
 .previewButton {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   flex: 1;
   min-width: 0;
   align-self: stretch;
-  padding: 15px 6px 15px 16px;
+  padding: 8px 0;
   border: 0;
   border-radius: 12px;
   background: transparent;
@@ -66,7 +77,6 @@
   justify-content: flex-end;
   align-items: center;
   flex: 0 0 auto;
-  min-width: 66px;
 }
 
 .previewButton:focus-visible {
@@ -75,8 +85,8 @@
 }
 
 .icon {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -89,14 +99,15 @@
   min-width: 0;
   display: grid;
   flex: 1;
-  gap: 6px;
+  gap: 2px;
 
   strong {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--app-font-body);
-    font-weight: 600;
+    font-weight: 500;
+    line-height: calc(20px * var(--app-font-scale));
   }
 
   small {
@@ -109,11 +120,11 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 8px;
+  gap: 6px;
 
   small + small::before {
     content: "·";
-    margin-right: 8px;
+    margin-right: 6px;
     color: var(--app-text-tertiary);
   }
 }
@@ -141,22 +152,14 @@
   }
 }
 
-@media (max-width: 480px) {
-  .previewButton {
-    gap: 10px;
-    padding-left: 12px;
-  }
-
-  .meta {
-    gap: 6px;
-
-    small + small::before {
-      margin-right: 6px;
-    }
+@container (max-width: 620px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 .toggle {
+  justify-self: center;
   padding: 3px 6px;
   display: inline-flex;
   align-items: center;

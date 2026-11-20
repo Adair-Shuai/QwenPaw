@@ -82,6 +82,8 @@ class ComponentClient:
         )
         self._download_lock = threading.RLock()
         self._manifest_lock = threading.RLock()
+        self.manifest_cache_id: str | None = None
+        self.protected_paths: set[Path] = set()
 
     def close(self) -> None:
         self.client.close()
@@ -319,10 +321,10 @@ class ComponentClient:
                         staged.unlink()
                     else:
                         shutil.rmtree(staged)
-                temporary = (
-                    manifests_root
-                    / f".{digest}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
-                )
+                # The immutable destination already carries the full digest.
+                # A UUID alone isolates concurrent staging without pushing
+                # ordinary Windows user/cache paths past MAX_PATH.
+                temporary = manifests_root / f".{uuid.uuid4().hex}.tmp"
                 try:
                     temporary.mkdir(parents=True, exist_ok=False)
                     (temporary / "manifest.json").write_bytes(manifest)
@@ -335,6 +337,7 @@ class ComponentClient:
                     raise
             manifest_path = staged / "manifest.json"
             signature_path = staged / "manifest.json.sig"
+            self.manifest_cache_id = digest
             os.utime(staged, None)
             self._prune_cache(protected={staged})
             return manifest_path, signature_path
@@ -539,6 +542,7 @@ class ComponentClient:
     def _prune_cache(self, *, protected: set[Path]) -> None:
         """Run best-effort bounded LRU cleanup without failing updates."""
         # pylint: disable=too-many-branches
+        protected = protected | self.protected_paths
         now = time.time()
         try:
             for path in self.cache_root.rglob("*"):
@@ -575,6 +579,7 @@ class ComponentClient:
                         if p.is_dir()
                         and not p.is_symlink()
                         and p not in protected
+                        and not any(p.glob(".pending-*"))
                     ),
                     key=lambda p: (p.stat().st_mtime, p.name),
                     reverse=True,
@@ -593,6 +598,7 @@ class ComponentClient:
                         if p.is_dir()
                         and not p.is_symlink()
                         and p not in protected
+                        and not any(p.glob(".pending-*"))
                         and not any(
                             item.name.endswith(".part")
                             or item.name == ".download.lock"

@@ -40,7 +40,9 @@ def _refuse(message):
 
 
 def _atomic(path, value):
-    temporary = path.with_name(path.name + "." + uuid4().hex + ".tmp")
+    # Keep the temporary sibling short even when the repair marker sits under
+    # a full environment identity digest in a nested Windows state directory.
+    temporary = path.with_name("." + uuid4().hex + ".tmp")
     try:
         with temporary.open("x", encoding="utf-8") as stream:
             os.chmod(temporary, 0o600)

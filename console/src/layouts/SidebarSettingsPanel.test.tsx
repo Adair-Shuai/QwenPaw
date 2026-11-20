@@ -88,7 +88,7 @@ describe("SidebarSettingsPanel", () => {
   });
 
   it.each([
-    ["Warm minimal", "warm-minimal", "#ffffff"],
+    ["Yanjing warm white", "warm-minimal", "#ffffff"],
     ["Cool workspace", "cool-workspace", "#ffffff"],
     ["Soft focus", "soft-focus", "#ffffff"],
   ])(
@@ -109,7 +109,20 @@ describe("SidebarSettingsPanel", () => {
       await userEvent.click(
         await screen.findByRole("button", { name: "Theme" }),
       );
-      await userEvent.click(await screen.findByRole("button", { name: label }));
+      const paletteOrder = [
+        "Yanjing warm white",
+        "Original",
+        "Cool workspace",
+        "Soft focus",
+      ];
+      await screen.findByRole("button", { name: label });
+      expect(
+        screen
+          .getAllByRole("button")
+          .map((button) => button.textContent)
+          .filter((name) => paletteOrder.includes(name ?? "")),
+      ).toEqual(paletteOrder);
+      await userEvent.click(screen.getByRole("button", { name: label }));
       expect(document.documentElement).toHaveAttribute(
         "data-interface-style",
         style,
@@ -160,13 +173,25 @@ describe("SidebarSettingsPanel", () => {
       await userEvent.click(
         await screen.findByRole("button", { name: "Page style" }),
       );
+      const layoutOrder = [
+        "UGSci Yanjing layout",
+        "Original layout",
+        "Simple style",
+      ];
+      await screen.findByRole("button", { name: "UGSci Yanjing layout" });
+      expect(
+        screen
+          .getAllByRole("button")
+          .map((button) => button.textContent)
+          .filter((name) => layoutOrder.includes(name ?? "")),
+      ).toEqual(layoutOrder);
       await userEvent.click(
         await screen.findByRole("button", {
           name:
             style === "deepseek"
               ? "Simple style"
               : style === "dual-sidebar"
-              ? "Dual sidebar"
+              ? "UGSci Yanjing layout"
               : "Original layout",
         }),
       );

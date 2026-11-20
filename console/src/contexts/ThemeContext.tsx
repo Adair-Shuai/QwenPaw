@@ -11,6 +11,7 @@ import {
 import { themeApi, type ThemeConfig } from "@/api/modules/theme";
 import {
   applyInterfaceTheme,
+  DEFAULT_INTERFACE_STYLE,
   INTERFACE_STYLE_STORAGE_KEY,
   parseInterfaceStyle,
   readInterfaceStyle,
@@ -19,6 +20,7 @@ import {
 
 import {
   applyPageStyle,
+  DEFAULT_PAGE_STYLE,
   PAGE_STYLE_STORAGE_KEY,
   parsePageStyle,
   readPageStyle,
@@ -51,9 +53,9 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue>({
   themeMode: "light",
-  interfaceStyle: "classic",
+  interfaceStyle: DEFAULT_INTERFACE_STYLE,
   setInterfaceStyle: () => {},
-  pageStyle: "classic",
+  pageStyle: DEFAULT_PAGE_STYLE,
   setPageStyle: () => {},
   isDark: false,
   setThemeMode: () => {},

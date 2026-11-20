@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -14,6 +15,7 @@ import {
   AgentScopeRuntimeRunStatus,
 } from "@agentscope-ai/chat";
 import { HostRequestCard, HostResponseCard } from "./HostBubbles";
+import styles from "./HostBubbles.module.less";
 import { TurnFilesScopeProvider } from "../../features/files-workspace/TurnFilesScope";
 import { turnFilesApi } from "../../api/modules/turnFiles";
 import * as assistantMarkdown from "./AssistantMarkdown";
@@ -148,6 +150,96 @@ beforeEach(() => {
   extensions.scalar = {};
   extensions.lists = {};
   localStorage.clear();
+});
+
+it("bounds the mounted response card before measuring long markdown content", () => {
+  const longToken = "NSHighResolutionCapable".repeat(30);
+  const text = [
+    "- 普通列表文字应在消息边界内完整换行。",
+    `行内代码 \`${longToken}\``,
+    `| 尺寸 | ${longToken} |\n| --- | --- |\n| 512@2x | 1024×1024 |`,
+    `\`\`\`bash\necho ${longToken}\n\`\`\``,
+  ].join("\n\n");
+  const response = (status: AgentScopeRuntimeRunStatus) =>
+    provider(
+      <HostResponseCard
+        id="bounded-response"
+        data={{
+          id: "bounded-response",
+          status,
+          output: [
+            {
+              id: "bounded-message",
+              type: AgentScopeRuntimeMessageType.MESSAGE,
+              role: "assistant",
+              status,
+              content: [{ type: "text", text, status }],
+            },
+          ],
+        }}
+        isLast
+      />,
+    );
+  const view = render(response(AgentScopeRuntimeRunStatus.InProgress));
+  const card = view.container.querySelector(
+    '[data-global-search-message="bounded-response"]',
+  );
+  expect(card).toHaveClass(styles.responseCard);
+  const layout = getComputedStyle(card!);
+  expect(layout.width).toBe("100%");
+  expect(layout.minWidth).toBe("0px");
+  expect(layout.maxWidth).toBe("100%");
+  expect(layout.overflowWrap).toBe("anywhere");
+  expect(layout.overflow).not.toMatch(/hidden|clip/);
+  expect(card?.querySelector("li")).toHaveTextContent(
+    "普通列表文字应在消息边界内完整换行。",
+  );
+  expect(card?.querySelector("table")).toHaveTextContent(longToken);
+  expect(card?.querySelectorAll("code").length).toBeGreaterThanOrEqual(2);
+  view.rerender(response(AgentScopeRuntimeRunStatus.Completed));
+  expect(
+    view.container.querySelector(
+      '[data-global-search-message="bounded-response"]',
+    ),
+  ).toBe(card);
+  expect(card).toHaveTextContent(longToken);
+});
+
+it("keeps numeric ranges literal in the mounted assistant response", async () => {
+  const text = "压力 10~20 MPa，温度 30~40 ℃。~~旧值~~";
+  const view = render(
+    provider(
+      <HostResponseCard
+        id="tilde-response"
+        data={{
+          id: "tilde-response",
+          status: AgentScopeRuntimeRunStatus.Completed,
+          output: [
+            {
+              id: "tilde-message",
+              type: AgentScopeRuntimeMessageType.MESSAGE,
+              role: "assistant",
+              status: AgentScopeRuntimeRunStatus.Completed,
+              content: [
+                {
+                  type: "text",
+                  text,
+                  status: AgentScopeRuntimeRunStatus.Completed,
+                },
+              ],
+            },
+          ],
+        }}
+        isLast
+      />,
+    ),
+  );
+  const answer = view.container.querySelector(
+    '[data-answer-quote-source="tilde-message:0"]',
+  );
+  expect(answer).toHaveTextContent("压力 10~20 MPa，温度 30~40 ℃。");
+  expect(answer?.querySelectorAll("del")).toHaveLength(1);
+  expect(answer?.querySelector("del")).toHaveTextContent("旧值");
 });
 
 it("turns a historical inline PROFILE.md mention in the real assistant response into a scoped configuration link", async () => {
@@ -415,6 +507,83 @@ it.each([
 afterEach(() => {
   cleanup();
   localStorage.clear();
+});
+
+it("enlarges scoped images from the actual assistant response without opening the workbench", async () => {
+  const fetchImage = vi.fn().mockResolvedValue({
+    ok: true,
+    blob: async () => new Blob(["image"], { type: "image/png" }),
+  });
+  vi.stubGlobal("fetch", fetchImage);
+  const create = vi
+    .spyOn(URL, "createObjectURL")
+    .mockReturnValue("blob:host-image");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  const list = vi.spyOn(turnFilesApi, "list").mockResolvedValue({ turns: [] });
+  const open = vi.fn();
+  window.addEventListener("qwenpaw:open-file-preview", open);
+  const scope = {
+    kind: "session" as const,
+    agentId: "image-owner",
+    sessionId: "image-session",
+    chatId: "image-chat",
+  };
+  try {
+    const view = render(
+      provider(
+        <TurnFilesScopeProvider value={scope}>
+          <HostResponseCard
+            id="host-image"
+            data={{
+              id: "image-response",
+              status: AgentScopeRuntimeRunStatus.Completed,
+              output: [
+                {
+                  id: "image-message",
+                  role: "assistant",
+                  type: AgentScopeRuntimeMessageType.MESSAGE,
+                  status: AgentScopeRuntimeRunStatus.Completed,
+                  content: [
+                    {
+                      type: "text",
+                      text: "生成的图片。\n\n![结果图](output/figure.png)",
+                      status: AgentScopeRuntimeRunStatus.Completed,
+                    },
+                  ],
+                },
+              ],
+            }}
+            isLast
+          />
+        </TurnFilesScopeProvider>,
+      ),
+    );
+    const image = await screen.findByRole("img", { name: "结果图" });
+    expect(image).toBeVisible();
+    expect(image).toHaveAttribute("src", "blob:host-image");
+    expect(fetchImage.mock.calls[0][1].headers).toMatchObject({
+      "X-Agent-Id": scope.agentId,
+      "X-Chat-Id": scope.chatId,
+    });
+    fireEvent.click(image);
+    const viewer = await screen.findByRole("dialog", { name: /结果图/ });
+    expect(within(viewer).getByRole("img", { name: "结果图" })).toHaveAttribute(
+      "src",
+      "blob:host-image",
+    );
+    expect(open).not.toHaveBeenCalled();
+    fireEvent.keyDown(viewer, { key: "Escape", keyCode: 27 });
+    expect(viewer).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /结果图/ })).toHaveFocus();
+    view.unmount();
+    expect(revoke).toHaveBeenCalledWith("blob:host-image");
+  } finally {
+    window.removeEventListener("qwenpaw:open-file-preview", open);
+    list.mockRestore();
+    create.mockRestore();
+    revoke.mockRestore();
+    vi.unstubAllGlobals();
+  }
 });
 
 describe("merged host bubbles behavior", () => {

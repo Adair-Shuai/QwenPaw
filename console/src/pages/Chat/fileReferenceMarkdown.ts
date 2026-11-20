@@ -6,6 +6,7 @@ import {
 import { mimeFromExtension } from "../../utils/mimeForPreview";
 
 export const FILE_REFERENCE_HREF_PREFIX = "./.qwenpaw-file-reference/";
+export const IMAGE_REFERENCE_HREF_PREFIX = "./.qwenpaw-image-reference/";
 export const DIRECTORY_REFERENCE_HREF_PREFIX =
   "./.qwenpaw-directory-reference/";
 
@@ -20,7 +21,7 @@ interface MarkdownNode {
 // Consume URLs and email addresses as complete tokens before looking for files.
 const LINE_SUFFIX = String.raw`(?:#L\d+(?:-L?\d+)?(?:C\d+)?|:\d+(?:-\d+)?(?::\d+)?)?`;
 const PATH_SEGMENT = String.raw`[\p{L}\p{N}_.%+~-]+`;
-const POSIX_PATH_BOUNDARY = /[\s(\[{"'“‘（【：:，,。；;！？!?、]/u;
+const POSIX_PATH_BOUNDARY = /[\s([{"'“‘（【：:，,。；;！？!?、]/u;
 const TEXT_FILE_PATTERN = new RegExp(
   [
     String.raw`(?:https?:\/\/|file:\/\/|mailto:|www\.)[^\s<>"“”'，。；！？]+`,
@@ -102,8 +103,7 @@ export function prepareFileReferenceMarkdown(content: string): string {
   while (nodes.length) {
     const { node, previous: previousInlineCharacter } = nodes.pop()!;
     // Link labels, image descriptions and fenced code keep their own semantics.
-    if (node.type === "image" || node.type === "code" || node.type === "html")
-      continue;
+    if (node.type === "code" || node.type === "html") continue;
     const start = node.position?.start.offset;
     const end = node.position?.end.offset;
     if (
@@ -163,7 +163,9 @@ export function prepareFileReferenceMarkdown(content: string): string {
       /[\\/]$/.test(node.url) &&
       directoryReferenceFromText(node.url);
     if (
-      (node.type !== "link" && node.type !== "definition") ||
+      (node.type !== "link" &&
+        node.type !== "image" &&
+        node.type !== "definition") ||
       !node.url ||
       (!directory &&
         (!/^(?:[a-z]:[\\/]|file:)/i.test(node.url) ||
@@ -172,14 +174,17 @@ export function prepareFileReferenceMarkdown(content: string): string {
       continue;
     if (start === undefined || end === undefined) continue;
     const raw = content.slice(start, end);
-    const delimiter = node.type === "link" ? "](" : "]:";
+    const delimiter = node.type === "definition" ? "]:" : "](";
     const destination = raw.indexOf(node.url, raw.lastIndexOf(delimiter) + 2);
     if (destination < 0) continue;
     edits.push({
       start: start + destination,
       end: start + destination + node.url.length,
       replacement:
-        (directory
+        (node.type === "image" ||
+        mimeFromExtension(node.url)?.startsWith("image/")
+          ? IMAGE_REFERENCE_HREF_PREFIX
+          : directory
           ? DIRECTORY_REFERENCE_HREF_PREFIX
           : FILE_REFERENCE_HREF_PREFIX) + encodeURIComponent(node.url),
     });

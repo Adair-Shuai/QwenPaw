@@ -40,6 +40,7 @@ from .checkpoints import router as checkpoints_router
 from .turn_files import router as turn_files_router
 from .components import router as components_router
 from .publisher import router as publisher_router
+from .expert_packages import router as expert_packages_router
 from .community import router as community_router
 from .community_connection import router as community_connection_router
 from .community_report import router as community_report_router
@@ -87,6 +88,7 @@ router.include_router(checkpoints_router)
 router.include_router(turn_files_router)
 router.include_router(components_router)
 router.include_router(publisher_router)
+router.include_router(expert_packages_router)
 router.include_router(terminal_router)
 
 

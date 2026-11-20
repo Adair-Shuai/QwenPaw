@@ -28,11 +28,31 @@ import { cloneElement, createRef, useEffect, useReducer } from "react";
 import { slotRegistry } from "../../plugins/registry/store";
 import { ThemeProvider, useTheme } from "../../contexts/ThemeContext";
 import { PAGE_STYLES } from "../../utils/pageStyle";
+import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
 import {
   turnFilesApi,
   type TurnFileManifest,
 } from "../../api/modules/turnFiles";
 import { turnFileTarget } from "./turnFileTarget";
+
+const nativeFiles = vi.hoisted(() => ({
+  open: vi.fn().mockResolvedValue(undefined),
+  reveal: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("./deliveryFileNative", async (original) => ({
+  ...(await original<typeof import("./deliveryFileNative")>()),
+  isDeliveryNativeAvailable: () => true,
+  listDeliveryApplications: vi.fn(async () => ({
+    applications: [
+      { id: "default", name: "System Viewer", isDefault: true },
+      { id: "other", name: "Other Viewer", isDefault: false },
+    ],
+    canOpenDefault: true,
+    canChooseApplication: true,
+  })),
+  openDeliveryFile: nativeFiles.open,
+  revealDeliveryFile: nativeFiles.reveal,
+}));
 
 vi.mock("../../monacoSetup", () => ({}));
 vi.mock("@monaco-editor/react", () => ({
@@ -120,6 +140,8 @@ vi.mock("../../api/modules/workspace", () => ({
     loadFile: vi.fn().mockResolvedValue({
       content: "profile content",
     }),
+    loadDailyMemory: vi.fn().mockResolvedValue({ content: "memory content" }),
+    loadMemoryFile: vi.fn().mockResolvedValue({ content: "memory content" }),
     revealInFileManager: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -674,6 +696,7 @@ describe("FilesDrawer", () => {
   });
 
   it("restores per-style file widths without replacing the active editor or its unsaved draft", async () => {
+    localStorage.setItem("qwenpaw-page-style", "classic");
     localStorage.setItem("qwenpaw-files-preview-width", "480");
     localStorage.setItem("qwenpaw-files-preview-width:deepseek", "600");
     function Controls() {
@@ -1160,51 +1183,75 @@ describe("FilesDrawer", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it("keeps Preview open after inserting a file reference", async () => {
+  it("adds a clickable draft reference for a spaced path and keeps Preview open", async () => {
     const dispatch = vi.fn();
     const user = userEvent.setup();
+    const draftKey = crypto.randomUUID();
+    const scope = {
+      kind: "session" as const,
+      agentId: "default",
+      sessionId: "session-1",
+    };
+    const target: FileTarget = {
+      source: "workspace",
+      path: "output/结果 图.txt",
+      root: "workspace",
+    };
     renderWithProviders(
-      <>
+      <WorkspaceQuoteProvider scope={scope} draftKey={draftKey} enabled>
         <div className="sender">
-          <textarea />
+          <textarea aria-label="Question draft" defaultValue="Please review" />
         </div>
+        <AnswerQuoteComposer
+          scope={draftKey}
+          rootRef={createRef<HTMLDivElement>()}
+          enabled
+        />
         <FilesDrawer
           state={{
             kind: "preview",
-            target: {
-              source: "workspace",
-              path: "hello.txt",
-              root: "project",
-            },
+            target,
             trigger: null,
           }}
           dispatch={dispatch}
-          scope={{
-            kind: "session",
-            agentId: "default",
-            sessionId: "session-1",
-          }}
+          scope={scope}
         />
-      </>,
+      </WorkspaceQuoteProvider>,
     );
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: /mentionInChat|Mention in Chat|在聊天中引用/i,
-      }),
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "" })).toHaveValue(
-        "@ hello.txt ",
-      );
+    const mention = await screen.findByRole("button", {
+      name: /mentionInChat|Mention in Chat|在聊天中引用/i,
     });
-    expect(dispatch).not.toHaveBeenCalledWith({ type: "CLOSE" });
-    expect(
-      screen.getByRole("button", {
-        name: /mentionInChat|Mention in Chat|在聊天中引用/i,
+    await user.click(mention);
+
+    const draft = screen.getByRole("textbox", { name: "Question draft" });
+    expect(draft).toHaveValue("Please review");
+    expect(draft).toHaveFocus();
+    const chip = within(
+      document.querySelector("[data-answer-quotes]")!,
+    ).getByRole("button", { name: "结果 图.txt" });
+    expect(chip).toHaveAttribute("title", target.path);
+    const open = vi.fn();
+    window.addEventListener(OPEN_FILE_PREVIEW_EVENT, open, { once: true });
+    await user.click(chip);
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          ...scope,
+          target: expect.objectContaining(target),
+        }),
       }),
-    ).toBeInTheDocument();
+    );
+    expect(readAnswerQuotes(draftKey)).toHaveLength(1);
+    expect(dispatch).not.toHaveBeenCalledWith({ type: "CLOSE" });
+    expect(mention).toBeVisible();
+    await user.click(
+      screen.getByRole("button", {
+        name: i18n.t("chat.answerQuote.remove", { text: target.path }),
+      }),
+    );
+    expect(chip).not.toBeInTheDocument();
+    expect(readAnswerQuotes(draftKey)).toHaveLength(0);
   });
 
   it("keeps pointer resizing direct until the gesture ends", async () => {
@@ -1242,7 +1289,9 @@ describe("FilesDrawer", () => {
       expect(drawer.className).not.toContain("drawerResizing");
     });
     expect(drawer).toHaveStyle({ width: "600px" });
-    expect(localStorage.getItem("qwenpaw-files-workspace-width")).toBe("600");
+    expect(
+      localStorage.getItem("qwenpaw-files-workspace-width:dual-sidebar"),
+    ).toBe("600");
   });
 
   it("uses left and right arrow keys from the right-side resize edge", async () => {
@@ -1281,8 +1330,8 @@ describe("FilesDrawer", () => {
   });
 
   it("applies persisted widths when the drawer mode changes", () => {
-    localStorage.setItem("qwenpaw-files-preview-width", "480");
-    localStorage.setItem("qwenpaw-files-workspace-width", "720");
+    localStorage.setItem("qwenpaw-files-preview-width:dual-sidebar", "480");
+    localStorage.setItem("qwenpaw-files-workspace-width:dual-sidebar", "720");
     const dispatch = vi.fn();
     const scope = {
       kind: "session" as const,
@@ -1582,6 +1631,103 @@ describe("FilesDrawer", () => {
     expect((await findHtmlFrame("slow.html")).getAttribute("srcdoc")).toContain(
       "Slow web page",
     );
+  });
+
+  it("distinguishes before and after archives in real workbench tabs and preserves their bytes", async () => {
+    const file = {
+      id: "report",
+      name: "report.py",
+      path: "output/report.py",
+      root: "workspace" as const,
+      status: "modified" as const,
+      delivered: true,
+      size: 6,
+      before_size: 5,
+      binary: false,
+      before_available: true,
+      after_available: true,
+    };
+    const turn: TurnFileManifest = {
+      id: "versioned-turn",
+      session_id: "runtime-original",
+      agent_id: "default",
+      status: "completed",
+      started_at: "2026-11-16",
+      incomplete: false,
+      overlap: false,
+      warnings: [],
+      files: [file],
+    };
+    const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (url) =>
+        new Response(
+          String(url).includes("version=before")
+            ? "before bytes"
+            : "after bytes",
+          {
+            headers: { "Content-Type": "text/plain" },
+          },
+        ),
+    );
+    const archiveScope = { ...interactionScope, sessionId: "runtime-original" };
+    const props = { scope: interactionScope, dispatch: vi.fn() };
+    const { rerender } = renderWithProviders(
+      <FilesDrawer
+        {...props}
+        state={{
+          kind: "workspace",
+          trigger: null,
+          target: turnFileTarget(archiveScope, turn, file, "after"),
+        }}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toHaveValue("after bytes"),
+    );
+    rerender(
+      <FilesDrawer
+        {...props}
+        state={{
+          kind: "workspace",
+          trigger: null,
+          target: turnFileTarget(archiveScope, turn, file, "before"),
+        }}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toHaveValue("before bytes"),
+    );
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(2);
+    const previous = tabs.find(
+      (tab) =>
+        tab.textContent?.includes(i18n.t("turnFiles.previousVersionLabel")),
+    )!;
+    expect(previous).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(previous).getByText(i18n.t("turnFiles.previousVersionLabel")),
+    ).toBeVisible();
+    const after = tabs.find((tab) => tab !== previous)!;
+    fireEvent.click(after);
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toHaveValue("after bytes"),
+    );
+    fireEvent.click(previous);
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toHaveValue("before bytes"),
+    );
+    expect(screen.getByTestId("monaco-editor")).toHaveAttribute("readonly");
+    expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("version=before"),
+        expect.stringContaining("version=after"),
+      ]),
+    );
+    for (const [url] of fetcher.mock.calls) {
+      expect(String(url)).toContain("versioned-turn/files/report");
+      expect(String(url)).toContain("session_id=runtime-original");
+    }
+    expect(workspaceApi.loadFileText).not.toHaveBeenCalled();
   });
 
   it("keeps archived HTML resources in their original turn when opened in the browser", async () => {
@@ -2126,6 +2272,13 @@ describe("FilesDrawer", () => {
         )}`,
       }),
     );
+    // The launch consumed the blank tab; closing returns to the native draft.
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toBeVisible(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.addTab") }),
+    );
     const recent = within(
       screen.getByRole("region", { name: i18n.t("workbench.tabs.newTab") }),
     ).getByRole("region", { name: i18n.t("workbench.empty.recent") });
@@ -2144,6 +2297,245 @@ describe("FilesDrawer", () => {
     expect(
       useCodingTabsStore.getState().tabsByAgent["session:default:interactions"],
     ).toHaveLength(1);
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.addTab") }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.openFile") }),
+    );
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toBeVisible(),
+    );
+    expect(screen.getByTestId("monaco-editor")).toHaveValue("starter draft");
+    expect(
+      screen.queryByRole("tab", {
+        name: new RegExp(i18n.t("workbench.tabs.newTab")),
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    "review",
+    "interactions",
+    "agents",
+    "genui",
+    "compute",
+    "simulation",
+  ])(
+    "replaces only the originating new tab when launching %s from its start page",
+    async (kind) => {
+      renderWithProviders(
+        <FilesDrawer
+          state={{ kind: "workspace", trigger: null }}
+          dispatch={vi.fn()}
+          scope={interactionScope}
+        />,
+      );
+      await screen.findByTestId("file-navigator");
+      const add = screen.getByRole("button", {
+        name: i18n.t("workbench.tabs.addTab"),
+      });
+      for (let i = 0; i < 3; i++) fireEvent.click(add);
+      const before =
+        useWorkbenchTabsStore.getState().scopes["session:default:interactions"]
+          .tabs;
+      fireEvent.click(screen.getAllByRole("tab")[1]);
+      const page = screen.getByRole("region", {
+        name: i18n.t("workbench.tabs.newTab"),
+      });
+      fireEvent.click(
+        within(page).getByRole("button", {
+          name: i18n.t("workbench.start.openView", {
+            name: i18n.t(`workbench.activity.${kind}`),
+          }),
+        }),
+      );
+      const after =
+        useWorkbenchTabsStore.getState().scopes["session:default:interactions"];
+      expect(after.tabs).toEqual([
+        before[0],
+        expect.objectContaining({ kind }),
+        before[2],
+      ]);
+      expect(after.activeId).toBe(after.tabs[1].id);
+      expect(after.recent).toEqual([]);
+      expect(screen.getAllByRole("tab")).toHaveLength(3);
+      expect(screen.getAllByRole("tab")[1]).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("tabpanel", {
+            name: new RegExp(i18n.t(`workbench.activity.${kind}`)),
+          }),
+        ).toBeVisible(),
+      );
+    },
+  );
+
+  it("focuses the current new tab address and preserves its draft when another tool is opened", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByTestId("file-navigator");
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.addTab") }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.newBrowser") }),
+    );
+    const address = screen.getByRole("textbox", {
+      name: /浏览器地址|Browser address/,
+    });
+    expect(address).toHaveFocus();
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    fireEvent.change(address, { target: { value: "unfinished.example/path" } });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.start.openView", {
+          name: i18n.t("workbench.activity.compute"),
+        }),
+      }),
+    );
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    fireEvent.click(
+      screen.getByRole("tab", {
+        name: new RegExp(i18n.t("workbench.tabs.newTab")),
+      }),
+    );
+    expect(address).toHaveValue("unfinished.example/path");
+  });
+
+  it("reuses an already open tool in the new tab position without duplicating its view", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByTestId("file-navigator");
+    const openCompute = () =>
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: i18n.t("workbench.start.openView", {
+            name: i18n.t("workbench.activity.compute"),
+          }),
+        }),
+      );
+    openCompute();
+    const add = screen.getByRole("button", {
+      name: i18n.t("workbench.tabs.addTab"),
+    });
+    fireEvent.click(add);
+    fireEvent.click(add);
+    const before =
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"]
+        .tabs;
+    openCompute();
+    const after =
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"];
+    expect(after.tabs).toEqual([before[1], before[0]]);
+    expect(after.activeId).toBe(before[0].id);
+    expect(after.recent).toEqual([]);
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+  });
+
+  it("launches a tool inside the secondary new tab without replacing the primary pane", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByTestId("file-navigator");
+    const add = screen.getByRole("button", {
+      name: i18n.t("workbench.tabs.addTab"),
+    });
+    fireEvent.click(add);
+    const primaryAddress = screen.getByRole("textbox", {
+      name: /浏览器地址|Browser address/,
+    });
+    fireEvent.change(primaryAddress, { target: { value: "primary draft" } });
+    fireEvent.click(add);
+    const before =
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"]
+        .tabs;
+    fireEvent.contextMenu(screen.getAllByRole("tab")[1]);
+    fireEvent.click(await screen.findByText(i18n.t("workbench.split.right")));
+    const secondary = screen
+      .getAllByRole("tabpanel")
+      .find((panel) => panel.id.endsWith("-secondary"))!;
+    fireEvent.click(
+      within(secondary).getByRole("button", {
+        name: i18n.t("workbench.start.openView", {
+          name: i18n.t("workbench.activity.compute"),
+        }),
+      }),
+    );
+    const after =
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"];
+    expect(after.tabs).toHaveLength(2);
+    expect(after.activeId).toBe(before[0].id);
+    expect(after.secondaryId).toBe("compute:default");
+    await waitFor(() => expect(primaryAddress).toBeVisible());
+    expect(primaryAddress).toHaveValue("primary draft");
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(2);
+    expect(
+      screen.getByRole("tabpanel", {
+        name: new RegExp(i18n.t("workbench.activity.compute")),
+      }),
+    ).toBeVisible();
+  });
+
+  it("replaces a new tab after a recent native file finishes loading", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            path: "recent.txt",
+            preferredView: "text",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByTestId("monaco-editor");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `${i18n.t("workbench.tabs.close")} recent.txt`,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.addTab") }),
+    );
+    const recent = screen.getByRole("region", {
+      name: i18n.t("workbench.empty.recent"),
+    });
+    fireEvent.click(within(recent).getByRole("button", { name: /recent.txt/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /recent.txt/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(await screen.findByText("hello")).toBeVisible();
+    expect(
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"]
+        .recent,
+    ).toEqual([]);
   });
   it("quotes a selection from the mounted workspace preview and locates its original scoped file lines", async () => {
     const scope = {
@@ -2325,5 +2717,553 @@ describe("FilesDrawer", () => {
           (tab) => tab.path === "first.txt",
         ),
     ).toMatchObject({ dirty: true, content: "split draft" });
+  });
+});
+
+it("docks a floating archived preview without duplicating its tab and restores the origin on close", async () => {
+  const scope = {
+    kind: "session" as const,
+    agentId: "default",
+    sessionId: "floating-test",
+  };
+  const target: FileTarget = {
+    source: "artifact",
+    path: "report.txt",
+    artifact: {
+      id: "floating-before",
+      title: "report.txt",
+      source: "tool_call",
+      textContent: "archived before",
+      mimeType: "text/plain",
+      meta: {
+        turnFileArchive: true,
+        version: "before",
+        turnId: "turn",
+        fileId: "file",
+      },
+    },
+  };
+  function Harness() {
+    const [state, dispatch] = useReducer(filesDrawerReducer, {
+      kind: "closed",
+    });
+    return (
+      <>
+        <button
+          onClick={(event) =>
+            dispatch({
+              type: "OPEN_PREVIEW",
+              target,
+              trigger: event.currentTarget,
+              presentation: "floating",
+            })
+          }
+        >
+          Open floating archive
+        </button>
+        {state.kind !== "closed" && (
+          <FilesDrawer state={state} dispatch={dispatch} scope={scope} />
+        )}
+      </>
+    );
+  }
+  renderWithProviders(<Harness />);
+  const origin = screen.getByRole("button", { name: "Open floating archive" });
+  fireEvent.click(origin);
+  const drawer = await screen.findByRole("region", {
+    name: i18n.t("workbench.tabs.workspace"),
+  });
+  expect(drawer).toHaveAttribute("data-presentation", "floating");
+  expect(await screen.findByTestId("monaco-editor")).toHaveValue(
+    "archived before",
+  );
+  expect(screen.getByTestId("monaco-editor")).toHaveAttribute("readonly");
+  fireEvent.click(
+    screen.getByRole("button", { name: i18n.t("delivery.dock") }),
+  );
+  expect(drawer).toHaveAttribute("data-presentation", "docked");
+  expect(screen.getAllByRole("tab", { name: /report.txt/ })).toHaveLength(1);
+  expect(screen.getByTestId("monaco-editor")).toHaveValue("archived before");
+  fireEvent.click(screen.getByRole("button", { name: i18n.t("common.close") }));
+  await waitFor(() => expect(origin).toHaveFocus());
+});
+
+describe("workbench header application choices", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(workspaceApi.loadDailyMemory)
+      .mockReset()
+      .mockResolvedValue({ content: "memory content" });
+    useWorkbenchTabsStore.setState({ scopes: {} });
+    useCodingTabsStore.setState({
+      tabsByAgent: {},
+      activeTabByAgent: {},
+      diffsByAgent: {},
+    });
+    vi.mocked(workspaceApi.loadFileText).mockResolvedValue({
+      content: "saved text",
+      etag: "saved",
+    });
+  });
+
+  function header(container: HTMLElement) {
+    const element = container.querySelector<HTMLElement>(
+      "[data-workbench-tabbar] [data-workbench-file-actions]",
+    );
+    expect(element).not.toBeNull();
+    return within(element!);
+  }
+
+  it("opens the selected archived version from the real workbench header and follows tab changes", async () => {
+    const scope = {
+      kind: "session" as const,
+      agentId: "default",
+      sessionId: "route-header",
+      chatId: "header-chat",
+    };
+    const archiveScope = { ...scope, sessionId: "runtime-header" };
+    const file = {
+      id: "header-file",
+      name: "report.csv",
+      path: "output/report.csv",
+      root: "workspace" as const,
+      status: "modified" as const,
+      delivered: true,
+      binary: false,
+      before_available: true,
+      after_available: true,
+      size: 5,
+      before_size: 6,
+    };
+    const turn: TurnFileManifest = {
+      id: "header-turn",
+      agent_id: "default",
+      session_id: "runtime-header",
+      started_at: "2026-11-17",
+      status: "completed",
+      incomplete: false,
+      overlap: false,
+      warnings: [],
+      files: [file],
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (url) =>
+        new Response(
+          String(url).includes("version=before") ? "before" : "after",
+          { headers: { "Content-Type": "text/csv" } },
+        ),
+    );
+    const after = turnFileTarget(archiveScope, turn, file, "after");
+    const before = turnFileTarget(archiveScope, turn, file, "before");
+    after.preferredView = before.preferredView = "text";
+    const props = {
+      scope,
+      runtimeSessionId: "runtime-header",
+      dispatch: vi.fn(),
+    };
+    const view = renderWithProviders(
+      <FilesDrawer
+        {...props}
+        state={{ kind: "preview", target: after, trigger: null }}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toHaveValue("after"),
+    );
+    fireEvent.click(
+      await header(view.container).findByRole("button", {
+        name: /System Viewer.*report.csv/,
+      }),
+    );
+    await waitFor(() => expect(nativeFiles.open).toHaveBeenCalledTimes(1));
+    expect(nativeFiles.open).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        artifact: expect.objectContaining({
+          meta: expect.objectContaining({
+            version: "after",
+            turnId: "header-turn",
+          }),
+        }),
+      }),
+      archiveScope,
+      undefined,
+      expect.any(Object),
+    );
+    view.rerender(
+      <FilesDrawer
+        {...props}
+        state={{ kind: "preview", target: before, trigger: null }}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toHaveValue("before"),
+    );
+    const more = header(view.container).getByRole("button", {
+      name: i18n.t("delivery.fileMenu"),
+    });
+    fireEvent.click(more);
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: i18n.t("turnFiles.downloadPrevious"),
+      }),
+    );
+    expect(downloadFileFromUrl).toHaveBeenLastCalledWith(
+      new URL(before.artifactUrl!, window.location.origin).href,
+      file.name,
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-Chat-Id": "header-chat" }),
+      }),
+    );
+    expect(more).toHaveFocus();
+    fireEvent.click(
+      await header(view.container).findByRole("button", {
+        name: `${i18n.t("delivery.openWith")} report.csv`,
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Other Viewer" }),
+    );
+    await waitFor(() => expect(nativeFiles.open).toHaveBeenCalledTimes(2));
+    expect(nativeFiles.open).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        artifact: expect.objectContaining({
+          meta: expect.objectContaining({ version: "before" }),
+        }),
+      }),
+      archiveScope,
+      "other",
+      expect.any(Object),
+    );
+    expect(
+      header(view.container).getByRole("button", {
+        name: /System Viewer.*report.csv/,
+      }),
+    ).toBeVisible();
+    const current = nativeFiles.open.mock.calls[1][3].isCurrent;
+    expect(current()).toBe(true);
+    fireEvent.click(
+      screen
+        .getAllByRole("tab")
+        .find(
+          (tab) =>
+            !tab.textContent?.includes(
+              i18n.t("turnFiles.previousVersionLabel"),
+            ),
+        )!,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toHaveValue("after"),
+    );
+    await waitFor(() => expect(current()).toBe(false));
+    fireEvent.click(
+      await header(view.container).findByRole("button", {
+        name: /System Viewer.*report.csv/,
+      }),
+    );
+    await waitFor(() => expect(nativeFiles.open).toHaveBeenCalledTimes(3));
+    expect(nativeFiles.open.mock.calls[2][0].artifact.meta.version).toBe(
+      "after",
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
+    expect(
+      view.container.querySelector("[data-workbench-file-actions]"),
+    ).toBeNull();
+  });
+
+  it("copies the active path and toggles floating from the workbench file menu without reopening the draft", async () => {
+    const scope = {
+      kind: "session" as const,
+      agentId: "default",
+      sessionId: "header-file-menu",
+    };
+    const target: FileTarget = {
+      source: "workspace",
+      root: "workspace",
+      path: "output/notes.md",
+      preferredView: "text",
+    };
+    function Harness() {
+      const [state, dispatch] = useReducer(filesDrawerReducer, {
+        kind: "closed",
+      });
+      return (
+        <>
+          <button
+            onClick={(event) =>
+              dispatch({
+                type: "OPEN_PREVIEW",
+                target,
+                trigger: event.currentTarget,
+              })
+            }
+          >
+            Open test file
+          </button>
+          {state.kind !== "closed" && (
+            <FilesDrawer state={state} dispatch={dispatch} scope={scope} />
+          )}
+        </>
+      );
+    }
+    const view = renderWithProviders(<Harness />);
+    const origin = screen.getByRole("button", { name: "Open test file" });
+    fireEvent.click(origin);
+    const editor = await screen.findByTestId("monaco-editor");
+    fireEvent.change(editor, { target: { value: "track this draft" } });
+    const drawer = screen.getByRole("region", {
+      name: i18n.t("workbench.tabs.workspace"),
+    });
+    const more = header(view.container).getByRole("button", {
+      name: i18n.t("delivery.fileMenu"),
+    });
+    async function choose(action: string) {
+      fireEvent.click(more);
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: i18n.t(action) }),
+      );
+    }
+    fireEvent.click(more);
+    const copy = await screen.findByRole("menuitem", {
+      name: i18n.t("delivery.copyPath"),
+    });
+    fireEvent.keyDown(copy, { key: "Escape" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    expect(more).toHaveFocus();
+    await choose("delivery.copyPath");
+    expect(clipboardMocks.copyText).toHaveBeenCalledWith(target.path);
+    await choose("delivery.floatPreview");
+    expect(drawer).toHaveAttribute("data-presentation", "floating");
+    await choose("delivery.dock");
+    expect(drawer).toHaveAttribute("data-presentation", "docked");
+    expect(screen.getByTestId("monaco-editor")).toBe(editor);
+    expect(editor).toHaveValue("track this draft");
+    expect(screen.getAllByRole("tab", { name: /notes.md/ })).toHaveLength(1);
+    expect(workspaceApi.saveFileContent).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("common.close") }),
+    );
+    await waitFor(() => expect(origin).toHaveFocus());
+  });
+
+  it("opens the current unsaved buffer from the header without saving or clearing the editor", async () => {
+    const scope = {
+      kind: "session" as const,
+      agentId: "default",
+      sessionId: "header-draft",
+    };
+    const view = renderWithProviders(
+      <FilesDrawer
+        scope={scope}
+        runtimeSessionId="runtime-draft"
+        dispatch={vi.fn()}
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            root: "workspace",
+            path: "notes.md",
+            preferredView: "text",
+          },
+          trigger: null,
+        }}
+      />,
+    );
+    const editor = await screen.findByTestId("monaco-editor");
+    fireEvent.change(editor, { target: { value: "unsaved preview content" } });
+    fireEvent.click(
+      await header(view.container).findByRole("button", {
+        name: /System Viewer.*notes.md/,
+      }),
+    );
+    await waitFor(() => expect(nativeFiles.open).toHaveBeenCalledTimes(1));
+    expect(nativeFiles.open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "artifact",
+        artifactUrl: undefined,
+        artifact: expect.objectContaining({
+          title: "notes.md",
+          textContent: "unsaved preview content",
+        }),
+      }),
+      { ...scope, sessionId: "runtime-draft" },
+      undefined,
+      expect.any(Object),
+    );
+    expect(
+      nativeFiles.open.mock.calls[0][0].artifact.binaryUrl,
+    ).toBeUndefined();
+    expect(workspaceApi.saveFileContent).not.toHaveBeenCalled();
+    expect(editor).toHaveValue("unsaved preview content");
+    expect(
+      useCodingTabsStore.getState().tabsByAgent[
+        "session:default:header-draft"
+      ][0].dirty,
+    ).toBe(true);
+  });
+
+  it.each(["profile", "memory", "daily", "digest"] as const)(
+    "opens loaded %s file content from the workbench header",
+    async (source) => {
+      const scope = {
+        kind: "session" as const,
+        agentId: "default",
+        sessionId: `header-${source}`,
+      };
+      const content =
+        source === "profile" ? "profile content" : "memory content";
+      const view = renderWithProviders(
+        <FilesDrawer
+          scope={scope}
+          dispatch={vi.fn()}
+          state={{
+            kind: "workspace",
+            target: { source, path: "notes.md", preferredView: "text" },
+            trigger: null,
+          }}
+        />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("monaco-editor")).toHaveValue(content),
+      );
+      fireEvent.click(
+        await header(view.container).findByRole("button", {
+          name: /System Viewer.*notes.md/,
+        }),
+      );
+      await waitFor(() => expect(nativeFiles.open).toHaveBeenCalledTimes(1));
+      expect(nativeFiles.open).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: "artifact",
+          artifact: expect.objectContaining({
+            title: "notes.md",
+            textContent: content,
+          }),
+        }),
+        scope,
+        undefined,
+        expect.any(Object),
+      );
+      expect(
+        useCodingTabsStore.getState().tabsByAgent[
+          `session:default:header-${source}`
+        ][0].dirty,
+      ).toBe(false);
+    },
+  );
+
+  it("waits for restored text content before allowing external open", async () => {
+    const scope = {
+      kind: "session" as const,
+      agentId: "default",
+      sessionId: "restored-header",
+    };
+    const target = {
+      source: "memory" as const,
+      path: "notes.md",
+      preferredView: "text" as const,
+    };
+    useCodingTabsStore.getState().openTab("session:default:restored-header", {
+      path: "memory::notes.md",
+      source: "memory",
+      displayPath: "notes.md",
+      previewKind: "text",
+      preferredView: "text",
+      content: "",
+      dirty: false,
+    });
+    useCodingTabsStore
+      .getState()
+      .setActiveTab("session:default:restored-header", "memory::notes.md");
+    let finishLoad!: (value: { content: string }) => void;
+    const pending = new Promise<{ content: string }>((resolve) => {
+      finishLoad = resolve;
+    });
+    vi.mocked(workspaceApi.loadDailyMemory).mockReturnValue(pending);
+    const view = renderWithProviders(
+      <FilesDrawer
+        scope={scope}
+        dispatch={vi.fn()}
+        state={{ kind: "workspace", target, trigger: null }}
+      />,
+    );
+    await waitFor(() => expect(finishLoad).toBeTypeOf("function"));
+    expect(
+      header(view.container).getByRole("button", {
+        name: `${i18n.t("delivery.open")} notes.md`,
+      }),
+    ).toBeDisabled();
+    expect(nativeFiles.open).not.toHaveBeenCalled();
+    await act(async () => finishLoad({ content: "restored memory" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toHaveValue(
+        "restored memory",
+      ),
+    );
+    const open = await header(view.container).findByRole("button", {
+      name: /System Viewer.*notes.md/,
+    });
+    expect(open).toBeEnabled();
+    fireEvent.click(open);
+    await waitFor(() => expect(nativeFiles.open).toHaveBeenCalledTimes(1));
+    expect(nativeFiles.open.mock.calls[0][0].artifact.textContent).toBe(
+      "restored memory",
+    );
+  });
+
+  it("normalizes SDK artifact session aliases and retains the filename extension in the header", async () => {
+    const scope = {
+      kind: "session" as const,
+      agentId: "default",
+      sessionId: "header-generated",
+    };
+    const view = renderWithProviders(
+      <FilesDrawer
+        scope={scope}
+        runtimeSessionId="header-generated"
+        dispatch={vi.fn()}
+        state={{
+          kind: "preview",
+          trigger: null,
+          target: {
+            source: "artifact",
+            path: "generated-notes.md",
+            preferredView: "text",
+            artifact: {
+              id: "generated-header",
+              title: "generated-notes",
+              extension: "md",
+              mimeType: "text/markdown",
+              textContent: "generated content",
+              source: "generated",
+              agentId: "default",
+              sessionId: "default:header-generated",
+            },
+          },
+        }}
+      />,
+    );
+    await screen.findByTestId("monaco-editor");
+    fireEvent.click(
+      await header(view.container).findByRole("button", {
+        name: /System Viewer.*generated-notes.md/,
+      }),
+    );
+    await waitFor(() => expect(nativeFiles.open).toHaveBeenCalledTimes(1));
+    expect(nativeFiles.open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        artifact: expect.objectContaining({
+          title: "generated-notes.md",
+          sessionId: "header-generated",
+          textContent: "generated content",
+        }),
+      }),
+      scope,
+      undefined,
+      expect.any(Object),
+    );
   });
 });

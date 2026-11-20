@@ -38,9 +38,23 @@ def build_domain_engine_router() -> APIRouter:
     @router.get("/neqsim/runtime")
     def neqsim_runtime_endpoint() -> dict[str, Any]:
         """Return install state for the built-in NeqSim runtime."""
-        from qwenpaw.agents.builtin_mcp.neqsim_runtime import discover_runtime
+        from qwenpaw.agents.builtin_mcp.neqsim_runtime import (
+            discover_runtime,
+            install_manager,
+        )
 
-        return discover_runtime().to_dict()
+        status = discover_runtime()
+        task = install_manager.active_task()
+        return {
+            **status.to_dict(),
+            "engine_id": "neqsim",
+            "packages": [
+                f"Java {status.java_version}",
+                f"NeqSim {status.neqsim_version}",
+            ],
+            "message": "下载后自动验证并加载计算工具，无需手动配置 Java。",
+            "active_task": task.to_dict() if task else None,
+        }
 
     # Register before /{engine_id}; these paths must not be parsed as IDs.
     from .runtime_install import runtime_install_manager
@@ -66,13 +80,20 @@ def build_domain_engine_router() -> APIRouter:
             "agents",
             getattr(manager, "workspaces", {}),
         )
+        failures = []
         for workspace in list(workspaces.values()):
             driver_manager = getattr(workspace, "driver_manager", None)
             if driver_manager is not None:
-                await ensure_neqsim_driver_registered(
-                    workspace,
-                    driver_manager,
-                )
+                try:
+                    await ensure_neqsim_driver_registered(
+                        workspace,
+                        driver_manager,
+                        strict=True,
+                    )
+                except Exception:
+                    failures.append(str(getattr(workspace, "agent_id", "")))
+        if failures:
+            raise RuntimeError("部分专家的计算服务连接失败，请重试或重启软件")
 
     @router.post("/neqsim/install", status_code=202)
     async def install_neqsim_endpoint() -> dict[str, Any]:

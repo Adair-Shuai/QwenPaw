@@ -53,6 +53,8 @@ UGSCI_PUBLISH_ENDPOINT=https://YOUR-PUBLISH-HOST/v1/releases
 
 ## 投稿、审核和更新
 
+签名专家包使用新增管理员接口 `/v1/expert-packages/releases/inspect` 和 `/v1/expert-packages/releases`，旧模板投稿接口继续保留。服务配置 `UGSCI_EXPERT_PUBLIC_KEY`（默认已有发布信任根），验证平台索引和全部实际制品，不接收私钥、不运行包内代码。专家桶 RAM 权限需增加 `expert-packages/*`。Awsome-tools 的旧模板目录通过 `/v1/expert-catalog/import` 合并，禁止其他同步工具覆盖 `agents/manifest.json` 或删除渠道版本文件；已转换为签名包的条目不能再由旧模板接口覆盖。详细协议、容量限制和接入顺序见 `EXPERT_PACKAGE_V1.md`。
+
 1. 投稿服务重新检查归属、版本、ZIP 内容和摘要；客户端预检不能替代服务端校验。
 2. 投稿包及回执写入 `publisher-private/submissions/<namespace>/<kind>/<id>/<version>.*`，对象 ACL 为 private，公开市场目录保持不变。
 3. 管理员核对回执及包内容，通过 `POST /v1/approve/<namespace>/<kind>/<id>/<version>` 携带管理员 Bearer token 审核发布。`kind` 为 `app`、`plugin` 或 `expert`。管理员也可使用 `/v1/releases` 直接发布。

@@ -7,7 +7,7 @@
   container-type: inline-size;
   width: min(100%, 720px);
   box-sizing: border-box;
-  margin: 16px 0;
+  margin: 6px 0;
   background: transparent;
   color: var(--app-text);
   font-size: var(--app-font-caption);
@@ -31,7 +31,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 0 12px;
+  padding: 7px 0 2px;
   color: var(--app-text-secondary);
 }
 .heading {
@@ -71,35 +71,37 @@
 }
 .files {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   list-style: none;
   padding: 0;
   margin: 0;
 }
 .file {
+  position: relative;
   min-width: 0;
-  border: 1px solid var(--app-border);
-  border-radius: 14px;
+  border: 0.5px solid var(--app-border);
+  border-radius: 16px;
   background: var(--app-fill-faint);
   overflow: hidden;
 }
 .row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
-  padding: 0 12px;
-  min-height: max(80px, calc(80px * var(--app-font-scale)));
+  padding: 0 10px;
+  height: auto;
+  min-height: max(60px, calc(60px * var(--app-font-scale)));
 }
 .previewButton {
   display: flex;
   align-items: center;
   align-self: stretch;
   flex: 1;
-  gap: 13px;
+  gap: 10px;
   min-width: 0;
-  padding: 13px 0;
+  padding: 8px 0;
   border: 0;
   background: transparent;
   text-align: left;
@@ -108,22 +110,59 @@
   }
 }
 .imagePreview {
+  position: absolute;
+  z-index: 1;
+  top: calc((max(60px, calc(60px * var(--app-font-scale))) - 40px) / 2);
+  left: 10px;
   display: block;
-  width: 100%;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border: 0;
-  border-bottom: 1px solid var(--app-border);
+  border-radius: 10px;
+  overflow: hidden;
   background: var(--app-surface);
+  cursor: zoom-in;
+  &:focus-visible {
+    outline: 2px solid var(--app-selected-border);
+    outline-offset: 3px;
+  }
   img {
     display: block;
     width: 100%;
-    max-height: 320px;
-    object-fit: contain;
+    height: 100%;
+    object-fit: cover;
   }
 }
 .imageError {
-  margin: 10px 14px 0;
-  color: var(--app-text-secondary);
+  display: flex;
+  align-items: center;
+  position: absolute;
+  z-index: 1;
+  left: 60px;
+  bottom: 8px;
+  max-width: calc(100% - 120px);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-warning-text);
+  font-size: var(--app-font-caption-sm, 11px);
+  > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  button {
+    flex-shrink: 0;
+    padding: 0 0 0 4px;
+    border: 0;
+    background: transparent;
+    text-decoration: underline;
+  }
+}
+.file:has(.imageError) .fileMeta {
+  visibility: hidden;
 }
 .relatedPages {
   display: flex;
@@ -149,10 +188,10 @@
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  border: 1px solid var(--app-border);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 0.5px solid var(--app-border);
   background: var(--app-surface);
   color: var(--app-info-text);
   &[data-kind="table"] {
@@ -179,19 +218,19 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--app-font-body);
+    font-size: calc(13px * var(--app-font-scale));
     font-weight: 500;
-    line-height: 1.6;
+    line-height: calc(20px * var(--app-font-scale));
   }
 }
 .fileMeta {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 3px 8px;
+  gap: 3px 6px;
   color: var(--app-text-secondary);
-  margin-top: 4px;
-  font-size: var(--app-font-caption);
+  margin-top: 2px;
+  font-size: var(--app-font-caption-sm, 11px);
   overflow: hidden;
   white-space: nowrap;
   > span {
@@ -247,8 +286,128 @@
   font-variant-numeric: tabular-nums;
 }
 .footer {
-  padding: 9px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 2px 12px;
+  > details[open],
+  > .notice {
+    flex-basis: 100%;
+  }
+  padding: 4px 0;
   font-size: var(--app-font-caption-sm, 11px);
+}
+.archiveDetails {
+  color: var(--app-text-tertiary);
+  > summary {
+    cursor: pointer;
+    width: fit-content;
+  }
+  .archiveNote {
+    margin-top: 7px;
+  }
+}
+.archiveVersions {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  > div {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    text-decoration: underline;
+  }
+}
+.changesHeading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: max(60px, calc(60px * var(--app-font-scale)));
+  padding: 8px 10px;
+  border: 0.5px solid var(--app-border);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--app-fill-faint);
+  > div {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+  strong {
+    font-size: calc(13px * var(--app-font-scale));
+    font-weight: 500;
+  }
+}
+.pathDirectory {
+  color: var(--app-text-tertiary);
+}
+.changeList {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  border: 0.5px solid var(--app-border);
+  border-radius: 0 0 16px 16px;
+  overflow: hidden;
+  .file {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    &:hover {
+      background: var(--app-fill-faint);
+    }
+  }
+  .row {
+    min-height: 32px;
+    height: auto;
+    padding: 0 12px;
+  }
+  .previewButton {
+    padding: 7px 0;
+  }
+  .fileIcon {
+    display: none;
+  }
+  .fileInfo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .fileName {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    strong {
+      display: inline;
+      font-size: var(--app-font-caption);
+    }
+  }
+  .fileMeta {
+    flex: 0 1 auto;
+    max-width: 55%;
+    margin: 0;
+  }
+  .version {
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+.file:has(.diff) {
+  grid-column: 1 / -1;
 }
 .archiveNote {
   display: flex;
@@ -284,7 +443,7 @@
   margin: 10px 0;
 }
 .warnings {
-  margin-top: 5px;
+  margin-top: 0;
   color: var(--app-text-secondary);
   summary {
     cursor: pointer;
@@ -295,10 +454,9 @@
     overflow-wrap: anywhere;
   }
 }
-.unavailable,
-.version {
+.unavailable {
   display: block;
-  margin: -5px 14px 12px 68px;
+  margin: -4px 10px 5px 60px;
   color: var(--app-text-secondary);
 }
 .diff {
@@ -353,37 +511,31 @@
     animation: none;
   }
 }
+@container (max-width: 620px) {
+  .files {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @container (max-width: 460px) {
   .header {
-    padding: 10px 0;
+    padding: 6px 0 2px;
     flex-wrap: wrap;
     gap: 8px;
   }
   .bundle {
     padding: 5px 7px;
   }
-  .row {
-    gap: 7px;
-    padding: 0 9px;
-  }
-  .previewButton {
-    gap: 9px;
-  }
   .fileIcon {
     width: 40px;
-    height: 44px;
+    height: 40px;
   }
   .footer {
-    padding: 10px 0;
+    padding: 4px 0;
   }
   .archiveNote {
     flex-wrap: wrap;
   }
   .otherFiles > summary {
     padding: 10px 0;
-  }
-  .unavailable,
-  .version {
-    margin-left: 55px;
   }
 }

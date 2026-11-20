@@ -1,3 +1,4 @@
+import { expertDisplayName } from "../core/displayNames";
 /**
  * Unified Tools & Skills center.
  *
@@ -288,7 +289,10 @@ export function ToolsSkillsCenterPage({
         options: agents.length
           ? agents.map((agent) => ({
               value: agent.id,
-              label: displayAgentName?.(agent) || agent.name || agent.id,
+              label:
+                displayAgentName?.(agent) ||
+                expertDisplayName(agent.name) ||
+                agent.id,
             }))
           : [
               {

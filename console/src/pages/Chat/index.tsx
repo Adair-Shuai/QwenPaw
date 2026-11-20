@@ -1429,11 +1429,8 @@ export default function ChatPage() {
     });
   }, [selectedAgent]);
   const sdkSessionApi = sdkSessionAdapter.api;
-  const {
-    enabled: terminalEnabled,
-    reason: terminalDisabledReason,
-    confirmed: terminalCapabilityConfirmed,
-  } = useTerminalEnabled();
+  const { enabled: terminalEnabled, confirmed: terminalCapabilityConfirmed } =
+    useTerminalEnabled();
   const backendChatId = resolveBackendChatId(chatId);
   const decisionScope = `${selectedAgent}:${queueSessionId}:${
     backendChatId ?? ""
@@ -1494,13 +1491,6 @@ export default function ChatPage() {
         .setSessionOpen(currentSessionFilesScopeKey, open),
     [currentSessionFilesScopeKey],
   );
-  const toggleTerminal = useCallback(
-    () =>
-      useTerminalSurfaceStore
-        .getState()
-        .toggleSession(currentSessionFilesScopeKey),
-    [currentSessionFilesScopeKey],
-  );
   useEffect(() => {
     if (terminalCapabilityConfirmed && !terminalEnabled) {
       setTerminalOpen(false);
@@ -1558,6 +1548,9 @@ export default function ChatPage() {
         type: "OPEN_PREVIEW",
         target: customEvent.detail.target,
         trigger: customEvent.detail.trigger ?? null,
+        ...(customEvent.detail.presentation
+          ? { presentation: customEvent.detail.presentation }
+          : {}),
       });
     };
     window.addEventListener("qwenpaw:open-file-preview", openPreview);
@@ -4663,10 +4656,6 @@ export default function ChatPage() {
             <ChatHeaderTitle />
             <span className={styles.headerSpacer} />
             <ChatActionGroup
-              onToggleTerminal={toggleTerminal}
-              terminalEnabled={terminalEnabled}
-              terminalDisabledReason={terminalDisabledReason}
-              terminalOpen={terminalOpen}
               onToggleWorkspace={toggleFilesWorkspace}
               workspaceOpen={filesWorkspaceOpen}
             />
@@ -5285,10 +5274,6 @@ export default function ChatPage() {
     filesWorkspaceOpen,
     pageStyle,
     toggleFilesWorkspace,
-    terminalOpen,
-    terminalEnabled,
-    terminalDisabledReason,
-    toggleTerminal,
     isOwner,
     bgTaskCount,
     bgBackendSessionId,
@@ -5320,7 +5305,8 @@ export default function ChatPage() {
   ]);
 
   const filesDrawerClass =
-    filesDrawerState.kind === "closed"
+    filesDrawerState.kind === "closed" ||
+    filesDrawerState.presentation === "floating"
       ? ""
       : filesDrawerState.kind === "preview"
       ? styles.filesPreviewOpen

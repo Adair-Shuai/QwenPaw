@@ -69,7 +69,13 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
         .lock()
         .expect("tray state poisoned") = preference;
     let show = MenuItem::with_id(app, SHOW_MENU_ID, "Show Window", true, None::<&str>)?;
-    let approvals = MenuItem::with_id(app, APPROVALS_MENU_ID, "View pending approvals", true, None::<&str>)?;
+    let approvals = MenuItem::with_id(
+        app,
+        APPROVALS_MENU_ID,
+        "View pending approvals",
+        true,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, QUIT_MENU_ID, "Quit App", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &approvals, &quit])?;
 
@@ -89,9 +95,11 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
         });
     }
 
-    let mut tray = TrayIconBuilder::new()
+    let tray = TrayIconBuilder::with_id(crate::desktop_icons::TRAY_ID)
+        .icon(crate::desktop_icons::tray_icon())
+        .icon_as_template(cfg!(target_os = "macos"))
         .menu(&menu)
-        .tooltip("UGSci Desktop")
+        .tooltip("UGSci")
         .on_menu_event(|app, event| match event.id().as_ref() {
             SHOW_MENU_ID => show_main_window(app),
             APPROVALS_MENU_ID => {
@@ -102,6 +110,9 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
+            if matches!(event, TrayIconEvent::Enter { .. }) {
+                crate::desktop_icons::refresh(tray.app_handle());
+            }
             let should_show = matches!(
                 event,
                 TrayIconEvent::Click {
@@ -119,15 +130,8 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
             }
         });
 
-    if let Some(icon) = app.default_window_icon() {
-        // Use the full-color app icon on every platform. The icon is a colored
-        // logo, so it must NOT be flagged as a macOS template image — template
-        // images are rendered as a solid monochrome silhouette, which would
-        // turn the menu-bar icon into a black blob.
-        tray = tray.icon(icon.clone());
-    }
-
     tray.build(app)?;
+    crate::desktop_icons::setup(app);
     Ok(())
 }
 
@@ -261,7 +265,10 @@ pub(crate) fn set_tray_labels(
 
     if let Some(items) = menu_items {
         if let Some(label) = view_approvals {
-            items.approvals.set_text(label).map_err(|err| err.to_string())?;
+            items
+                .approvals
+                .set_text(label)
+                .map_err(|err| err.to_string())?;
         }
         if let Some(stored) = app
             .state::<TrayState>()
@@ -385,7 +392,10 @@ mod tests {
     fn legacy_background_choice_keeps_the_desktop_shell() {
         let action: CloseAction = serde_json::from_str(r#""quit""#).unwrap();
         assert!(matches!(action, CloseAction::MinimizeToTray));
-        assert_eq!(serde_json::to_string(&action).unwrap(), r#""minimize-to-tray""#);
+        assert_eq!(
+            serde_json::to_string(&action).unwrap(),
+            r#""minimize-to-tray""#
+        );
     }
 
     #[test]

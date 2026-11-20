@@ -8,6 +8,7 @@ import sessionApi from "../../pages/Chat/sessionApi";
 import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
 import type { FilesWorkspaceScope } from "../../features/files-workspace/filesWorkspaceScope";
 import type { WorkspaceRoot } from "../../features/files-workspace/types";
+import { normalizeTurnFileCapture } from "../../features/files-workspace/turnFileCaptureDiagnostics";
 
 export type SessionFilesScope = Extract<
   FilesWorkspaceScope,
@@ -40,6 +41,7 @@ export interface TurnFileManifest {
   finished_at?: string;
   incomplete: boolean;
   warnings: string[];
+  scan_warnings?: string[];
   overlap: boolean;
   tool_activity?: boolean | null;
   files: TurnFileEntry[];
@@ -125,9 +127,13 @@ export const turnFilesApi = {
       headers: buildWorkspaceScopeHeaders(scope),
     })
       .then((value) => {
-        entry.value = value;
+        const normalized = {
+          ...value,
+          turns: value.turns.map(normalizeTurnFileCapture),
+        };
+        entry.value = normalized;
         entry.at = Date.now();
-        return value;
+        return normalized;
       })
       .finally(() => {
         entry.pending = undefined;
@@ -138,9 +144,12 @@ export const turnFilesApi = {
     return entry.pending;
   },
   get(scope: SessionFilesScope, turnId: string): Promise<TurnFileManifest> {
-    return request(endpoint(scope, `/${encodeURIComponent(turnId)}`), {
-      headers: buildWorkspaceScopeHeaders(scope),
-    });
+    return request<TurnFileManifest>(
+      endpoint(scope, `/${encodeURIComponent(turnId)}`),
+      {
+        headers: buildWorkspaceScopeHeaders(scope),
+      },
+    ).then(normalizeTurnFileCapture);
   },
   diff(
     scope: SessionFilesScope,

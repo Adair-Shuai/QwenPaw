@@ -21,6 +21,7 @@ from importlib.metadata import version as _dist_version
 from importlib.metadata import requires as _dist_requires
 from packaging.markers import default_environment
 from packaging.requirements import Requirement
+from packaging.version import Version, InvalidVersion
 from . import wheel_additions
 
 WheelAddition = wheel_additions.WheelAddition
@@ -62,6 +63,38 @@ class GateDecision:
     warnings: tuple[str, ...] = ()
 
 
+def _local_pinned_constraints(requirements_file: Path, value: str) -> bool:
+    """Admit only bounded, audited pin files, never nested pip directives."""
+    try:
+        path = Path(value)
+        if not path.is_absolute():
+            path = requirements_file.parent / path
+        if (
+            path.is_symlink()
+            or path.resolve().parent != requirements_file.parent.resolve()
+            or path.stat().st_size > 65536
+        ):
+            return False
+        for raw in path.read_text(encoding="utf-8-sig").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            req = Requirement(line)
+            pins = list(req.specifier)
+            if (
+                req.url
+                or req.extras
+                or req.marker
+                or len(pins) != 1
+                or pins[0].operator != "=="
+            ):
+                return False
+            Version(pins[0].version)
+        return True
+    except (OSError, UnicodeError, ValueError, InvalidVersion):
+        return False
+
+
 def parse_requirements_file(requirements_file: Path) -> ParsedRequirements:
     """Parse requirements, recording unsupported declarations."""
     parsed = ParsedRequirements()
@@ -77,6 +110,17 @@ def parse_requirements_file(requirements_file: Path) -> ParsedRequirements:
                 args = shlex.split(re.split(r"\s+#", line, maxsplit=1)[0])
             except ValueError:
                 args = []
+            # A restriction to prebuilt wheels cannot introduce an arbitrary
+            # package source or execute a source build. Preserve this exact
+            # option for user-triggered scientific runtime installations.
+            if args in (["--only-binary=:all:"], ["--only-binary", ":all:"]):
+                continue
+            if (
+                len(args) == 2
+                and args[0] == "--constraint"
+                and _local_pinned_constraints(requirements_file, args[1])
+            ):
+                continue
             value = ""
             if len(args) == 2 and args[0] == "--index-url":
                 value = args[1]
@@ -96,6 +140,27 @@ def parse_requirements_file(requirements_file: Path) -> ParsedRequirements:
             continue
         parsed.requirements.append(req)
     return parsed
+
+
+def stage_pinned_constraints(requirements_file: Path, staging: Path) -> str:
+    """Keep validated pin files local when the resolver stages declarations."""
+    lines = requirements_file.read_text(encoding="utf-8-sig").splitlines()
+    for index, line in enumerate(lines):
+        if not line.strip().startswith("--constraint "):
+            continue
+        args = shlex.split(re.split(r"\s+#", line, maxsplit=1)[0])
+        if len(args) != 2 or not _local_pinned_constraints(
+            requirements_file,
+            args[1],
+        ):
+            raise ValueError("unsupported runtime constraints")
+        source = Path(args[1])
+        if not source.is_absolute():
+            source = requirements_file.parent / source
+        destination = staging / f"declared-constraints-{index}.txt"
+        destination.write_bytes(source.read_bytes())
+        lines[index] = f'--constraint "{destination.as_posix()}"'
+    return "\n".join(lines) + "\n"
 
 
 def manifest_requirements(manifest: dict) -> list[str]:
@@ -1084,9 +1149,11 @@ async def _publish_additions(audit, evaluate, target, files, *, recovery=None):
 
             plan = record[1]["plan"] if record is not None else None
             token = capability_context.set(
-                plan["id"] + ":" + plan["capability"]
-                if plan
-                else capability_context.get(),
+                (
+                    plan["id"] + ":" + plan["capability"]
+                    if plan
+                    else capability_context.get()
+                ),
             )
             try:
                 snapshot = await audit()

@@ -1,11 +1,4 @@
-import {
-  ArrowLeft,
-  Expand,
-  Maximize2,
-  Minimize2,
-  MessageSquarePlus,
-  X,
-} from "lucide-react";
+import { ArrowLeft, PanelRight, MessageSquarePlus, X } from "lucide-react";
 import { Tooltip } from "antd";
 import {
   useCallback,
@@ -19,10 +12,11 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
-import { setTextareaValue } from "../../pages/Chat/utils";
+import { useAppMessage } from "../../hooks/useAppMessage";
 import type { FilesDrawerEvent, FilesDrawerState, FileTarget } from "./types";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
 import { filesWorkspaceScopeKey } from "./filesWorkspaceScope";
+import { useWorkspaceQuotes } from "./workspaceQuotes";
 import WorkbenchContent from "./WorkbenchContent";
 import { EMPTY_WORKBENCH, useWorkbenchTabsStore } from "./workbenchTabsStore";
 import styles from "./FilesWorkspace.module.less";
@@ -30,6 +24,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 
 const PREVIEW_WIDTH_STORAGE_KEY = "qwenpaw-files-preview-width";
 const WORKSPACE_WIDTH_STORAGE_KEY = "qwenpaw-files-workspace-width";
+const FLOATING_WIDTH_STORAGE_KEY = "qwenpaw-files-floating-width";
 const MIN_DRAWER_WIDTH = 420;
 const MIN_CHAT_WIDTH = 420;
 
@@ -44,26 +39,6 @@ interface FilesDrawerProps {
   dispatch: (event: FilesDrawerEvent) => void;
   scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
   runtimeSessionId?: string;
-}
-
-function insertFileReference(path: string): void {
-  const textarea = document.querySelector<HTMLTextAreaElement>(
-    '[class*="sender"] textarea',
-  );
-  if (!textarea) return;
-  const start = textarea.selectionStart ?? textarea.value.length;
-  const end = textarea.selectionEnd ?? start;
-  const reference = `@ ${path}`;
-  const prefix = textarea.value.slice(0, start);
-  const suffix = textarea.value.slice(end);
-  const spacing = prefix && !/\s$/.test(prefix) ? " " : "";
-  const next = `${prefix}${spacing}${reference} ${suffix}`;
-  setTextareaValue(textarea, next);
-  const caret = prefix.length + spacing.length + reference.length + 1;
-  requestAnimationFrame(() => {
-    textarea.focus();
-    textarea.setSelectionRange(caret, caret);
-  });
 }
 
 const FilesDrawer = forwardRef<HTMLElement, FilesDrawerProps>(
@@ -87,6 +62,8 @@ function SessionFilesDrawer({
   forwardedRef,
 }: FilesDrawerProps & { forwardedRef: ForwardedRef<HTMLElement> }) {
   const { t } = useTranslation();
+  const { message } = useAppMessage();
+  const quotes = useWorkspaceQuotes();
   const drawerRef = useRef<HTMLElement>(null);
   useImperativeHandle(forwardedRef, () => drawerRef.current!, []);
   const resizeCleanupRef = useRef<(() => void) | undefined>(undefined);
@@ -98,6 +75,8 @@ function SessionFilesDrawer({
   const selected = content.tabs.find((tab) => tab.id === content.activeId);
   const mode = selected?.kind === "graph" ? "files" : selected?.kind ?? "files";
   const prefersReducedMotion = useReducedMotion();
+  const isFloating = state.presentation === "floating";
+  const minimumWidth = isFloating ? 280 : MIN_DRAWER_WIDTH;
   const isWorkspace = state.kind === "workspace";
   const [activeFileTarget, setActiveFileTarget] = useState<
     FileTarget | undefined
@@ -105,7 +84,9 @@ function SessionFilesDrawer({
   // An explicit empty selection must not fall back to an already closed file.
   const target = activeFileTarget;
   const { pageStyle = "classic" } = useTheme();
-  const baseWidthStorageKey = isWorkspace
+  const baseWidthStorageKey = isFloating
+    ? FLOATING_WIDTH_STORAGE_KEY
+    : isWorkspace
     ? WORKSPACE_WIDTH_STORAGE_KEY
     : PREVIEW_WIDTH_STORAGE_KEY;
   const widthStorageKey =
@@ -161,10 +142,13 @@ function SessionFilesDrawer({
     const containerWidth =
       drawerRef.current?.parentElement?.getBoundingClientRect().width ??
       window.innerWidth;
-    const maximum = Math.max(MIN_DRAWER_WIDTH, containerWidth - MIN_CHAT_WIDTH);
+    const maximum = Math.max(
+      minimumWidth,
+      isFloating ? window.innerWidth - 48 : containerWidth - MIN_CHAT_WIDTH,
+    );
     const move = (nextEvent: PointerEvent) => {
       const next = Math.min(
-        Math.max(MIN_DRAWER_WIDTH, initial + startX - nextEvent.clientX),
+        Math.max(minimumWidth, initial + startX - nextEvent.clientX),
         maximum,
       );
       setWidth(next);
@@ -190,6 +174,36 @@ function SessionFilesDrawer({
   const drawerStyle = width > 0 ? { width: `${width}px` } : undefined;
   const panelActions = (
     <>
+      {isFloating && (
+        <Tooltip title={t("delivery.dock")}>
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label={t("delivery.dock")}
+            onClick={() => {
+              setMaximized(false);
+              dispatch(
+                state.kind === "workspace"
+                  ? {
+                      type: "OPEN_WORKSPACE",
+                      target,
+                      trigger: state.trigger,
+                      mode: state.mode,
+                      simulationRunId: state.simulationRunId,
+                      interactionRequestId: state.interactionRequestId,
+                    }
+                  : {
+                      type: "OPEN_PREVIEW",
+                      target: target ?? state.target,
+                      trigger: state.trigger,
+                    },
+              );
+            }}
+          >
+            <PanelRight size={16} />
+          </button>
+        </Tooltip>
+      )}
       {mode === "files" && isWorkspace && target && (
         <Tooltip title={t("files.backToPreview")}>
           <button
@@ -216,7 +230,7 @@ function SessionFilesDrawer({
           aria-pressed={maximized}
           onClick={() => setMaximized((current) => !current)}
         >
-          {maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          <PanelRight size={16} />
         </button>
       </Tooltip>
       <Tooltip title={t("common.close")}>
@@ -233,11 +247,18 @@ function SessionFilesDrawer({
   );
   const footerActions = (
     <>
-      {target && (
+      {target && quotes && (
         <button
           type="button"
           className={styles.secondaryButton}
-          onClick={() => insertFileReference(target.path)}
+          onClick={() => {
+            const added = quotes.add(target.path, {
+              kind: "file-reference",
+              scope,
+              target,
+            });
+            if (!added) message.warning(t("files.mentionFailed"));
+          }}
         >
           <MessageSquarePlus size={15} />
           {t("files.mentionInChat")}
@@ -249,7 +270,7 @@ function SessionFilesDrawer({
           className={styles.primaryButton}
           onClick={() => dispatch({ type: "EXPAND_WORKSPACE" })}
         >
-          <Expand size={15} />
+          <PanelRight size={15} />
           {t("files.expandWorkspace")}
         </button>
       )}
@@ -258,12 +279,14 @@ function SessionFilesDrawer({
   return (
     <motion.aside
       ref={drawerRef}
-      className={`${styles.drawer} ${
+      data-presentation={isFloating ? "floating" : "docked"}
+      className={`${styles.drawer} ${isFloating ? styles.drawerFloating : ""} ${
         isWorkspace ? styles.drawerWorkspace : styles.drawerPreview
       } ${isResizing ? styles.drawerResizing : ""} ${
         maximized ? styles.drawerMaximized : ""
       }`}
       style={drawerStyle}
+      data-workbench-maximized={maximized || undefined}
       layout={isResizing || maximized || prefersReducedMotion ? false : "size"}
       initial={
         prefersReducedMotion ? false : { opacity: 0, x: 18, scale: 0.995 }
@@ -312,12 +335,14 @@ function SessionFilesDrawer({
               drawerRef.current?.parentElement?.getBoundingClientRect().width ??
               window.innerWidth;
             const maximum = Math.max(
-              MIN_DRAWER_WIDTH,
-              containerWidth - MIN_CHAT_WIDTH,
+              minimumWidth,
+              isFloating
+                ? window.innerWidth - 48
+                : containerWidth - MIN_CHAT_WIDTH,
             );
             const next = Math.min(
               Math.max(
-                MIN_DRAWER_WIDTH,
+                minimumWidth,
                 base + (event.key === "ArrowLeft" ? 24 : -24),
               ),
               maximum,
@@ -331,6 +356,13 @@ function SessionFilesDrawer({
         state={state}
         scope={scope}
         runtimeSessionId={runtimeSessionId}
+        onToggleFilePresentation={() => {
+          setMaximized(false);
+          dispatch({
+            type: "SET_PRESENTATION",
+            presentation: isFloating ? undefined : "floating",
+          });
+        }}
         panelActions={panelActions}
         footerActions={footerActions}
         onActiveTargetChange={setActiveFileTarget}

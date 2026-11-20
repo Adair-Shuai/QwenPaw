@@ -5,7 +5,6 @@ import {
   useLayoutEffect,
   useState,
   type ComponentType,
-  type ReactNode,
 } from "react";
 import {
   Blocks,
@@ -35,6 +34,7 @@ import {
   WorkbenchComputePanel,
   WorkbenchGenUiPanel,
   WorkbenchSimulationPanel,
+  type WorkbenchBrowserStartContent,
 } from "./WorkbenchPanels";
 import TurnReviewPanel from "./TurnReviewPanel";
 import styles from "./FilesWorkspace.module.less";
@@ -62,7 +62,7 @@ export interface WorkbenchPanelContext {
   reviewState?: { offset: number; turnId: string };
   onReviewStateChange?: (state: { offset: number; turnId: string }) => void;
   terminalTarget?: { id: string; nonce: string };
-  browserStartContent?: ReactNode;
+  browserStartContent?: WorkbenchBrowserStartContent;
   browserSession?: BrowserSession;
   onBrowserSessionChange?: (session: BrowserSession) => void;
   onRequestsChange?: (requests: InteractionRequest[]) => void;

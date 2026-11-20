@@ -23,6 +23,12 @@ from qwenpaw.app.task_tracker import REPLAY_END_SSE, TaskTracker
 from qwenpaw.constant import DEFAULT_STREAM_TASK_TIMEOUT_SECONDS
 from qwenpaw.utils.timeout import parse_positive_timeout_seconds
 
+from . import conftest as router_fixtures
+
+# Keep shared fixtures available during mixed app/plugin suite collection.
+workspace_mock = router_fixtures.workspace_mock
+manager_mock = router_fixtures.manager_mock
+
 
 def test_resolve_timeout_omitted_uses_default() -> None:
     assert (

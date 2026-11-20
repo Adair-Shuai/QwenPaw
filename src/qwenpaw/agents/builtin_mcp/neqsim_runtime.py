@@ -19,6 +19,7 @@ import time
 import urllib.request
 import uuid
 import zipfile
+from urllib.parse import urlparse
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
@@ -28,6 +29,9 @@ from ...constant import WORKING_DIR
 
 DEFAULT_JAVA_VERSION = "21"
 DEFAULT_NEQSIM_VERSION = "3.17.0"
+DEFAULT_NEQSIM_SHA256 = (
+    "c91fbfaa9e10ef7f7b70ed5ebf92c6ae3b7b5a1c917ea73b872d1f8b823fa412"
+)
 _ADOPTIUM_API_BASE = "https://api.adoptium.net/v3"
 _NEQSIM_RELEASE_BASE = "https://github.com/equinor/neqsim/releases/download"
 _HTTP_TIMEOUT_SECONDS = 180
@@ -282,8 +286,9 @@ def discover_runtime(root: Path | None = None) -> NeqSimRuntimeStatus:
         [_user_candidate(user_root)]
         if root is not None
         else [
-            _desktop_candidate(),
+            # Activate an admitted download immediately, including repairs.
             _user_candidate(user_root),
+            _desktop_candidate(),
             _external_candidate(),
         ]
     )
@@ -451,7 +456,7 @@ def _request(url: str) -> urllib.request.Request:
         headers={"User-Agent": "qwenpaw-neqsim-installer"},
     )
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if token:
+    if token and urlparse(url).hostname in {"github.com", "api.github.com"}:
         request.add_header("Authorization", f"Bearer {token}")
     return request
 
@@ -506,6 +511,11 @@ def _neqsim_asset(version: str) -> tuple[str, str]:
     name = f"neqsim-mcp-server-{plain}-runner.jar"
     base = f"{_NEQSIM_RELEASE_BASE}/{tag}/{name}"
     checksum = _read_bytes(f"{base}.sha256").decode("utf-8").strip().split()[0]
+    if (
+        version != DEFAULT_NEQSIM_VERSION
+        or checksum.lower() != DEFAULT_NEQSIM_SHA256
+    ):
+        raise RuntimeError("NeqSim 官方下载包与当前客户端锁定版本不一致")
     return base, checksum
 
 
@@ -642,8 +652,46 @@ def install_runtime(
     neqsim_version: str = DEFAULT_NEQSIM_VERSION,
     progress: Callable[[str, int], None] | None = None,
 ) -> NeqSimRuntimeStatus:
+    """Serialize activation across backend processes sharing a user runtime."""
+    from filelock import FileLock
+
+    root = runtime_root()
+    root.parent.mkdir(parents=True, exist_ok=True)
+    with FileLock(
+        str(root.with_name(f".{root.name}.install.lock")),
+        timeout=0,
+    ):
+        return _install_runtime_locked(
+            java_version=java_version,
+            neqsim_version=neqsim_version,
+            progress=progress,
+        )
+
+
+def _install_runtime_locked(
+    *,
+    java_version: str = DEFAULT_JAVA_VERSION,
+    neqsim_version: str = DEFAULT_NEQSIM_VERSION,
+    progress: Callable[[str, int], None] | None = None,
+) -> NeqSimRuntimeStatus:
     """Download, verify, and atomically install the user NeqSim runtime."""
     report = progress or (lambda _message, _percent: None)
+    from .neqsim_download import stage_cloud_runtime
+    from .neqsim_health import verify_runtime
+
+    if (
+        neqsim_version != DEFAULT_NEQSIM_VERSION
+        or java_version != DEFAULT_JAVA_VERSION
+    ):
+        raise ValueError("只能安装当前客户端支持的 NeqSim 和 Java 版本")
+    current = discover_runtime()
+    if current.ready:
+        report("正在验证已有 NeqSim 运行环境", 85)
+        try:
+            verify_runtime(build_endpoint(current))
+            return current
+        except (RuntimeError, OSError, ValueError, asyncio.TimeoutError):
+            report("已有运行环境验证失败，正在准备修复", 5)
     root = runtime_root()
     root.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
@@ -653,36 +701,46 @@ def install_runtime(
         staging = Path(temp) / "runtime"
         staging.mkdir(parents=True)
 
-        report("正在获取 Java 运行时信息", 5)
-        java_url, java_sha, java_name = _java_asset(java_version)
-        java_archive = Path(temp) / java_name
-        report("正在下载并校验 Java 运行时", 15)
-        _download(java_url, java_archive, java_sha)
-        java_root = _extract_archive(java_archive, Path(temp) / "java-work")
-        shutil.copytree(java_root, staging / "java")
-        (staging / ".java-runtime-version").write_text(
-            java_version,
-            encoding="utf-8",
-        )
+        if not stage_cloud_runtime(
+            staging,
+            root.parent / "neqsim-download-cache",
+            report,
+        ):
+            report("UGSci 下载源暂不可用，正在获取官方 Java 运行时", 10)
+            java_url, java_sha, java_name = _java_asset(java_version)
+            java_archive = Path(temp) / java_name
+            report("正在下载并校验 Java 运行时", 15)
+            _download(java_url, java_archive, java_sha)
+            java_root = _extract_archive(
+                java_archive,
+                Path(temp) / "java-work",
+            )
+            shutil.copytree(java_root, staging / "java")
+            (staging / ".java-runtime-version").write_text(
+                java_version,
+                encoding="utf-8",
+            )
 
-        report("正在下载并校验 NeqSim MCP Server", 65)
-        jar_url, jar_sha = _neqsim_asset(neqsim_version)
-        _download(jar_url, staging / "neqsim-mcp-server.jar", jar_sha)
-        (staging / ".neqsim-version").write_text(
-            neqsim_version,
-            encoding="utf-8",
-        )
+            report("正在下载并校验 NeqSim MCP Server", 65)
+            jar_url, jar_sha = _neqsim_asset(neqsim_version)
+            _download(jar_url, staging / "neqsim-mcp-server.jar", jar_sha)
+            (staging / ".neqsim-version").write_text(
+                neqsim_version,
+                encoding="utf-8",
+            )
 
         staged = discover_runtime(staging)
         if not staged.ready:
-            missing_text = ", ".join(staged.missing)
+            missing_text = "; ".join((*staged.missing, *staged.issues))
             raise RuntimeError(
                 f"Installed runtime is incomplete: {missing_text}",
             )
-        report("正在启用 NeqSim 内置 Driver", 90)
+        report("正在启动 NeqSim 并验证闪蒸计算", 85)
+        verify_runtime(build_endpoint(staged))
+        report("正在启用 NeqSim 内置 Driver", 95)
         _replace_tree(staging, root)
 
-    report("NeqSim 运行环境安装完成", 100)
+    report("运行环境已验证，正在连接计算工具", 98)
     return discover_runtime()
 
 
@@ -700,7 +758,7 @@ class InstallTask:
     recovered: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {**asdict(self), "engine_id": "neqsim"}
 
 
 class NeqSimInstallManager:
@@ -840,6 +898,15 @@ class NeqSimInstallManager:
 
     def get(self, task_id: str) -> InstallTask | None:
         return self._recover_interrupted(task_id)
+
+    def active_task(self) -> InstallTask | None:
+        for task_id in tuple(self._interrupted_task_ids):
+            self._recover_interrupted(task_id)
+        with self._lock:
+            task = self._tasks.get(self._active_task_id or "")
+            return (
+                task if task and task.status in {"queued", "running"} else None
+            )
 
     def start(
         self,

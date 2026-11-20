@@ -93,6 +93,42 @@ class AsyncDriverCardStore:
         """Persist one DriverCard and remove stale same-name card files."""
         return await asyncio.to_thread(self._save_sync, card)
 
+    async def load_snapshot(self, name: str, *, protocol: str):
+        """Read a card and its exact revision under the writer lock."""
+
+        def read():
+            with self._lock:
+                path = self.path_for(name, protocol=protocol)
+                before = path.read_bytes()
+                card = load_card(path)
+                if path.read_bytes() != before:
+                    raise DriverCardError(
+                        "Driver configuration changed while reading",
+                    )
+                return card, before
+
+        return await asyncio.to_thread(read)
+
+    async def save_if_unchanged(
+        self,
+        card: DriverCard,
+        revision: bytes,
+    ) -> bool:
+        (
+            "Commit without overwriting intervening user configuration "
+            "changes."
+        )
+
+        def save():
+            with self._lock:
+                path = self.path_for(card.name, protocol=card.protocol)
+                if not path.is_file() or path.read_bytes() != revision:
+                    return False
+                dump_card(card, path)
+                return True
+
+        return await asyncio.to_thread(save)
+
     async def save_if_absent(self, card: DriverCard) -> bool:
         """Persist *card* only when no card with the same name exists."""
         return await asyncio.to_thread(self._save_if_absent_sync, card)

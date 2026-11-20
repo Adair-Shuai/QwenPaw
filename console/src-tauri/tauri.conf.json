@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "UGSci Desktop",
+  "productName": "UGSci",
   "identifier": "io.agentscope.qwenpaw.desktop",
   "build": {
     "frontendDist": "../dist-tauri",
@@ -12,12 +12,13 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "UGSci Desktop",
+        "title": "UGSci",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
         "minHeight": 600,
         "resizable": true,
+        "decorations": false,
         "fullscreen": false
       }
     ],

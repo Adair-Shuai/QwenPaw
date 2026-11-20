@@ -1,4 +1,19 @@
 import { NodeIcon } from "./NodeIcon";
+import { AuthoringPanel } from "./AuthoringPanel";
+import { useAuthoringSession } from "./useAuthoringSession";
+import {
+  proposalCanvas,
+  type RepairRequest,
+  type RepairSource,
+} from "./authoringModel";
+import { EditorToolbar, SelectionToolbar } from "./EditorToolbar";
+import { ToolbarIcon } from "./ToolbarIcon";
+import { CanvasNote, CanvasGroup } from "./CanvasNote";
+import {
+  canvasTools,
+  duplicateSubgraph,
+  type CanvasTools,
+} from "./editorTools";
 import { InputBindings } from "./InputBindings";
 import { DebugWorkspace } from "./DebugWorkspace";
 import { InspectorPanel } from "./InspectorPanel";
@@ -46,20 +61,6 @@ import {
 } from "./model";
 
 type Validation = ValidationResult;
-type Proposal = {
-  proposal_id: string;
-  flow: FlowDocument;
-  base_revision: number;
-  validation: Validation;
-  warnings?: string[];
-  expires_at?: number;
-  changes: {
-    kind: string;
-    node_id?: string;
-    description: string;
-    details?: { path: string; before: any; after: any }[];
-  }[];
-};
 export function WorkflowEditor({
   flowId,
   onBack,
@@ -70,6 +71,8 @@ export function WorkflowEditor({
   userId = "local",
   debugRecord,
   onDebugRun,
+  repairRequest,
+  onRepairConsumed,
   antd,
   api,
   nodeTypes,
@@ -86,6 +89,8 @@ export function WorkflowEditor({
   userId?: string;
   debugRecord?: RunRecord;
   onDebugRun?: (runId: string) => void;
+  repairRequest?: RepairRequest | null;
+  onRepairConsumed?: (key: string) => void;
   antd: any;
   api: Api;
   nodeTypes: any;
@@ -109,7 +114,10 @@ export function WorkflowEditor({
     message,
   } = antd;
   const [doc, setDoc] = useState<FlowDocument | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const editorRoot = useRef<HTMLDivElement>(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState<
+    Node<Record<string, any>>
+  >([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [specs, setSpecs] = useState<NodeTypeSpec[]>([]);
   const [loading, setLoading] = useState(true),
@@ -125,19 +133,44 @@ export function WorkflowEditor({
     [validating, setValidating] = useState(false);
   const [savedKey, setSavedKey] = useState(""),
     [validation, setValidation] = useState<Validation | null>(null);
-  const [ioOpen, setIoOpen] = useState(false),
-    [aiOpen, setAiOpen] = useState(false);
-  const [prompt, setPrompt] = useState(""),
-    [proposal, setProposal] = useState<Proposal | null>(null);
-  const [aiBusy, setAiBusy] = useState(false),
-    [aiError, setAiError] = useState("");
-  const proposalBase = useRef(""),
-    proposalAgent = useRef("");
+  const [ioOpen, setIoOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false),
     [versions, setVersions] = useState<any[]>([]),
     [versionBusy, setVersionBusy] = useState(false);
   const [canvas, setCanvas] = useState<any>(null);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [grid, setGrid] = useState(true),
+    [snap, setSnap] = useState(false);
+  const [focusMode, setFocusMode] = useState(false),
+    [panMode, setPanMode] = useState(false);
+  const [findOpen, setFindOpen] = useState(false),
+    [findQuery, setFindQuery] = useState("");
+  const [clipboard, setClipboard] = useState<{
+    document: FlowDocument;
+    ids: string[];
+  } | null>(null);
+  const [importOpen, setImportOpen] = useState(false),
+    [importText, setImportText] = useState("");
+  const [importError, setImportError] = useState("");
+  const tools = useMemo(() => canvasTools(doc), [doc]);
+  const selectedIds = nodes
+    .filter((node) => node.selected)
+    .map((node) => node.id);
+  const selectedGroup = tools.groups.find(
+    (group) =>
+      group.nodeIds.some((id) => selectedIds.includes(id)) &&
+      selectedIds.every((id) => group.nodeIds.includes(id)),
+  );
+  useEffect(() => {
+    setClipboard(null);
+    setFindOpen(false);
+    setFindQuery("");
+    setLocked(false);
+    setFocusMode(false);
+    setImportOpen(false);
+    setImportText("");
+  }, [flowId, agentId, userId]);
   const [recoverOpen, setRecoverOpen] = useState(false);
   const serverFlow = useRef<FlowDocument | null>(null);
   const lastSaved = useRef<FlowDocument | null>(null);
@@ -222,7 +255,12 @@ export function WorkflowEditor({
       const graph = canvasFromDocument(flow, specsRef.current),
         normalized = documentFromCanvas(flow, graph.nodes, graph.edges);
       setDoc(flow);
-      setNodes(graph.nodes);
+      setNodes((previous) =>
+        graph.nodes.map((node) => ({
+          ...node,
+          measured: previous.find((item) => item.id === node.id)?.measured,
+        })),
+      );
       setEdges(graph.edges);
       setSelectedId(null);
       setValidation(null);
@@ -242,6 +280,125 @@ export function WorkflowEditor({
     },
     [canvas, setNodes, setEdges],
   );
+
+  const authoring = useAuthoringSession({
+    current,
+    api,
+    flowId,
+    agentId,
+    userId,
+    t,
+    onApplied: (applied) => {
+      if (current)
+        history.current = {
+          past: [...history.current.past, current].slice(-60),
+          current: documentFromCanvas(
+            applied,
+            canvasFromDocument(applied, specsRef.current).nodes,
+            canvasFromDocument(applied, specsRef.current).edges,
+          ),
+          future: [],
+        };
+      skipHistory.current = true;
+      install(applied, true);
+      drafts.discardOwn();
+      tickHistory((value) => value + 1);
+      message.success(t("方案已应用并保存，可撤销为草稿"));
+    },
+  });
+  const repairHandler = useRef(authoring.repairNode);
+  repairHandler.current = authoring.repairNode;
+  const beginRepair = useCallback(
+    (source: RepairSource) => {
+      setSelectedId(null);
+      setNodes((list) =>
+        list.map((node) => ({ ...node, selected: node.id === source.nodeId })),
+      );
+      void repairHandler.current(source);
+    },
+    [setNodes],
+  );
+  const consumedRepair = useRef("");
+  useEffect(() => {
+    if (
+      !repairRequest ||
+      loading ||
+      authoring.busy ||
+      !current ||
+      current.id !== flowId ||
+      repairRequest.flowId !== flowId ||
+      repairRequest.agentId !== agentId ||
+      repairRequest.userId !== userId ||
+      consumedRepair.current === repairRequest.key
+    )
+      return;
+    consumedRepair.current = repairRequest.key;
+    onRepairConsumed?.(repairRequest.key);
+    beginRepair(repairRequest);
+  }, [
+    repairRequest,
+    loading,
+    authoring.busy,
+    current?.id,
+    flowId,
+    agentId,
+    userId,
+    beginRepair,
+    onRepairConsumed,
+  ]);
+  const aiOpen = authoring.open;
+  const previewGraph = useMemo(
+    () =>
+      authoring.preview &&
+      authoring.proposal &&
+      authoring.base &&
+      !authoring.stale
+        ? proposalCanvas(authoring.base, authoring.proposal, specs, nodes)
+        : null,
+    [
+      authoring.preview,
+      authoring.proposal,
+      authoring.base,
+      authoring.stale,
+      specs,
+      nodes,
+    ],
+  );
+  useEffect(() => {
+    if (!previewGraph || !canvas) return;
+    const frame = requestAnimationFrame(
+      () =>
+        void canvas.fitView({
+          nodes: previewGraph.nodes,
+          padding: 0.3,
+          maxZoom: 0.9,
+          duration: 180,
+        }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [authoring.proposal, authoring.preview, authoring.stale, canvas]);
+  const locateAiChange = (nodeId: string) => {
+    if (!authoring.proposal || !authoring.base || authoring.stale) return;
+    const graph = proposalCanvas(
+      authoring.base,
+      authoring.proposal,
+      specs,
+      nodes,
+    );
+    const target = graph.nodes.find((node) => node.id === nodeId);
+    authoring.setPreview(true);
+    authoring.setOpen(false);
+    if (target)
+      requestAnimationFrame(
+        () =>
+          void canvas?.fitView({
+            nodes: [target],
+            padding: 0.6,
+            maxZoom: 1,
+            duration: 180,
+          }),
+      );
+  };
 
   // Preserve the fork's selected-expert catalogue, refresh API and stale-response guard.
   const refreshCatalogue = useCallback(
@@ -432,6 +589,7 @@ export function WorkflowEditor({
       });
   };
   const connect = (connection: Connection) => {
+    if (locked) return;
     const issue = connectionIssue(connection, schemaNodes, edges, locale);
     if (issue) {
       message.warning(issue);
@@ -451,7 +609,7 @@ export function WorkflowEditor({
     );
   };
   const bindInput = (field: string, source?: string, handle?: string) => {
-    if (!selected) return;
+    if (!selected || locked) return;
     const rest = edges.filter(
       (edge) =>
         !(
@@ -549,24 +707,374 @@ export function WorkflowEditor({
         : previous,
     );
   };
+  const updateTools = (change: (previous: CanvasTools) => CanvasTools) => {
+    if (locked) return;
+    setDoc((previous) =>
+      previous
+        ? {
+            ...previous,
+            metadata: {
+              ...previous.metadata,
+              canvas_tools: change(canvasTools(previous)),
+            },
+          }
+        : previous,
+    );
+  };
+  const cloneSelection = (source = clipboard) => {
+    if (!current || !source || locked) return;
+    const copied = duplicateSubgraph(source.document, source.ids);
+    const next = {
+      ...current,
+      nodes: { ...current.nodes, ...copied.nodes },
+      edges: [...current.edges, ...copied.edges],
+      metadata: {
+        ...current.metadata,
+        positions: { ...current.metadata.positions, ...copied.positions },
+      },
+    };
+    install(next);
+    setNodes((list) =>
+      list.map((node) => ({ ...node, selected: copied.ids.includes(node.id) })),
+    );
+  };
+  const toolbarAction = (action: string) => {
+    const editActions = [
+      "paste",
+      "duplicate",
+      "group",
+      "mute",
+      "note",
+      "delete",
+      "auto",
+      "left",
+      "right",
+      "top",
+      "bottom",
+      "distribute-h",
+      "distribute-v",
+      "undo",
+      "redo",
+      "import",
+    ];
+    if ((locked || previewGraph) && editActions.includes(action)) return;
+    if (
+      current &&
+      editActions.includes(action) &&
+      !["undo", "redo", "import"].includes(action)
+    ) {
+      const h = history.current;
+      if (h.current && fingerprint(h.current) !== currentKey) {
+        h.past = [...h.past.slice(-59), h.current];
+        h.current = current;
+        h.future = [];
+      }
+    }
+    switch (action) {
+      case "back":
+        back();
+        break;
+      case "palette":
+        setPaletteOpen((open) => !open);
+        setFocusMode(false);
+        break;
+      case "ai":
+        authoring.show(selectedIds);
+        break;
+      case "ai-selection":
+        authoring.show(selectedIds, true);
+        break;
+      case "validate":
+        void validate();
+        break;
+      case "save":
+        void save();
+        break;
+      case "undo":
+        travel();
+        break;
+      case "redo":
+        travel(true);
+        break;
+      case "history":
+        onHistory();
+        break;
+      case "debug":
+        setDebugOpen((open) => !open);
+        setFocusMode(false);
+        break;
+      case "versions":
+        void showVersions();
+        break;
+      case "io":
+        setIoOpen(true);
+        break;
+      case "select-all":
+        setNodes((list) => list.map((node) => ({ ...node, selected: true })));
+        setSelectedId(null);
+        break;
+      case "clear":
+        setNodes((list) => list.map((node) => ({ ...node, selected: false })));
+        setEdges((list) => list.map((edge) => ({ ...edge, selected: false })));
+        setSelectedId(null);
+        break;
+      case "copy":
+        if (current && selectedIds.length) {
+          setClipboard({
+            document: JSON.parse(JSON.stringify(current)),
+            ids: selectedIds,
+          });
+          message.success(t("已复制选中节点", "Selected nodes copied"));
+        }
+        break;
+      case "paste":
+        cloneSelection();
+        break;
+      case "duplicate":
+        if (current) cloneSelection({ document: current, ids: selectedIds });
+        break;
+      case "delete":
+        removeNodes(selectedIds);
+        break;
+      case "group":
+        if (selectedGroup)
+          updateTools((value) => ({
+            ...value,
+            groups: value.groups.filter(
+              (group) => group.id !== selectedGroup.id,
+            ),
+          }));
+        else if (selectedIds.length > 1)
+          updateTools((value) => ({
+            ...value,
+            groups: [
+              ...value.groups
+                .map((group) => ({
+                  ...group,
+                  nodeIds: group.nodeIds.filter(
+                    (id) => !selectedIds.includes(id),
+                  ),
+                }))
+                .filter((group) => group.nodeIds.length > 1),
+              {
+                id: `group_${crypto.randomUUID()}`,
+                label: t("节点分组", "Node group"),
+                nodeIds: selectedIds,
+              },
+            ],
+          }));
+        break;
+      case "mute": {
+        const enable = nodes
+          .filter((node) => selectedIds.includes(node.id))
+          .every((node) => node.data.control?.mode === "mute");
+        updateTools((value) => ({
+          ...value,
+          previousModes: {
+            ...value.previousModes,
+            ...Object.fromEntries(
+              nodes
+                .filter((node) => selectedIds.includes(node.id))
+                .map((node) => [
+                  node.id,
+                  enable
+                    ? undefined
+                    : node.data.control?.mode === "mute"
+                    ? value.previousModes?.[node.id] || "run"
+                    : node.data.control?.mode || "run",
+                ]),
+            ),
+          },
+        }));
+        setNodes((list) =>
+          list.map((node) =>
+            selectedIds.includes(node.id)
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    control: {
+                      ...node.data.control,
+                      mode: enable
+                        ? tools.previousModes?.[node.id] || "run"
+                        : "mute",
+                    },
+                  },
+                }
+              : node,
+          ),
+        );
+        break;
+      }
+      case "note":
+        updateTools((value) => ({
+          ...value,
+          notes: [
+            ...value.notes,
+            {
+              id: `note_${crypto.randomUUID()}`,
+              text: t("在这里记录流程说明…", "Write workflow notes here…"),
+              position: canvas?.screenToFlowPosition({
+                x: window.innerWidth * 0.45,
+                y: window.innerHeight * 0.35,
+              }) || { x: 100, y: 100 },
+            },
+          ],
+        }));
+        break;
+      case "grid":
+        setGrid((value) => !value);
+        break;
+      case "snap":
+        setSnap((value) => !value);
+        break;
+      case "lock":
+        setLocked((value) => !value);
+        setSelectedId(null);
+        break;
+      case "focus":
+        setFocusMode((value) => !value);
+        setSelectedId(null);
+        break;
+      case "find":
+        setFindOpen((value) => !value);
+        break;
+      case "fit":
+        void canvas?.fitView({ padding: 0.18, maxZoom: 1, duration: 200 });
+        break;
+      case "locate":
+        void canvas?.fitView({
+          nodes: nodes.filter((node) => node.selected),
+          padding: 0.6,
+          maxZoom: 1,
+          duration: 200,
+        });
+        break;
+      case "zoom-reset":
+        void canvas?.zoomTo(1, { duration: 200 });
+        break;
+      case "select-mode":
+        setPanMode(false);
+        break;
+      case "pan-mode":
+        setPanMode(true);
+        break;
+      case "import":
+        setImportText("");
+        setImportError("");
+        setImportOpen(true);
+        break;
+      case "export": {
+        if (!current) return;
+        const url = URL.createObjectURL(
+          new Blob([JSON.stringify(current, null, 2)], {
+            type: "application/json",
+          }),
+        );
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `${flowId.replace(/[^\w.-]/g, "_")}.json`;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        break;
+      }
+      case "shortcuts":
+        Modal.info({
+          title: t("快捷键", "Keyboard shortcuts"),
+          content: (
+            <div className="ff-shortcuts">
+              <p>Ctrl / ⌘ Z · {t("撤销")}</p>
+              <p>Ctrl / ⌘ Shift Z · {t("重做")}</p>
+              <p>
+                Ctrl / ⌘ C / V / D ·{" "}
+                {t("复制 / 粘贴 / 副本", "Copy / paste / duplicate")}
+              </p>
+              <p>
+                Ctrl / ⌘ A / G / F ·{" "}
+                {t("全选 / 分组 / 查找", "Select all / group / find")}
+              </p>
+              <p>Ctrl / ⌘ S · {t("保存")}</p>
+              <p>
+                Shift + {t("单击多选", "click to multiselect")} · Esc{" "}
+                {t("取消选择", "clears selection")}
+              </p>
+            </div>
+          ),
+        });
+        break;
+      default:
+        arrange(action);
+    }
+  };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target) || aiOpen || ioOpen || versionsOpen)
+      if (
+        event.target instanceof Element &&
+        event.target !== document.body &&
+        !editorRoot.current?.contains(event.target)
+      )
+        return;
+      if (
+        isTypingTarget(event.target) ||
+        aiOpen ||
+        ioOpen ||
+        versionsOpen ||
+        importOpen
+      )
         return;
       const key = event.key.toLowerCase();
+      if (previewGraph) {
+        if (key === "escape") authoring.setPreview(false);
+        if (
+          event.metaKey ||
+          event.ctrlKey ||
+          ["Delete", "Backspace"].includes(event.key)
+        )
+          event.preventDefault();
+        return;
+      }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        ["a", "c", "v", "d", "g", "f"].includes(key)
+      ) {
+        event.preventDefault();
+        toolbarAction(
+          (
+            {
+              a: "select-all",
+              c: "copy",
+              v: "paste",
+              d: "duplicate",
+              g: "group",
+              f: "find",
+            } as Record<string, string>
+          )[key],
+        );
+        return;
+      }
+      if (key === "escape") {
+        setFindOpen(false);
+        toolbarAction("clear");
+        return;
+      }
+      if (!event.metaKey && !event.ctrlKey && ["0", "1"].includes(key)) {
+        event.preventDefault();
+        toolbarAction(key === "0" ? "zoom-reset" : "fit");
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && key === "s") {
         event.preventDefault();
         void save();
       }
       if ((event.metaKey || event.ctrlKey) && key === "z") {
         event.preventDefault();
-        travel(event.shiftKey);
+        if (!locked) travel(event.shiftKey);
       }
       if ((event.metaKey || event.ctrlKey) && key === "y") {
         event.preventDefault();
-        travel(true);
+        if (!locked) travel(true);
       }
-      if (["Delete", "Backspace"].includes(event.key)) {
+      if (!locked && ["Delete", "Backspace"].includes(event.key)) {
         const ids = nodes
           .filter((node) => node.selected)
           .map((node) => node.id);
@@ -579,11 +1087,29 @@ export function WorkflowEditor({
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [currentKey, saving, nodes, edges, aiOpen, ioOpen, versionsOpen, travel]);
+  }, [
+    currentKey,
+    saving,
+    nodes,
+    edges,
+    aiOpen,
+    ioOpen,
+    versionsOpen,
+    travel,
+    locked,
+    clipboard,
+    tools,
+    importOpen,
+    previewGraph,
+  ]);
   useEffect(() => {
-    const remove = (event: any) =>
-      setEdges((list) => list.filter((edge) => edge.id !== event.detail?.id));
+    const remove = (event: any) => {
+      if (!locked && !previewGraph)
+        setEdges((list) => list.filter((edge) => edge.id !== event.detail?.id));
+    };
     const label = (event: any) =>
+      !locked &&
+      !previewGraph &&
       setEdges((list) =>
         list.map((edge) =>
           edge.id === event.detail?.id
@@ -597,8 +1123,9 @@ export function WorkflowEditor({
       window.removeEventListener("flowforge:edge-delete", remove);
       window.removeEventListener("flowforge:edge-label", label);
     };
-  }, []);
+  }, [locked, previewGraph]);
   const addNode = (spec: NodeTypeSpec) => {
+    if (locked || previewGraph) return;
     const id = `${spec.class_type.toLowerCase()}_${crypto
       .randomUUID()
       .slice(0, 8)}`;
@@ -701,76 +1228,6 @@ export function WorkflowEditor({
             };
       }),
     );
-  };
-  const propose = async () => {
-    if (!current || !prompt.trim()) return;
-    setAiBusy(true);
-    setAiError("");
-    setProposal(null);
-    proposalBase.current = currentKey;
-    proposalAgent.current = agentId;
-    try {
-      setProposal(
-        await api<Proposal>("/flowforge/authoring/proposals", {
-          method: "POST",
-          headers: { "X-Agent-Id": agentId },
-          body: JSON.stringify({
-            prompt: prompt.trim(),
-            flow: current,
-            agent_id: agentId,
-          }),
-        }),
-      );
-    } catch (error: any) {
-      setAiError(error.message);
-    } finally {
-      setAiBusy(false);
-    }
-  };
-  const applyProposal = async () => {
-    if (
-      !proposal ||
-      currentKey !== proposalBase.current ||
-      proposalAgent.current !== agentId
-    ) {
-      setAiError(t("草稿或当前专家已变化，请重新生成方案。"));
-      return;
-    }
-    setAiBusy(true);
-    setAiError("");
-    try {
-      const applied = await api<FlowDocument>(
-        `/flowforge/authoring/proposals/${encodeURIComponent(
-          proposal.proposal_id,
-        )}/apply`,
-        {
-          method: "POST",
-          body: JSON.stringify({ expected_revision: proposal.base_revision }),
-        },
-      );
-      if (current)
-        history.current = {
-          past: [...history.current.past, current].slice(-60),
-          current: documentFromCanvas(
-            applied,
-            canvasFromDocument(applied, specsRef.current).nodes,
-            canvasFromDocument(applied, specsRef.current).edges,
-          ),
-          future: [],
-        };
-      skipHistory.current = true;
-      install(applied, true);
-      drafts.discardOwn();
-      tickHistory((value) => value + 1);
-      setAiOpen(false);
-      setProposal(null);
-      setPrompt("");
-      message.success(t("方案已应用并保存，可撤销为草稿"));
-    } catch (error: any) {
-      setAiError(error.message);
-    } finally {
-      setAiBusy(false);
-    }
   };
   const showVersions = async () => {
     setVersionsOpen(true);
@@ -917,6 +1374,26 @@ export function WorkflowEditor({
             _unavailableReason:
               spec?.available === false ? spec.unavailable_reason : undefined,
             _status: runStatuses[node.id],
+            _onAiRepair:
+              debugRecord?.flow_id === flowId &&
+              (debugRecord.agent_id || "default") === agentId &&
+              ["failed", "error", "timeout"].includes(
+                runStatuses[node.id] || "",
+              ) &&
+              ["failed", "error", "timeout"].includes(
+                debugRecord.node_statuses?.[node.id] ||
+                  debugRecord.node_details?.[node.id]?.status ||
+                  "",
+              )
+                ? () =>
+                    beginRepair({
+                      flowId,
+                      runId: debugRecord.run_id,
+                      nodeId: node.id,
+                    })
+                : undefined,
+            _repairBusy: authoring.busy,
+            _layoutRevision: `${flowId}:${doc?.revision ?? 0}`,
             _diagnostics: diagnostics.filter(
               (item) => item.node_id === node.id,
             ),
@@ -945,8 +1422,162 @@ export function WorkflowEditor({
           },
         };
       }),
-    [nodes, specs, edges, runStatuses, diagnostics],
+    [
+      nodes,
+      specs,
+      edges,
+      runStatuses,
+      diagnostics,
+      doc?.revision,
+      flowId,
+      debugRecord,
+      agentId,
+      beginRepair,
+      authoring.busy,
+    ],
   );
+  const renderNodeTypes = useMemo(
+    () => ({ ...nodeTypes, editorNote: CanvasNote, editorGroup: CanvasGroup }),
+    [nodeTypes],
+  );
+  const auxiliaryNodes: Node[] = [
+    ...tools.groups.flatMap((group) => {
+      const members = nodes.filter((node) => group.nodeIds.includes(node.id));
+      if (members.length < 2) return [];
+      const x = Math.min(...members.map((node) => node.position.x)) - 22;
+      const y = Math.min(...members.map((node) => node.position.y)) - 38;
+      return [
+        {
+          id: `canvas-group:${group.id}`,
+          type: "editorGroup",
+          position: { x, y },
+          data: { label: group.label },
+          style: {
+            width:
+              Math.max(
+                ...members.map(
+                  (node) => node.position.x + (node.measured?.width || 270),
+                ),
+              ) -
+              x +
+              22,
+            height:
+              Math.max(
+                ...members.map(
+                  (node) => node.position.y + (node.measured?.height || 180),
+                ),
+              ) -
+              y +
+              22,
+          },
+          className: "ff-canvas-group",
+          draggable: false,
+          selectable: false,
+          connectable: false,
+          deletable: false,
+          zIndex: -1,
+        },
+      ];
+    }),
+    ...tools.notes.map((note) => ({
+      id: `canvas-note:${note.id}`,
+      initialWidth: 280,
+      initialHeight: 156,
+      type: "editorNote",
+      position: note.position,
+      data: {
+        text: note.text,
+        locked,
+        onText: (text: string) =>
+          updateTools((value) => ({
+            ...value,
+            notes: value.notes.map((item) =>
+              item.id === note.id ? { ...item, text } : item,
+            ),
+          })),
+        onRemove: () =>
+          updateTools((value) => ({
+            ...value,
+            notes: value.notes.filter((item) => item.id !== note.id),
+          })),
+      },
+      dragHandle: ".ff-note-handle",
+      draggable: !locked && !panMode,
+      selectable: false,
+      connectable: false,
+      deletable: false,
+    })),
+  ];
+  const importDocument = () => {
+    try {
+      if (!current || locked) return;
+      const value = JSON.parse(importText);
+      if (
+        ["name", "description", "version"].some(
+          (key) => value?.[key] !== undefined && typeof value[key] !== "string",
+        )
+      )
+        throw new Error(
+          t(
+            "流程名称、描述与版本必须是文本",
+            "Workflow name, description and version must be text",
+          ),
+        );
+      if (
+        !value ||
+        typeof value !== "object" ||
+        !value.nodes ||
+        Array.isArray(value.nodes) ||
+        typeof value.nodes !== "object" ||
+        !Array.isArray(value.edges) ||
+        !value.metadata ||
+        Array.isArray(value.metadata) ||
+        typeof value.metadata !== "object" ||
+        !Array.isArray(value.inputs) ||
+        !value.outputs ||
+        typeof value.outputs !== "object"
+      )
+        throw new Error(
+          t(
+            "请选择完整的工作流 JSON",
+            "Choose a complete workflow JSON document",
+          ),
+        );
+      for (const [id, node] of Object.entries(value.nodes) as [string, any][])
+        if (
+          ["__proto__", "constructor", "prototype"].includes(id) ||
+          !node ||
+          typeof node !== "object" ||
+          typeof (node.class_type || node.type) !== "string" ||
+          (node.label != null && typeof node.label !== "string") ||
+          (node.inputs != null &&
+            (typeof node.inputs !== "object" || Array.isArray(node.inputs))) ||
+          (node.control != null &&
+            (typeof node.control !== "object" || Array.isArray(node.control)))
+        )
+          throw new Error(t("节点定义无效", "Invalid node definition"));
+      if (
+        value.edges.some(
+          (edge: any) =>
+            !edge ||
+            !Object.prototype.hasOwnProperty.call(value.nodes, edge.source) ||
+            !Object.prototype.hasOwnProperty.call(value.nodes, edge.target),
+        )
+      )
+        throw new Error(
+          t("连线引用了不存在的节点", "An edge references a missing node"),
+        );
+      install({
+        ...current,
+        ...value,
+        id: current.id,
+        revision: doc?.revision,
+      });
+      setImportOpen(false);
+    } catch (error: any) {
+      setImportError(error.message);
+    }
+  };
 
   if (loading)
     return (
@@ -967,138 +1598,131 @@ export function WorkflowEditor({
       </div>
     );
   return (
-    <div className="ff-editor" data-flowforge-editor="true">
-      <header className="ff-toolbar">
-        <Button onClick={back}>{t("← 返回")}</Button>
-        <div className="ff-title">
-          <strong title={doc.name || flowId}>{doc.name || flowId}</strong>
-          <span>
-            {t(
-              "{nodes} 个节点 · {edges} 条连线 · 修订 {revision}",
-              "{nodes} nodes · {edges} connections · Revision {revision}",
-              {
-                nodes: nodes.length,
-                edges: edges.length,
-                revision: doc.revision ?? 0,
-              },
-            )}
-            <span className="ff-agent-scope">
-              {t("运行专家 {id}", "Execution agent {id}", { id: agentId })}
-            </span>
-          </span>
-        </div>
-        <Tag color={dirty ? "orange" : "green"}>
-          {dirty ? t("有未保存修改") : t("已保存")}
-        </Tag>
-        <div className="ff-toolbar-actions">
-          <Button
-            onClick={() => setPaletteOpen((open) => !open)}
-            aria-pressed={paletteOpen}
-          >
-            {t("节点库")}
-          </Button>
-          <Button className="ff-mobile-ai" onClick={() => setAiOpen(true)}>
-            {t("✦ AI 搭建")}
-          </Button>
-          <Dropdown
-            trigger={["click"]}
-            menu={{
-              items: [
-                {
-                  key: "configuration",
-                  type: "group",
-                  label: t("流程配置", "Workflow configuration"),
-                  children: [
-                    { key: "versions", label: t("版本") },
-                    { key: "io", label: t("输入 / 输出") },
-                  ],
-                },
-                {
-                  key: "layout",
-                  type: "group",
-                  label: t("画布排版", "Canvas layout"),
-                  children: [
-                    { key: "auto", label: t("自动布局") },
-                    { key: "left", label: t("左对齐") },
-                    { key: "right", label: t("右对齐") },
-                    { key: "top", label: t("顶部对齐") },
-                    { key: "bottom", label: t("底部对齐") },
-                    { key: "distribute-h", label: t("水平分布") },
-                    { key: "distribute-v", label: t("垂直分布") },
-                  ],
-                },
-              ],
-              onClick: ({ key }: any) => {
-                if (key === "versions") void showVersions();
-                else if (key === "io") setIoOpen(true);
-                else arrange(key);
-              },
-            }}
-          >
-            <Button>{t("更多操作", "More actions")}</Button>
-          </Dropdown>
-          <Button
-            disabled={!canUndo}
-            onClick={() => travel()}
-            title="Ctrl / ⌘ Z"
-          >
-            {t("撤销")}
-          </Button>
-          <Button
-            disabled={!history.current.future.length}
-            onClick={() => travel(true)}
-          >
-            {t("重做")}
-          </Button>
-          <Button onClick={onHistory}>{t("运行记录")}</Button>
-          <Button
-            aria-pressed={debugOpen}
-            onClick={() => setDebugOpen((open) => !open)}
-          >
-            {t("调试与变量", "Debug and variables")}
-          </Button>
-          <Button
-            aria-label={t("验证")}
-            loading={validating}
-            onClick={() => void validate()}
-          >
-            {t("验证")}
-          </Button>
-          <Button
-            aria-label={t("保存")}
-            loading={saving}
-            onClick={() => void save()}
-          >
-            {t("保存")}
-          </Button>
-          <Button
-            type="primary"
-            aria-label={t("试运行")}
-            disabled={saving || validating}
-            onClick={async () => {
-              const scope = scopeRef.current;
-              if (
-                !(await validate()) ||
-                !mounted.current ||
-                scopeRef.current !== scope
-              )
-                return;
-              if (dirty && !(await save())) return;
-              if (
-                scopeRef.current !== scope ||
-                !currentRef.current ||
-                fingerprint(currentRef.current) !== currentKey
-              ) {
-                message.info(t("草稿或当前专家已变化，请重新验证后试运行"));
-                return;
-              }
-              onRun(flowId);
-            }}
-          >
-            {t("试运行")}
-          </Button>
-        </div>
-      </header>
+    <div ref={editorRoot} className="ff-editor" data-flowforge-editor="true">
+      <EditorToolbar
+        antd={antd}
+        t={t}
+        name={doc.name || flowId}
+        summary={t(
+          "{nodes} 个节点 · {edges} 条连线 · 修订 {revision}",
+          "{nodes} nodes · {edges} connections · Revision {revision}",
+          {
+            nodes: nodes.length,
+            edges: edges.length,
+            revision: doc.revision ?? 0,
+          },
+        )}
+        agentId={agentId}
+        dirty={dirty}
+        saving={saving}
+        validating={validating}
+        canUndo={!!canUndo}
+        canRedo={!!history.current.future.length}
+        paletteOpen={paletteOpen}
+        debugOpen={debugOpen}
+        count={selectedIds.length}
+        grouped={!!selectedGroup}
+        muted={
+          selectedIds.length > 0 &&
+          nodes
+            .filter((node) => node.selected)
+            .every((node) => node.data.control?.mode === "mute")
+        }
+        locked={locked || !!previewGraph}
+        previewing={!!previewGraph}
+        grid={grid}
+        snap={snap}
+        focus={focusMode}
+        canPaste={!!clipboard}
+        onAction={toolbarAction}
+        onRun={async () => {
+          if (previewGraph) return;
+          const scope = scopeRef.current;
+          if (
+            !(await validate()) ||
+            !mounted.current ||
+            scopeRef.current !== scope
+          )
+            return;
+          if (dirty && !(await save())) return;
+          if (
+            scopeRef.current !== scope ||
+            !currentRef.current ||
+            fingerprint(currentRef.current) !== currentKey
+          ) {
+            message.info(t("草稿或当前专家已变化，请重新验证后试运行"));
+            return;
+          }
+          onRun(flowId);
+        }}
+      />
+      <Modal
+        open={importOpen}
+        title={t("导入工作流 JSON", "Import workflow JSON")}
+        onCancel={() => setImportOpen(false)}
+        onOk={importDocument}
+        okText={t("应用到当前草稿", "Apply to current draft")}
+        okButtonProps={{ disabled: !importText.trim() || locked }}
+      >
+        <p>
+          {t(
+            "导入将替换当前草稿中的节点与配置，当前工作流标识和修订保持不变。可撤销后恢复。",
+            "Import replaces the current draft's nodes and configuration, preserving its workflow ID and revision. Undo restores the previous draft.",
+          )}
+        </p>
+        <input
+          type="file"
+          accept=".json,application/json"
+          aria-label={t("选择 JSON 文件", "Choose JSON file")}
+          onChange={async (event) => {
+            const scope = scopeRef.current;
+            const file = event.target.files?.[0];
+            if (!file) return;
+            if (file.size > 5 * 1024 * 1024) {
+              setImportError(
+                t("JSON 文件不能超过 5 MB", "JSON files must be at most 5 MB"),
+              );
+              return;
+            }
+            try {
+              const text = await file.text();
+              if (scope !== scopeRef.current || !mounted.current) return;
+              setImportText(text);
+              setImportError("");
+            } catch (error: any) {
+              if (scope === scopeRef.current && mounted.current)
+                setImportError(error.message);
+            }
+          }}
+        />
+        <Input.TextArea
+          aria-label={t("工作流 JSON", "Workflow JSON")}
+          rows={10}
+          value={importText}
+          onChange={(event: any) => {
+            setImportText(event.target.value);
+            setImportError("");
+          }}
+        />
+        {importText.trim() &&
+          (() => {
+            try {
+              const parsed = JSON.parse(importText);
+              return (
+                <p>
+                  {t("将导入 {count} 个节点", "Importing {count} nodes", {
+                    count: Object.keys(parsed.nodes || {}).length,
+                  })}
+                </p>
+              );
+            } catch {
+              return null;
+            }
+          })()}
+        {importError && (
+          <Alert type="error" role="alert" message={importError} />
+        )}
+      </Modal>
       {drafts.error && (
         <Alert
           type="warning"
@@ -1195,24 +1819,9 @@ export function WorkflowEditor({
       <div className="ff-editor-body">
         <aside
           className={`ff-palette ${
-            paletteOpen ? "ff-palette-open" : "ff-palette-closed"
+            paletteOpen && !focusMode ? "ff-palette-open" : "ff-palette-closed"
           }`}
         >
-          <Button
-            type="primary"
-            block
-            onClick={() => {
-              setAiOpen(true);
-              setAiError("");
-            }}
-          >
-            {nodes.length
-              ? t("✦ 用自然语言修改", "✦ Edit with natural language")
-              : t("✦ 用自然语言搭建", "✦ Build with natural language")}
-          </Button>
-          <p className="ff-muted">
-            {t("描述目标、条件和异常处理，预览后应用。")}
-          </p>
           <Input
             value={search}
             aria-label={t("搜索节点")}
@@ -1246,6 +1855,7 @@ export function WorkflowEditor({
                       className="ff-palette-item"
                       key={spec.class_type}
                       title={spec.description}
+                      disabled={!!previewGraph}
                       onClick={() => addNode(spec)}
                     >
                       <NodeIcon classType={spec.class_type} icon={spec.icon} />
@@ -1269,20 +1879,204 @@ export function WorkflowEditor({
           </div>
         </aside>
         <main className="ff-canvas">
+          {previewGraph && (
+            <div
+              className="ff-ai-previewbar"
+              role="toolbar"
+              aria-label={t("AI 方案预览", "AI proposal preview")}
+            >
+              <strong>{t("AI 方案预览", "AI proposal preview")}</strong>
+              {["added", "modified", "removed"].map((kind) => (
+                <span key={kind} className={`ff-ai-legend-${kind}`}>
+                  {t(
+                    kind === "added"
+                      ? "新增"
+                      : kind === "removed"
+                      ? "删除"
+                      : "修改",
+                    kind === "added"
+                      ? "Added"
+                      : kind === "removed"
+                      ? "Removed"
+                      : "Modified",
+                  )}{" "}
+                  {
+                    previewGraph.nodes.filter(
+                      (node) => node.data._aiChange === kind,
+                    ).length
+                  }
+                </span>
+              ))}
+              <Button size="small" onClick={() => authoring.setOpen(true)}>
+                {t("返回 AI 编辑", "Back to AI edit")}
+              </Button>
+              <Button size="small" onClick={() => authoring.setPreview(false)}>
+                {t("退出预览", "Exit preview")}
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                loading={authoring.phase === "apply"}
+                disabled={
+                  !authoring.proposal?.validation.ok ||
+                  authoring.stale ||
+                  authoring.busy ||
+                  authoring.applying
+                }
+                onClick={authoring.apply}
+              >
+                {t("应用并保存")}
+              </Button>
+            </div>
+          )}
+          {!previewGraph && (
+            <SelectionToolbar
+              antd={antd}
+              t={t}
+              count={selectedIds.length}
+              grouped={!!selectedGroup}
+              muted={
+                selectedIds.length > 0 &&
+                nodes
+                  .filter((node) => node.selected)
+                  .every((node) => node.data.control?.mode === "mute")
+              }
+              locked={locked}
+              onAction={toolbarAction}
+            />
+          )}
+          {findOpen && (
+            <div
+              className="ff-canvas-search"
+              role="search"
+              aria-label={t("查找画布节点", "Find canvas nodes")}
+            >
+              <Input
+                autoFocus
+                value={findQuery}
+                aria-label={t("查找节点名称或 ID", "Find node name or ID")}
+                placeholder={t("查找节点名称或 ID", "Find node name or ID")}
+                onChange={(event: any) => setFindQuery(event.target.value)}
+                suffix={
+                  <Button
+                    type="text"
+                    aria-label={t("关闭查找", "Close search")}
+                    icon={<ToolbarIcon name="close" />}
+                    onClick={() => setFindOpen(false)}
+                  />
+                }
+              />
+              <div className="ff-search-results">
+                {nodes
+                  .filter((node) =>
+                    `${node.data.label || node.data.class_type} ${node.id}`
+                      .toLowerCase()
+                      .includes(findQuery.toLowerCase()),
+                  )
+                  .map((node) => (
+                    <Button
+                      key={node.id}
+                      type="text"
+                      onClick={() => {
+                        setSelectedId(null);
+                        setNodes((list) =>
+                          list.map((item) => ({
+                            ...item,
+                            selected: item.id === node.id,
+                          })),
+                        );
+                        void canvas?.fitView({
+                          nodes: [node],
+                          padding: 0.6,
+                          maxZoom: 1,
+                          duration: 200,
+                        });
+                        setFindOpen(false);
+                      }}
+                    >
+                      {String(node.data.label || node.data.class_type)}
+                      <small>{node.id}</small>
+                    </Button>
+                  ))}
+                {!nodes.some((node) =>
+                  `${node.data.label || node.data.class_type} ${node.id}`
+                    .toLowerCase()
+                    .includes(findQuery.toLowerCase()),
+                ) && <span>{t("没有匹配的节点", "No matching nodes")}</span>}
+              </div>
+            </div>
+          )}
           <ReactFlow
-            nodes={canvasNodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
+            nodes={
+              previewGraph
+                ? previewGraph.nodes
+                : [...auxiliaryNodes, ...canvasNodes]
+            }
+            edges={previewGraph ? previewGraph.edges : edges}
+            nodeTypes={renderNodeTypes}
             edgeTypes={edgeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
+            onNodesChange={(changes) => {
+              if (previewGraph) return;
+              const noteMoves = changes.filter(
+                (change) =>
+                  change.type === "position" &&
+                  change.position &&
+                  change.id.startsWith("canvas-note:"),
+              );
+              if (noteMoves.length && !locked)
+                updateTools((value) => ({
+                  ...value,
+                  notes: value.notes.map((note) => {
+                    const move = noteMoves.find(
+                      (change) =>
+                        change.type === "position" &&
+                        change.id === `canvas-note:${note.id}`,
+                    );
+                    return move?.type === "position" && move.position
+                      ? { ...note, position: move.position }
+                      : note;
+                  }),
+                }));
+              onNodesChange(
+                changes.filter(
+                  (change) =>
+                    "id" in change &&
+                    nodes.some((node) => node.id === change.id) &&
+                    (!locked ||
+                      change.type === "select" ||
+                      change.type === "dimensions"),
+                ),
+              );
+            }}
+            onEdgesChange={(changes) =>
+              !previewGraph &&
+              onEdgesChange(
+                changes.filter((change) => !locked || change.type === "select"),
+              )
+            }
+            nodesDraggable={!locked && !panMode && !previewGraph}
+            nodesConnectable={!locked && !previewGraph}
+            edgesReconnectable={!locked && !previewGraph}
+            panOnDrag={panMode ? true : [1, 2]}
+            selectionOnDrag={!panMode}
+            multiSelectionKeyCode="Shift"
+            snapToGrid={snap}
+            snapGrid={[20, 20]}
             onInit={setCanvas}
-            onNodeClick={(_, node) => {
-              setSelectedId(node.id);
+            onNodeClick={(event, node) => {
+              if (previewGraph) {
+                authoring.setOpen(true);
+                return;
+              }
+              if (node.type !== "workflow" || locked || panMode) return;
+              setSelectedId(event.shiftKey ? null : node.id);
               setFocusedField(undefined);
             }}
-            onConnect={connect}
+            onConnect={(connection) => {
+              if (!previewGraph) connect(connection);
+            }}
             isValidConnection={(connection) =>
+              !previewGraph &&
               !connectionIssue(connection, schemaNodes, edges, locale)
             }
             deleteKeyCode={null}
@@ -1291,16 +2085,40 @@ export function WorkflowEditor({
             minZoom={0.15}
             maxZoom={2}
           >
-            <Background gap={20} />
-            <Controls />
+            {grid && <Background gap={20} />}
+            <Controls showInteractive={false} />
+            <div
+              className="ff-canvas-modes nodrag nopan"
+              role="group"
+              aria-label={t("画布交互模式", "Canvas interaction mode")}
+            >
+              <Button
+                type="text"
+                aria-label={t("选择模式", "Selection mode")}
+                aria-pressed={!panMode}
+                icon={<ToolbarIcon name="pointer" />}
+                onClick={() => setPanMode(false)}
+              />
+              <Button
+                type="text"
+                aria-label={t("拖动画布模式", "Pan mode")}
+                aria-pressed={panMode}
+                icon={<ToolbarIcon name="hand" />}
+                onClick={() => setPanMode(true)}
+              />
+              {locked && <span>{t("已锁定", "Locked")}</span>}
+            </div>
             <MiniMap pannable zoomable />
           </ReactFlow>
-          {!nodes.length && (
+          {!nodes.length && !previewGraph && (
             <div className="ff-empty-canvas">
               <span>✦</span>
               <h2>{t("从业务目标开始")}</h2>
               <p>{t("描述工作流，或从节点库添加步骤。")}</p>
-              <Button type="primary" onClick={() => setAiOpen(true)}>
+              <Button
+                type="primary"
+                onClick={() => authoring.show(selectedIds)}
+              >
                 {t("描述我的工作流")}
               </Button>
             </div>
@@ -1311,7 +2129,7 @@ export function WorkflowEditor({
         </main>
         <InspectorPanel
           antd={antd}
-          open={!!selected}
+          open={!!selected && !locked && !focusMode && !previewGraph}
           onClose={() => setSelectedId(null)}
           extra={
             selected && (
@@ -1365,6 +2183,82 @@ export function WorkflowEditor({
               node={selected}
               nodeTypes={specs}
               availableNodes={schemaNodes}
+              bindings={
+                <InputBindings
+                  node={selected}
+                  nodes={schemaNodes}
+                  edges={edges}
+                  onBind={bindInput}
+                  onDisconnect={(field) => bindInput(field)}
+                  snapshot={{
+                    flowId,
+                    agentId,
+                    revision: current?.revision,
+                    record: debugRecord,
+                    sourceChangedIds: Object.keys(current?.nodes || {}).filter(
+                      (id) => {
+                        const sourceConfiguration = (entry: any) =>
+                          JSON.stringify({
+                            class_type: entry?.class_type,
+                            inputs: entry?.inputs || {},
+                            control: entry?.control || {},
+                          });
+                        return (
+                          sourceConfiguration(current?.nodes[id]) !==
+                          sourceConfiguration(lastSaved.current?.nodes[id])
+                        );
+                      },
+                    ),
+                  }}
+                  workflowInputs={current?.inputs}
+                  onExpression={(field, expression) => {
+                    setEdges((list) =>
+                      list.filter(
+                        (edge) =>
+                          !(
+                            edge.target === selected.id &&
+                            edge.targetHandle === field &&
+                            edge.data?.kind !== "control"
+                          ),
+                      ),
+                    );
+                    setNodes((list) =>
+                      list.map((node) =>
+                        node.id === selected.id
+                          ? {
+                              ...node,
+                              data: {
+                                ...node.data,
+                                inputs: {
+                                  ...((node.data.inputs || {}) as Record<
+                                    string,
+                                    unknown
+                                  >),
+                                  [field]: expression,
+                                },
+                              },
+                            }
+                          : node,
+                      ),
+                    );
+                  }}
+                  onLocateSource={(nodeId, output) => {
+                    setNodes((list) =>
+                      list.map((node) => ({
+                        ...node,
+                        selected: node.id === nodeId,
+                      })),
+                    );
+                    locateDiagnostic({
+                      code: "variable_source",
+                      severity: "warning",
+                      message: "",
+                      node_id: nodeId,
+                      field: `outputs.${output}`,
+                    });
+                  }}
+                />
+              }
               onUpdate={(updated: Node) => {
                 const spec = specs.find(
                   (item) => item.class_type === updated.data.class_type,
@@ -1416,85 +2310,33 @@ export function WorkflowEditor({
               }}
             />
           )}
-          {selected && (
-            <InputBindings
-              node={selected}
-              nodes={schemaNodes}
-              edges={edges}
-              onBind={bindInput}
-              onDisconnect={(field) => bindInput(field)}
-              snapshot={{
-                flowId,
-                agentId,
-                revision: current?.revision,
-                record: debugRecord,
-                sourceChangedIds: Object.keys(current?.nodes || {}).filter(
-                  (id) => {
-                    const sourceConfiguration = (entry: any) =>
-                      JSON.stringify({
-                        class_type: entry?.class_type,
-                        inputs: entry?.inputs || {},
-                        control: entry?.control || {},
-                      });
-                    return (
-                      sourceConfiguration(current?.nodes[id]) !==
-                      sourceConfiguration(lastSaved.current?.nodes[id])
-                    );
-                  },
-                ),
-              }}
-              workflowInputs={current?.inputs}
-              onExpression={(field, expression) => {
-                setEdges((list) =>
-                  list.filter(
-                    (edge) =>
-                      !(
-                        edge.target === selected.id &&
-                        edge.targetHandle === field &&
-                        edge.data?.kind !== "control"
-                      ),
-                  ),
-                );
-                setNodes((list) =>
-                  list.map((node) =>
-                    node.id === selected.id
-                      ? {
-                          ...node,
-                          data: {
-                            ...node.data,
-                            inputs: {
-                              ...((node.data.inputs || {}) as Record<
-                                string,
-                                unknown
-                              >),
-                              [field]: expression,
-                            },
-                          },
-                        }
-                      : node,
-                  ),
-                );
-              }}
-              onLocateSource={(nodeId, output) => {
-                setNodes((list) =>
-                  list.map((node) => ({
-                    ...node,
-                    selected: node.id === nodeId,
-                  })),
-                );
-                locateDiagnostic({
-                  code: "variable_source",
-                  severity: "warning",
-                  message: "",
-                  node_id: nodeId,
-                  field: `outputs.${output}`,
-                });
-              }}
-            />
-          )}
         </InspectorPanel>
+        <AuthoringPanel
+          session={authoring}
+          antd={antd}
+          t={t}
+          selectedIds={selectedIds}
+          hasNodes={nodes.length > 0}
+          onSelection={() => authoring.show(selectedIds, true)}
+          onLocate={locateAiChange}
+          onLocateReference={(id) => {
+            const target = nodes.find((node) => node.id === id);
+            if (!target) return;
+            authoring.setPreview(false);
+            setSelectedId(null);
+            setNodes((list) =>
+              list.map((node) => ({ ...node, selected: node.id === id })),
+            );
+            void canvas?.fitView({
+              nodes: [target],
+              padding: 0.6,
+              maxZoom: 1,
+              duration: 180,
+            });
+          }}
+        />
       </div>
-      {debugOpen && current && (
+      {debugOpen && !focusMode && current && (
         <DebugWorkspace
           key={JSON.stringify([userId, agentId, flowId])}
           flow={current}
@@ -1611,211 +2453,6 @@ export function WorkflowEditor({
           setIoOpen(false);
         }}
       />
-      <Drawer
-        title={
-          nodes.length ? t("用自然语言修改工作流") : t("用自然语言搭建工作流")
-        }
-        open={aiOpen}
-        width={580}
-        maskClosable={!aiBusy}
-        closable={!aiBusy}
-        onClose={() => !aiBusy && setAiOpen(false)}
-        footer={
-          <Space>
-            <Button
-              disabled={aiBusy}
-              onClick={() => {
-                setProposal(null);
-                setAiOpen(false);
-              }}
-            >
-              {t("取消")}
-            </Button>
-            {proposal && (
-              <Button
-                aria-label={t("应用并保存")}
-                type="primary"
-                loading={aiBusy}
-                disabled={
-                  !proposal.validation.ok ||
-                  currentKey !== proposalBase.current ||
-                  agentId !== proposalAgent.current
-                }
-                onClick={applyProposal}
-              >
-                {t("应用并保存")}
-              </Button>
-            )}
-          </Space>
-        }
-      >
-        <Alert
-          type="info"
-          showIcon
-          message={t("先预览，再应用")}
-          description={t(
-            "AI 根据当前专家可用能力与最新草稿生成方案。应用会创建新版本，不会自动执行工作流。",
-          )}
-        />
-        <label className="ff-field-label" htmlFor="ff-prompt">
-          {t("业务目标与修改要求")}
-        </label>
-        <Input.TextArea
-          id="ff-prompt"
-          value={prompt}
-          disabled={aiBusy}
-          onChange={(event: any) => {
-            setPrompt(event.target.value);
-            setProposal(null);
-          }}
-          autoSize={{ minRows: 5, maxRows: 12 }}
-          placeholder={t(
-            "例如：检查生产数据，并行计算库存和注采能力；异常转人工审核，通过后生成报告。失败重试 2 次。",
-          )}
-        />
-        <div className="ff-example-row">
-          {[
-            t("增加人工审核，通过后再继续"),
-            t("失败重试 2 次，并设置超时"),
-            t("独立分析并行执行后汇总"),
-          ].map((example) => (
-            <Button
-              size="small"
-              key={example}
-              disabled={aiBusy}
-              onClick={() => {
-                setPrompt(example);
-                setProposal(null);
-              }}
-            >
-              {example}
-            </Button>
-          ))}
-        </div>
-        <Button
-          type="primary"
-          aria-label={proposal ? t("重新生成方案") : t("生成变更预览")}
-          loading={aiBusy}
-          disabled={!prompt.trim()}
-          onClick={propose}
-        >
-          {proposal ? t("重新生成方案") : t("生成变更预览")}
-        </Button>
-        {aiError && (
-          <Alert
-            className="ff-spaced"
-            type="error"
-            showIcon
-            message={t("方案未应用")}
-            description={aiError}
-          />
-        )}
-        {proposal && (
-          <div className="ff-spaced">
-            <Alert
-              type={proposal.validation.ok ? "success" : "error"}
-              showIcon
-              message={
-                proposal.validation.ok
-                  ? t("结构验证通过，请检查业务逻辑")
-                  : t("方案未通过验证，不能应用")
-              }
-              description={
-                !proposal.validation.ok &&
-                proposal.validation.errors
-                  .map((error) =>
-                    typeof error === "string" ? error : JSON.stringify(error),
-                  )
-                  .join("；")
-              }
-            />
-            {(currentKey !== proposalBase.current ||
-              agentId !== proposalAgent.current) && (
-              <Alert
-                type="warning"
-                message={t("草稿或当前专家已变化，请重新生成方案。")}
-                className="ff-spaced"
-              />
-            )}
-            {proposal.warnings?.map((warning, index) => (
-              <Alert
-                type="warning"
-                key={index}
-                message={warning}
-                className="ff-spaced"
-              />
-            ))}
-            <Tabs
-              items={[
-                {
-                  key: "changes",
-                  label: t("变更明细 ({value0})", {
-                    value0: proposal.changes.length,
-                  }),
-                  children: (
-                    <div>
-                      {proposal.changes.map((change, index) => (
-                        <div className="ff-change" key={index}>
-                          <Tag
-                            color={
-                              change.kind.includes("remove") ? "red" : "blue"
-                            }
-                          >
-                            {change.kind}
-                          </Tag>
-                          <div>
-                            <strong>{change.node_id || t("工作流")}</strong>
-                            <p>{change.description}</p>
-                            {!!change.details?.length && (
-                              <table className="ff-diff-table">
-                                <thead>
-                                  <tr>
-                                    <th>{t("参数")}</th>
-                                    <th>{t("修改前")}</th>
-                                    <th>{t("修改后")}</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {change.details.map((detail, i) => (
-                                    <tr key={i}>
-                                      <td>{detail.path}</td>
-                                      <td>
-                                        {typeof detail.before === "string"
-                                          ? detail.before
-                                          : JSON.stringify(detail.before) ??
-                                            t("未设置")}
-                                      </td>
-                                      <td>
-                                        {typeof detail.after === "string"
-                                          ? detail.after
-                                          : JSON.stringify(detail.after) ??
-                                            t("未设置")}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ),
-                },
-                {
-                  key: "document",
-                  label: t("完整工作流"),
-                  children: (
-                    <pre className="ff-code">
-                      {JSON.stringify(proposal.flow, null, 2)}
-                    </pre>
-                  ),
-                },
-              ]}
-            />
-          </div>
-        )}
-      </Drawer>
       <Drawer
         title={t("工作流版本")}
         open={versionsOpen}

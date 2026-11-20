@@ -1,5 +1,16 @@
 {
   "groups": {
+    "research_agenda": [
+      "plugins/apps/research-agenda/tests/test_agenda.py"
+    ],
+    "desktop_delivery": [
+      "tests/unit/routers/test_desktop_delivery.py"
+    ],
+    "expert_packages": [
+      "tests/unit/app/test_expert_repair.py",
+      "tests/unit/app/test_expert_packages.py",
+      "tests/unit/app/test_expert_publication.py"
+    ],
     "answerFileReferences": [
       "tests/unit/runtime/test_prompt_contributors.py"
     ],
@@ -66,7 +77,9 @@
       "tests/unit/plugins/ugsci/test_storage_inventory_stage_contract.py",
       "tests/unit/plugins/ugsci/test_roff_conversion_contract.py",
       "tests/unit/plugins/ugsci/test_expert_presentation.py",
-      "tests/unit/plugins/ugsci/test_visualization_services.py"
+      "tests/unit/plugins/ugsci/test_visualization_services.py",
+      "tests/unit/agents/builtin_mcp/test_neqsim.py",
+      "tests/unit/agents/builtin_mcp/test_neqsim_download.py"
     ],
     "flowforge": [
       "tests/unit/plugins/test_plugin_api_helpers.py",
@@ -76,6 +89,7 @@
       "tests/unit/plugins/flowforge/test_run_lifecycle.py",
       "tests/unit/plugins/flowforge/test_workflow_contracts.py",
       "tests/unit/plugins/flowforge/test_authoring_service.py",
+      "tests/unit/plugins/flowforge/test_ai_repair.py",
       "tests/unit/plugins/flowforge/test_definition_validation.py",
       "tests/unit/plugins/flowforge/test_runtime_reliability.py",
       "tests/unit/plugins/flowforge/test_business_acceptance.py",
@@ -98,7 +112,8 @@
       "tests/unit/plugins/flowforge/test_checkpoint_storage.py",
       "tests/unit/plugins/flowforge/test_structured_output.py",
       "tests/unit/plugins/flowforge/test_variable_bindings.py",
-      "tests/unit/plugins/flowforge/test_run_analytics.py"
+      "tests/unit/plugins/flowforge/test_run_analytics.py",
+      "tests/unit/plugins/flowforge/test_conversations.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -137,6 +152,7 @@
     ],
     "inventory": [
       "tests/unit/verify/test_fork_regression_inventory.py",
+      "tests/unit/verify/test_release_workflow_safety.py",
       "tests/unit/verify/test_pylint_namespace.py",
       "tests/unit/scripts/test_check_plugin_sdk_artifacts.py"
     ],
@@ -223,14 +239,23 @@
       "tests/unit/tauri/test_component_compression.py",
       "tests/unit/tauri/test_windows_portable_installer_contract.py"
     ],
+    "desktopIcons": [
+      "tests/unit/tauri/test_desktop_icons.py"
+    ],
+    "macos_drag_install": [
+      "tests/unit/tauri/test_macos_dmg.py",
+      "tests/unit/tauri/test_macos_dmg_native.py"
+    ],
     "windows_lifecycle": [
       "tests/unit/tauri/test_desktop_sqlite_paths.py",
       "tests/unit/plugins/test_bundle_marker_scan.py",
       "tests/unit/tauri/test_windows_update_extraction.py"
     ],
     "windows_install_performance": [
+      "tests/unit/tauri/test_windows_legacy_installation.py",
       "tests/unit/tauri/test_windows_installer_io.py",
       "tests/unit/tauri/test_windows_setup_progress.py",
+      "tests/unit/tauri/test_windows_setup_ui.py",
       "tests/unit/tauri/test_windows_webview_install.py",
       "tests/unit/tauri/test_desktop_scientific_pruning.py",
       "tests/unit/tauri/test_stage_python_runtime.py",
@@ -307,6 +332,60 @@
     ]
   },
   "required_cases": {
+    "plugins/apps/research-agenda/tests/test_agenda.py": [
+      "test_text_import_review_apply_is_persistent_and_idempotent",
+      "test_missing_evidence_and_invalid_images_are_rejected",
+      "test_account_and_agent_scope_cannot_read_other_sources",
+      "test_updates_are_atomic_and_stale_review_does_not_overwrite_changes",
+      "test_real_message_contract_and_image_payload"
+    ],
+    "tests/unit/app/test_expert_repair.py": [
+      "test_repair_retains_instance_files_policy_and_recovers_committed_switch",
+      "test_repair_failure_or_race_never_replaces_current_environment",
+      "test_inactive_repair_guard_blocks_startup_and_releases_after_error",
+      "test_repair_cancellation_keeps_guard_until_atomic_commit_finishes"
+    ],
+    "tests/unit/app/test_expert_packages.py": [
+      "test_signed_install_runs_real_mcp_and_registers_only_after_validation",
+      "test_expert_startup_is_awaited_and_retried_without_reinstall",
+      "test_installed_expert_runs_through_host_drivers_and_checks_prerequisites",
+      "test_signature_and_tampered_archive_never_register_an_expert",
+      "test_failed_method_check_blocks_publication",
+      "test_missing_offline_dependency_is_rejected_without_network",
+      "test_cancel_and_restart_reuse_verified_download_without_creating_ghosts",
+      "test_rejects_foreign_platform_and_private_payload_before_publication",
+      "test_frozen_host_requires_its_bundled_python",
+      "test_same_version_changed_content_is_rejected",
+      "test_nested_wheel_private_files_block_signing",
+      "test_undeclared_mcp_tools_block_signing",
+      "test_deleted_expert_reinstalls_preserving_customization_and_tool_scope"
+    ],
+    "tests/unit/tauri/test_macos_dmg.py": [
+      "test_dmg_rejects_truncated_and_out_of_bounds_images",
+      "test_dmg_settings_keep_live_icons_and_retina_instruction_artwork",
+      "test_dmg_payload_comparison_detects_missing_changed_and_empty_paths",
+      "test_dmg_is_published_and_selected_after_updater_metadata",
+      "test_dmg_artifact_gate_preserves_zip_callers_and_checks_dmg_bytes",
+      "test_dmg_metadata_generates_the_public_installer_download",
+      "test_dmg_accepts_existing_tauri_notary_key_locations",
+      "test_dmg_release_checks_use_the_release_infrastructure_checkout"
+    ],
+    "tests/unit/plugins/flowforge/test_ai_repair.py": [
+      "test_real_failure_repair_redacts_evidence_and_applies_current_draft",
+      "test_repair_rejects_invalid_sources_before_model",
+      "test_repair_context_survives_followups_and_rejects_another_source",
+      "test_repair_bounds_recorded_data_and_preserves_missing_observations",
+      "test_repair_preserves_recorded_falsy_outputs"
+    ],
+    "tests/unit/plugins/flowforge/test_authoring_service.py": [
+      "test_selected_authoring_preserves_outside_nodes_and_allows_new_nodes",
+      "test_selected_authoring_rejects_model_changes_outside_selection",
+      "test_authoring_rejects_invalid_selection_before_calling_model",
+      "test_authoring_conversation_survives_restart_and_applies_chosen_round",
+      "test_authoring_conversation_rejects_changed_scope_before_model",
+      "test_authoring_router_carries_selection_and_parent_proposal",
+      "test_authoring_diff_distinguishes_boolean_and_zero"
+    ],
     "tests/unit/runtime/test_tool_discovery_accuracy.py": [
       "test_unknown_identifiers_never_substitute_other_apps",
       "test_exact_identity_case_and_server_scope",
@@ -447,9 +526,9 @@
     ],
     "tests/unit/tauri/test_ugsci_release_data.py": [
       "test_runtime_bundle_install_excludes_samples_and_keeps_user_imports",
+      "test_runtime_bundle_retries_windows_sharing_and_preserves_user_data",
       "test_runtime_hash_matches_legacy_without_entering_excluded_trees",
-      "test_runtime_copy_uses_manifest_identity_and_ignores_pack_exclude",
-      "test_runtime_bundle_retries_windows_sharing_and_preserves_user_data"
+      "test_runtime_copy_uses_manifest_identity_and_ignores_pack_exclude"
     ],
     "tests/unit/plugins/test_module_isolation_paths.py": [
       "test_existing_module_path_needs_one_native_resolution",
@@ -608,7 +687,10 @@
       "test_worker_failure_is_sanitized_and_persisted",
       "test_recovery_marks_interrupted_tasks_failed",
       "test_api_status_task_404_and_runtime_path_order",
-      "test_neqsim_install_keeps_its_dedicated_route"
+      "test_neqsim_install_keeps_its_dedicated_route",
+      "test_installed_package_must_load_in_live_process",
+      "test_neqsim_runtime_exposes_running_task_without_starting_download",
+      "test_runtime_requirements_accept_only_bounded_pins_and_binary_restriction"
     ],
     "tests/unit/drivers/adapters/test_mcp_url_credentials.py": [
       "test_query_tokens_are_masked_and_survive_console_roundtrip",
@@ -926,11 +1008,21 @@
       "test_restore_preserves_native_lifecycle_and_durable_events"
     ],
     "tests/unit/plugins/ugsci/test_engine_detector_portability.py": [
+      "test_eclipse_discovers_unregistered_install_on_fixed_volume",
+      "test_eclipse_uses_program_root_and_numeric_patch_version_order",
+      "test_eclipse_registry_recovers_missing_install_location",
+      "test_eclipse_keeps_searching_after_inaccessible_architecture",
+      "test_eclipse_registry_bounds_and_deduplicates_installer_search",
+      "test_eclipse_refresh_api_discovers_and_persists_unregistered_install",
       "test_engine_search_preserves_priority_and_depth_bound",
       "test_vendor_registry_keeps_order_and_skips_inaccessible_keys",
       "test_legacy_cmg_prefers_existing_subdirectory_and_manifest",
       "test_comsol_registry_keeps_version_priority_and_parent_fallback",
-      "test_smoke_probe_keeps_file_evidence_and_license_outcomes"
+      "test_smoke_probe_keeps_file_evidence_and_license_outcomes",
+      "test_all_simulator_refresh_routes_find_unregistered_installations",
+      "test_all_vendor_installers_recover_icon_only_registry_records",
+      "test_cmg_latest_module_keeps_complete_module_metadata",
+      "test_opm_path_detection_checks_package_without_executing_solver"
     ],
     "tests/unit/plugins/test_sdk_context_lifecycle.py": [
       "test_bound_model_uses_earliest_deadline_and_closes_provider",
@@ -996,6 +1088,10 @@
       "test_display_metadata_rejects_real_directory_link_escape"
     ],
     "tests/unit/test_turn_files.py": [
+      "test_unchanged_capacity_omissions_do_not_mark_deliveries_incomplete",
+      "test_capacity_omissions_remain_errors_for_changed_or_delivered_files",
+      "test_unavailable_baseline_does_not_invent_a_modification_for_delivery",
+      "test_legacy_capacity_diagnostics_are_normalized_without_rewriting_evidence",
       "test_real_turn_diff_uses_dirty_baseline_without_touching_git_index",
       "test_delivery_versions_survive_same_turn_changes_and_restart",
       "test_delivery_is_durable_before_finish_and_id_survives_final_merge",
@@ -1021,7 +1117,15 @@
     ],
     "tests/unit/plugins/test_manifest_dependencies.py": [
       "test_wheel_identity_and_header_validation",
-      "test_installed_hidden_files_preserve_module_collision_checks"
+      "test_installed_hidden_files_preserve_module_collision_checks",
+      "test_desktop_install_reuses_host_xml_with_a_separate_installer_runtime"
+    ],
+    "tests/unit/plugins/test_loader_dep_probing.py": [
+      "test_bundled_guard_uses_the_consumers_observed_version"
+    ],
+    "tests/unit/plugins/test_plugin_process.py": [
+      "test_dependency_resolution_reuses_consumer_bundled_provider",
+      "test_dependency_preparation_rejects_protected_environment"
     ],
     "tests/unit/plugins/test_plugin_storage_windows_paths.py": [
       "test_long_paths_keep_storage_keys_media_and_access_boundary"
@@ -1085,13 +1189,24 @@
       "test_auto_recall_never_injects_a_marker_without_body"
     ],
     "tests/unit/plugins/test_plugin_update_transactions.py": [
+      "test_replace_legacy_azure_bot_preserves_disabled_config",
       "test_replace_disabled_plugin_commits_without_activation",
       "test_replace_disabled_plugin_rejects_incompatible_candidate",
       "test_failed_replace_cannot_reinstall_over_concurrent_success",
       "test_concurrent_replacements_back_up_committed_predecessor",
       "test_replace_preserves_structured_dependency_confirmation",
       "test_replace_reports_post_commit_cleanup_restart",
-      "test_stale_concurrent_update_does_not_downgrade_newer_version"
+      "test_stale_concurrent_update_does_not_downgrade_newer_version",
+      "test_signed_plugin_hot_update_preserves_data_and_enable_intent",
+      "test_signed_restart_update_downloads_then_activates_offline",
+      "test_failed_signed_hot_update_keeps_old_runtime_and_data",
+      "test_automatic_updates_only_touch_installed_plugins",
+      "test_downloaded_ordinary_update_activates_offline_after_restart",
+      "test_background_update_loop_retries_and_drains_on_shutdown",
+      "test_automatic_hot_update_keeps_market_provenance",
+      "test_downloaded_update_ack_preserves_newer_queue_generation",
+      "test_background_shared_dependencies_wait_for_existing_confirmation",
+      "test_signed_plugin_hot_update_ignores_unrelated_runtime_updates"
     ],
     "tests/unit/plugins/test_pawapp_listing.py": [
       "test_app_listing_merges_failed_disabled_pending_and_active",
@@ -1128,6 +1243,9 @@
     "tests/unit/tauri/test_desktop_dependency_lock.py": [
       "test_desktop_lock_satisfies_every_selected_direct_dependency"
     ],
+    "tests/unit/tauri/test_pyinstaller_spec.py": [
+      "test_desktop_spec_reaches_analysis_without_vendor_sdks"
+    ],
     "tests/unit/tauri/test_layered_channel_build.py": [
       "test_layered_channel_wheels_resolve_real_offline_dependency_closure",
       "test_layered_channel_missing_dependency_stops_build",
@@ -1161,6 +1279,9 @@
       "test_best_deflate_archives_pass_signed_runtime_installation"
     ],
     "tests/unit/tauri/test_windows_portable_installer_contract.py": [
+      "test_legacy_registry_locations_are_normalized_before_validation",
+      "test_desktop_product_name_and_legacy_update_identity",
+      "test_shortcut_rename_follows_health_and_preserves_rollback",
       "test_portable_manifest_and_zip_preserve_unicode_paths",
       "test_cli_launcher_uses_python_module_entry_point",
       "test_installer_verifies_in_elevated_process_before_any_mutation",
@@ -1199,6 +1320,14 @@
       "test_prunes_python_native_symbols_but_keeps_runtime_and_build_support",
       "test_cached_python_runtime_is_pruned_without_download",
       "test_pruned_python_runtime_gets_new_component_identity"
+    ],
+    "tests/unit/tauri/test_desktop_icons.py": [
+      "test_actual_desktop_icon_inventory_and_pixel_content",
+      "test_small_representations_keep_two_high_contrast_eye_cutouts",
+      "test_each_size_is_rendered_directly_from_the_approved_vector",
+      "test_missing_dpi_frame_is_rejected_even_when_copies_agree",
+      "test_macos_bundle_uses_declared_retina_icon_and_rejects_stale_pixels",
+      "test_native_icons_remain_part_of_host_identity_and_packaging_gates"
     ],
     "tests/unit/tauri/test_desktop_workflows.py": [
       "test_windows_build_creates_portable_package_once_and_keeps_signing"
@@ -1262,6 +1391,8 @@
       "test_source_sync_failure_preserves_original_read_only_mode"
     ],
     "tests/unit/channels/test_channel_host.py": [
+      "test_legacy_python_channel_migration_preserves_lifecycle",
+      "test_channel_backend_migration_rejects_unsupported_changes",
       "test_real_agent_stream_final_reply_and_saved_session",
       "test_update_replaces_worker_and_preserves_data",
       "test_channel_preflight_rechecks_metadata_read_during_probe"
@@ -1295,6 +1426,17 @@
       "test_release_expensive_jobs_require_immutable_plugin_preflight",
       "test_console_checkout_preserves_formatter_line_endings"
     ],
+    "tests/unit/plugins/flowforge/test_conversations.py": [
+      "test_persistent_chat_apply_receipt_latest_canvas_and_workflow_isolation",
+      "test_conversation_http_validates_scope_and_deduplicates_requests",
+      "test_real_repair_verification_preserves_failed_attempt_and_current_code",
+      "test_authenticated_http_accounts_cannot_read_other_workflow_chat",
+      "test_normal_expert_text_is_saved_as_discussion_without_a_proposal",
+      "test_assistant_bridge_uses_stable_session_and_only_final_answer",
+      "test_discussion_preserves_node_reference_labels_after_restart",
+      "test_conversation_accepts_json_answer_with_native_footer",
+      "test_parallel_chats_keep_context_and_revision_checks"
+    ],
     "tests/unit/app/routers/test_plugins_router_helpers.py": [
       "test_versioned_entry_gets_immutable_cache_without_request_in_worker"
     ],
@@ -1327,6 +1469,27 @@
     ],
     "tests/unit/plugins/test_generate_plugin_metadata.py": [
       "test_real_harness_archives_contain_own_entries_and_frontends"
+    ],
+    "tests/unit/agents/builtin_mcp/test_neqsim_download.py": [
+      "test_cloud_first_install_verifies_archives_without_active_record",
+      "test_cloud_signature_failure_never_falls_back",
+      "test_cloud_first_install_preserves_desktop_compatibility_guards",
+      "test_runtime_admission_failure_keeps_old_files",
+      "test_runtime_health_executes_stdio_tools_and_flash",
+      "test_downloaded_runtime_is_selected_without_changing_desktop_environment"
+    ],
+    "tests/unit/app/test_expert_publication.py": [
+      "test_signed_publication_preflight_idempotence_conflicts_and_readback",
+      "test_multi_platform_index_binds_identity_and_rejects_tampering",
+      "test_template_import_preserves_packages_and_contributions",
+      "test_recipe_installs_only_hash_locked_native_wheels",
+      "test_awsome_workflows_isolate_signing_and_preserve_published_catalog"
+    ],
+    "tests/unit/routers/test_desktop_delivery.py": [
+      "test_local_console_lists_real_associations_and_opens_scoped_delivered_bytes",
+      "test_desktop_actions_reject_remote_clients_and_foreign_origins",
+      "test_staged_files_reject_modified_content_and_cross_scope_actions",
+      "test_scripts_open_only_in_an_explicit_installed_editor"
     ]
   }
 }

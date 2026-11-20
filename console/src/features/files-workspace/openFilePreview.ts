@@ -16,6 +16,7 @@ export interface FilePreviewScope {
 
 export interface OpenFilePreviewDetail extends FilePreviewScope {
   target: FileTarget;
+  presentation?: "floating";
   trigger?: HTMLElement | null;
 }
 
@@ -64,12 +65,14 @@ export function openFilePreview(
   target: FileTarget,
   trigger: HTMLElement | null = null,
   scope?: FilePreviewScope,
+  presentation?: "floating",
 ): void {
   window.dispatchEvent(
     new CustomEvent<OpenFilePreviewDetail>(OPEN_FILE_PREVIEW_EVENT, {
       detail: {
         target: normalizeTarget(target),
         trigger,
+        ...(presentation ? { presentation } : {}),
         ...(scope ??
           (target.artifact && {
             agentId: target.artifact.agentId,

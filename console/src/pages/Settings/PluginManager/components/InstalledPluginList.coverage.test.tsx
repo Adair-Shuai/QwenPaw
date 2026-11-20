@@ -233,13 +233,18 @@ describe("InstalledPluginList - toolbar", () => {
     expect(within(button).getByText("2")).toBeTruthy();
   });
 
-  it("shows the checking-updates notice only while checking", () => {
+  it("exposes the checking notice on the refresh action only while checking", () => {
     renderList();
-    expect(screen.queryByText("pluginManager.checkingUpdates")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "pluginManager.catalogRefresh" }),
+    ).not.toHaveAttribute("aria-description");
     cleanup();
 
     renderList({ updatesLoading: true });
-    expect(screen.getByText("pluginManager.checkingUpdates")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "pluginManager.catalogRefresh" }),
+    ).toHaveAttribute("aria-description", "pluginManager.checkingUpdates");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
 

@@ -65,18 +65,18 @@ _PYTHON_PACKAGE_IMPORTS = {
 def _guidance(name: str) -> tuple[str, str]:
     if name in _PYTHON_PACKAGE_IMPORTS:
         return (
-            f"在 QwenPaw 使用的 Python 环境中运行：python -m pip install {name}",
-            "安装后重启 QwenPaw，或点击刷新重新检测依赖。",
+            "点击此能力的“安装运行环境”，按需下载所需依赖。",
+            "安装后自动加载并刷新状态；已手动停用的工具可在工具管理中启用。",
         )
     if name == "java-runtime":
         return (
-            "安装 JRE 21 或更高版本，并确保 java 命令可用。",
-            "重启 QwenPaw 后重新检测 Java 运行时。",
+            "点击“安装 NeqSim 运行环境”，自动下载配套 Java，无需手动配置。",
+            "验证通过后自动连接计算服务。",
         )
     if name == "neqsim-mcp-server":
         return (
-            "安装或使用 QwenPaw 随附的 NeqSim MCP Server。",
-            "在 MCP 管理中配置并启用 NeqSim Driver，然后刷新检测。",
+            "点击“安装 NeqSim 运行环境”，自动下载兼容的计算服务。",
+            "安装后自动连接；如曾手动停用，请在 MCP 管理中启用。",
         )
     return ("", "检查对应 Provider 的安装和启用状态。")
 

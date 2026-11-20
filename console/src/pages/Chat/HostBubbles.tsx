@@ -553,7 +553,10 @@ export function HostResponseCard(props: {
   // on unchanged props.
   return (
     <ToolCallTurnBoundary data={data as unknown as IAgentScopeRuntimeResponse}>
-      <div data-global-search-message={props.data.id || props.id}>
+      <div
+        className={styles.responseCard}
+        data-global-search-message={props.data.id || props.id}
+      >
         <MemoizedHostResponseCard {...props} data={data} />
       </div>
     </ToolCallTurnBoundary>

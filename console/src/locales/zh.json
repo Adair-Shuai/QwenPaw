@@ -11,7 +11,16 @@
     "appsFailed": "暂时无法读取系统应用",
     "retryApps": "重新读取打开方式",
     "openFailed": "文件未能打开，请重试或下载后打开",
-    "revealFailed": "无法显示交付文件位置，请重试"
+    "revealFailed": "无法显示交付文件位置，请重试",
+    "floatPreview": "浮动预览",
+    "fileMenu": "文件操作",
+    "copyPath": "复制路径",
+    "copyImage": "复制图片",
+    "copyFailed": "复制失败，请重试",
+    "copied": "已复制",
+    "saveAs": "另存为…",
+    "download": "下载",
+    "dock": "停靠到侧栏"
   },
   "globalSearch": {
     "user": "你",
@@ -75,10 +84,16 @@
     "deliveredCount": "{{count}} 个交付成果",
     "downloadTurn": "下载本轮归档",
     "archiveHint": "本轮交付版本独立保存，后续修改不会覆盖",
+    "versionDetails": "版本与归档",
+    "changedCount": "已编辑 {{count}} 个文件",
+    "diffSplit": "并排",
+    "diffUnified": "统一",
+    "diffWrap": "自动换行",
     "interrupted": "本轮未正常完成，已保留结束前捕获的文件。",
     "overlap": "本轮与其他任务同时操作目录，变更可能包含其他任务的写入。",
     "incomplete": "部分文件未能完整捕获；请查看记录详情。",
     "captureDetails": "捕获记录详情",
+    "scanDetails": "其他文件扫描说明",
     "status": {
       "created": "新增",
       "modified": "修改",
@@ -90,6 +105,9 @@
     "diff": "查看差异",
     "openCurrent": "打开当前文件",
     "openArchive": "打开本轮归档",
+    "openBefore": "预览修改前版本",
+    "previousVersionLabel": "修改前",
+    "downloadPrevious": "下载修改前版本",
     "downloadBefore": "下载删除前版本",
     "download": "下载本轮版本",
     "unavailable": "该版本未归档，无法预览或下载。",
@@ -101,7 +119,9 @@
     "diffTruncated": "此处仅显示部分内容；下载归档可查看完整文件。",
     "collapse": "收起文件列表",
     "showAll": "展开全部 {{count}} 个文件",
-    "downloadFailed": "下载失败，请重试。"
+    "downloadFailed": "下载失败，请重试。",
+    "selectFile": "选择文件",
+    "diffUnsupported": "此文件无法进行文本对比，可打开预览或下载。"
   },
   "accessibility": {
     "skipToContent": "跳到主要内容"
@@ -181,16 +201,16 @@
   },
   "desktop": {
     "update": {
-      "title": "更新 QwenPaw？",
+      "title": "更新 UGSci？",
       "otherWindows": "还有 {{count}} 个窗口正在使用。",
       "otherWindows_one": "还有 {{count}} 个窗口正在使用。",
       "otherWindows_other": "还有 {{count}} 个窗口正在使用。",
-      "description": "更新将关闭所有 QwenPaw 窗口，并中断正在运行的任务。",
-      "confirm": "关闭并更新",
+      "description": "更新将关闭所有 UGSci 窗口，并中断正在运行的任务。",
+      "confirm": "关闭并更新 UGSci",
       "preparing": "正在关闭窗口…"
     },
     "closeWindow": {
-      "title": "退出 QwenPaw？",
+      "title": "退出 UGSci？",
       "description": "后台继续运行会保留任务；完全退出会结束正在运行的任务。",
       "remember": "记住我的选择",
       "showWindow": "显示窗口",
@@ -199,7 +219,7 @@
       "keepRunning": "后台运行",
       "quitting": "正在退出…",
       "stopService": "完全退出",
-      "stopBlocked": "QwenPaw 仍在其他窗口或应用中使用，请先关闭它们，再完全退出。",
+      "stopBlocked": "UGSci 仍在其他窗口或应用中使用，请先关闭它们，再完全退出。",
       "preference": "关闭窗口",
       "askEveryTime": "每次询问"
     },
@@ -210,6 +230,13 @@
       "retry": "重试",
       "theme": "切换外观",
       "controls": "桌面控制"
+    },
+    "window": {
+      "minimize": "最小化窗口",
+      "maximize": "最大化窗口",
+      "restore": "还原窗口",
+      "close": "关闭窗口",
+      "failed": "窗口操作失败，请重试。"
     }
   },
   "chunkError": {
@@ -491,6 +518,7 @@
     "windows": "个窗口"
   },
   "sidebar": {
+    "pinEntry": "固定到侧边栏",
     "moreGroups": {
       "work": "工作与通知",
       "configuration": "配置与模型",
@@ -520,7 +548,13 @@
     "foldTools": "折叠菜单栏",
     "expandTools": "展开菜单栏",
     "dragHandle": "拖动侧栏悬浮；按回车切换停靠",
-    "dock": "侧栏归位",
+    "dock": {
+      "left": "吸附到左侧",
+      "right": "吸附到右侧",
+      "bottom": "吸附到底部",
+      "floating": "悬浮",
+      "handle": "拖动导航栏，或点击选择吸附位置"
+    },
     "newVersion": "发现新版本 v{{version}}，点击前往升级",
     "updateModal": {
       "checkUpdates": "检查更新",
@@ -538,7 +572,7 @@
       "title": "发现新版本 v{{version}}",
       "viewReleases": "查看 Releases",
       "installDesktopUpdate": "现在更新",
-      "desktopInstallHint": "QwenPaw 桌面端 {{version}} 已准备好安装，更新后应用将自动重启。",
+      "desktopInstallHint": "UGSci 桌面端 {{version}} 已准备好安装，更新后应用将自动重启。",
       "checking": "检查更新中…",
       "checkingHint": "正在确认最新版本",
       "downloading": "正在下载更新",
@@ -555,7 +589,7 @@
       "errors": {
         "network": "连接不上更新服务器，请检查网络后重试。",
         "signature": "更新文件签名校验失败，请重新尝试下载。",
-        "appLocation": "QwenPaw 正在从 macOS 只读位置运行。请先将 QwenPaw.app 移动到“应用程序”文件夹，从那里启动后再重试更新。",
+        "appLocation": "UGSci 正在从 macOS 只读位置运行。请先将 UGSci.app 移动到“应用程序”文件夹，从那里启动后再重试更新。",
         "other": "更新失败。"
       },
       "updateLater": "后台下载",
@@ -577,7 +611,7 @@
     "pageStyles": {
       "classic": "原有布局",
       "deepseek": "简洁风格",
-      "dual-sidebar": "双侧边栏"
+      "dual-sidebar": "研境布局"
     },
     "dualSidebar": {
       "home": "主页",
@@ -598,7 +632,7 @@
     "moreFeatures": "更多",
     "interfaceStyles": {
       "classic": "原有风格",
-      "warm-minimal": "暖白极简",
+      "warm-minimal": "研境暖白",
       "cool-workspace": "冷白工作台",
       "soft-focus": "柔灰专注"
     },
@@ -1101,6 +1135,13 @@
     "deleteSuccess": "智能体删除成功",
     "deleteFailed": "智能体删除失败",
     "selectAgent": "选择智能体",
+    "presetNames": {
+      "QwenPaw-Data": "数据分析专家",
+      "QA Agent": "质量审核专家",
+      "CloudPaw-Master": "云端统筹专家",
+      "CloudPaw-Executor": "云端执行专家",
+      "CloudPaw-Verifier": "云端验证专家"
+    },
     "defaultDisplayName": "默认智能体",
     "currentWorkspace": "当前智能体",
     "switchSuccess": "智能体切换成功",
@@ -3427,6 +3468,7 @@
     "loadFailed": "文件加载失败。请确认文件仍在当前智能体工作区的主工作目录中。",
     "previewUnavailable": "暂不支持预览，仍可查看元数据并下载。",
     "mentionInChat": "在聊天中引用",
+    "mentionFailed": "无法将此文件引用添加到草稿。",
     "expandWorkspace": "展开工作区",
     "openWorkspace": "打开工作区",
     "closeWorkspace": "关闭工作区",
@@ -6041,6 +6083,10 @@
     "update": "更新",
     "updateAll": "全部更新",
     "updateSuccess": "插件更新成功",
+    "confirmDependencyUpdate": "确认依赖升级",
+    "coreUpdateRequired": "此更新需要新版 UGSci，请先更新主程序。",
+    "updateRestartRequired": "更新已完成，重启后启用。",
+    "ugsciUpgradeQueued": "更新已安排，重启后启用。",
     "updateAllSuccess": "全部插件更新成功",
     "updateAllResult": "已更新 {{succeeded}} 个插件，{{failed}} 个失败：{{names}}",
     "updateFailed": "插件更新失败",

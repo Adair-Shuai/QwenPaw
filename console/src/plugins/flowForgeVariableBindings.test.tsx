@@ -229,6 +229,7 @@ async function openVariables(field = "query", english = false) {
       name: english ? "Node properties" : "节点属性",
     }),
   );
+  fireEvent.click(panel.getByRole("tab", { name: english ? "Data" : "数据" }));
   const label = english
     ? `Variables and expression for ${field}`
     : `${field} 的变量与表达式`;
@@ -322,6 +323,7 @@ describe("FlowForge mounted visual variable binding", () => {
     const view = render(editor(api));
     await screen.findByText(flow.name);
     fireEvent.click(screen.getByText("目标 Target", { selector: "strong" }));
+    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
     fireEvent.change(
       screen.getByRole("combobox", { name: "threshold 的数据来源" }),
       { target: { value: JSON.stringify(["source", "count"]) } },
@@ -582,6 +584,7 @@ describe("FlowForge mounted visual variable binding", () => {
     fireEvent.click(
       screen.getByText("原始数据 Source", { selector: "strong" }),
     );
+    fireEvent.click(screen.getByRole("tab", { name: "基础" }));
     const typeLabel = screen.getByText("节点类型");
     const typeField = typeLabel.closest(".ant-form-item") as HTMLElement;
     fireEvent.mouseDown(within(typeField).getByRole("combobox"));

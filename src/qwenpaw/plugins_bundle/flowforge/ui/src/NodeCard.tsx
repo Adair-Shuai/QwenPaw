@@ -60,6 +60,7 @@ export function NodeCard({
   const detailed = selected || expanded;
   const updateInternals = useUpdateNodeInternals();
   const d = data as any;
+  const canRepair = typeof d._onAiRepair === "function";
   const classType = d.class_type || d.type || "ToolNode";
   const label = d.label || d._displayLabel || classType;
   const color = colors[classType] || "#1677ff";
@@ -122,13 +123,20 @@ export function NodeCard({
         updateInternals(id);
     });
     return () => cancelAnimationFrame(frame);
-  }, [id, portGeometry, updateInternals]);
+  }, [
+    id,
+    portGeometry,
+    updateInternals,
+    d._aiChange,
+    d._layoutRevision,
+    canRepair,
+  ]);
   const diagnostics: { severity: string; message: string; field?: string }[] =
     d._diagnostics || [];
   const errors = diagnostics.filter((item) => item.severity === "error");
   const warnings = diagnostics.filter((item) => item.severity !== "error");
   const statusColor =
-    status === "failed" || status === "error"
+    status === "failed" || status === "error" || status === "timeout"
       ? "var(--ant-color-error, #ff4d4f)"
       : status === "running"
       ? "var(--ant-color-primary, #1677ff)"
@@ -143,6 +151,8 @@ export function NodeCard({
   return (
     <div
       className="ff-node-card"
+      data-ai-change={d._aiChange}
+      data-execution-mode={d.control?.mode || "run"}
       data-node-density={detailed ? "expanded" : "compact"}
       style={{
         width: 270,
@@ -164,6 +174,22 @@ export function NodeCard({
         fontSize: 12,
       }}
     >
+      {d._aiChange && (
+        <span className={`ff-ai-node-label ff-ai-legend-${d._aiChange}`}>
+          {t(
+            d._aiChange === "added"
+              ? "新增"
+              : d._aiChange === "removed"
+              ? "删除"
+              : "修改",
+            d._aiChange === "added"
+              ? "Added"
+              : d._aiChange === "removed"
+              ? "Removed"
+              : "Modified",
+          )}
+        </span>
+      )}
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <span style={{ color }}>
           <NodeIcon classType={classType} icon={d.icon} />
@@ -184,11 +210,29 @@ export function NodeCard({
           data-run-status={status || "unrun"}
           style={{ color: statusColor, fontSize: 11, flexShrink: 0 }}
         >
-          {status
+          {d.control?.mode === "mute"
+            ? t("已禁用", "Disabled")
+            : status
             ? t(statusLabels[status] || status)
             : t("未执行", "Not executed")}
         </span>
       </div>
+      {canRepair && (
+        <button
+          type="button"
+          className="ff-node-repair nodrag nopan"
+          disabled={d._repairBusy}
+          aria-label={t("AI 修复节点 {label}", "AI repair node {label}", {
+            label,
+          })}
+          onClick={(event) => {
+            event.stopPropagation();
+            d._onAiRepair();
+          }}
+        >
+          {t("AI 修复", "AI repair")}
+        </button>
+      )}
       {typeof summary === "string" && summary.trim() ? (
         <div
           title={summary}

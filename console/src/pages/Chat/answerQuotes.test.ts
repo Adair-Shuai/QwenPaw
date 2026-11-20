@@ -189,3 +189,51 @@ it("preserves workspace source identity through payload transport and keeps quot
   expect(readAnswerQuotes(scope)).toHaveLength(2);
   expect(readAnswerQuotes(scope)[0].source).toEqual(original.source);
 });
+
+it("persists an archived file reference without its media credentials", () => {
+  const draft = crypto.randomUUID();
+  const path = "output/结果 图.png";
+  const archive = "/api/agents/default/workspace/turn-files/t/files/f";
+  expect(
+    addAnswerQuote(draft, {
+      messageId: path,
+      text: path,
+      source: {
+        kind: "file-reference",
+        scope: { kind: "session", agentId: "default", sessionId: "s1" },
+        target: {
+          source: "artifact",
+          path,
+          artifactUrl: `${window.location.origin}${archive}?session_id=s1&version=before&token=test-secret`,
+          artifact: {
+            id: "archive-id",
+            title: path,
+            source: "tool_call",
+            mimeType: "image/png",
+            meta: { turnFileArchive: true, version: "before" },
+          },
+        },
+      },
+    }),
+  ).toBe(true);
+  const quotes = readAnswerQuotes(draft);
+  expect(quotes[0].source).toMatchObject({
+    target: {
+      artifactUrl: `${archive}?session_id=s1&version=before`,
+      artifact: { meta: { turnFileArchive: true, version: "before" } },
+    },
+  });
+  expect(localStorage.getItem(`${draft}_answer_quotes`)).not.toContain(
+    "test-secret",
+  );
+  const payload = applyAnswerQuotePayload(
+    {
+      input: [
+        { role: "user", content: [{ type: "text", text: "Please review" }] },
+      ],
+    },
+    quotes,
+  );
+  expect(JSON.stringify(payload)).not.toContain("test-secret");
+  expect(formatAnswerQuotes(quotes)).toBe(`Referenced files:\n- ${path}`);
+});

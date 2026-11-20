@@ -4,19 +4,23 @@ import { getActionColors, readableTone } from "./actionColors";
 import { isSafeCssColor, toChatThemeHex } from "./chatThemeColor";
 
 export const INTERFACE_STYLES = [
+  { id: "warm-minimal", label: "Yanjing warm white", swatch: "#252724" },
   { id: "classic", label: "Original", swatch: "#2563eb" },
-  { id: "warm-minimal", label: "Warm minimal", swatch: "#252724" },
   { id: "cool-workspace", label: "Cool workspace", swatch: "#4269cc" },
   { id: "soft-focus", label: "Soft focus", swatch: "#68877b" },
 ] as const;
 
 export type InterfaceStyle = (typeof INTERFACE_STYLES)[number]["id"];
+export const DEFAULT_INTERFACE_STYLE: InterfaceStyle = "warm-minimal";
 // Retain the installed palette key and API; page geometry is independent.
 export const COLOR_THEMES = INTERFACE_STYLES;
 export const INTERFACE_STYLE_STORAGE_KEY = "qwenpaw-interface-style";
 
 export function parseInterfaceStyle(value: unknown): InterfaceStyle {
-  return INTERFACE_STYLES.find((style) => style.id === value)?.id ?? "classic";
+  return (
+    INTERFACE_STYLES.find((style) => style.id === value)?.id ??
+    DEFAULT_INTERFACE_STYLE
+  );
 }
 
 export function readInterfaceStyle(): InterfaceStyle {
@@ -25,7 +29,7 @@ export function readInterfaceStyle(): InterfaceStyle {
       localStorage.getItem(INTERFACE_STYLE_STORAGE_KEY),
     );
   } catch {
-    return "classic";
+    return DEFAULT_INTERFACE_STYLE;
   }
 }
 

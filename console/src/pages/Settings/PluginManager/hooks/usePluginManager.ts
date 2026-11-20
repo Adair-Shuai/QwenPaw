@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Modal } from "antd";
 import { useRequest } from "ahooks";
 import { useAppMessage } from "@/hooks/useAppMessage";
+import { subscribeToPluginChanges } from "@/utils/pluginChangeEvents";
 import {
   fetchPluginCatalog,
   fetchPlugins,
@@ -20,7 +21,11 @@ import {
 } from "@/api/modules/pluginMarket";
 import { compareVersions } from "@/layouts/constants";
 import { marketPluginMatches } from "@/utils/marketPluginIdentity";
-import { reloadFrontendPlugin, reloadPawApp, unloadFrontendPlugin } from "@/plugins/usePluginLoader";
+import {
+  reloadFrontendPlugin,
+  reloadPawApp,
+  unloadFrontendPlugin,
+} from "@/plugins/usePluginLoader";
 import { refreshHarnessCatalog } from "@/plugins/harnesses";
 import { removePluginRuntime } from "@/plugins/pluginRuntimeCleanup";
 import { removePluginAppState } from "@/os/osCleanup";
@@ -83,6 +88,8 @@ export function usePluginManager() {
   } = useRequest(fetchPlugins, {
     onError: () => message.error(t("pluginManager.loadFailed")),
   });
+
+  useEffect(() => subscribeToPluginChanges(() => refresh()), [refresh]);
 
   const loadUpdates = useCallback(async (installed: PluginInfo[]) => {
     updateRequestRef.current?.abort();
@@ -163,6 +170,24 @@ export function usePluginManager() {
           addMarketUpdate(nextUpdates, plugin, entry);
         }
       }
+      for (const plugin of installed) {
+        const pending = plugin.pending_update;
+        if (!pending || compareVersions(pending.version, plugin.version) <= 0)
+          continue;
+        const discovered = nextUpdates.get(plugin.id);
+        if (
+          !discovered ||
+          compareVersions(discovered.version, pending.version) <= 0
+        ) {
+          nextUpdates.set(plugin.id, {
+            version: pending.version,
+            source: pending.source,
+            sha256: pending.sha256,
+            channel: pending.channel,
+            name: plugin.name,
+          });
+        }
+      }
       for (const [id, version] of queuedVersions.current) {
         if (nextUpdates.get(id)?.version === version) nextUpdates.delete(id);
       }
@@ -207,7 +232,13 @@ export function usePluginManager() {
         } else if (result.method === "replaced") {
           if (result.loaded === false) await unloadFrontendPlugin(plugin.id);
           else await reloadInstalledPluginRuntime(plugin);
-          message.success(t("pluginManager.updateSuccess"));
+          message.success(
+            t(
+              result.restart_required
+                ? "pluginManager.updateRestartRequired"
+                : "pluginManager.updateSuccess",
+            ),
+          );
         } else {
           message.info(t("pluginManager.catalogLatest"));
         }
@@ -234,6 +265,7 @@ export function usePluginManager() {
     const completedIds = new Set<string>();
     const failedPluginNames: string[] = [];
     let cancelled = false;
+    let needsRestart = false;
     try {
       for (const plugin of plugins ?? []) {
         const update = updates.get(plugin.id);
@@ -255,6 +287,7 @@ export function usePluginManager() {
             queuedVersions.current.set(plugin.id, update.version);
             setQueuedIds(new Set(queuedVersions.current.keys()));
           } else if (result.method === "replaced") {
+            needsRestart ||= Boolean(result.restart_required);
             if (result.loaded === false) await unloadFrontendPlugin(plugin.id);
             else await reloadInstalledPluginRuntime(plugin);
           }
@@ -278,6 +311,8 @@ export function usePluginManager() {
           t(
             queuedVersions.current.size > 0
               ? "pluginManager.ugsciUpgradeQueued"
+              : needsRestart
+              ? "pluginManager.updateRestartRequired"
               : "pluginManager.updateAllSuccess",
           ),
         );

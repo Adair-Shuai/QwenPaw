@@ -428,14 +428,25 @@ def test_wheel_data_cannot_overwrite_files_or_add_metadata(tmp_path, payload):
     } == before
 
 
-def install_case(tmp_path, source, expected, *, repair=False, tool=False):
+def install_case(
+    tmp_path,
+    source,
+    expected,
+    *,
+    repair=False,
+    tool=False,
+    bundled_xml=False,
+):
     ("Run resolver, publication and admission in one disposable interpreter.")
     import os
     import subprocess
     import shutil
 
     import qwenpaw
-    from tests.channel_support.host import local_certifi_wheel
+    from tests.channel_support.host import (
+        _local_dependency_wheel,
+        local_certifi_wheel,
+    )
 
     wheels = tmp_path / "wheels"
     wheels.mkdir()
@@ -447,7 +458,17 @@ def install_case(tmp_path, source, expected, *, repair=False, tool=False):
         write_wheel(
             wheels,
             name,
+            body=(
+                "from lxml import etree\n"
+                "ANSWER = etree.fromstring("
+                "b'<answer>installed from manifest</answer>').text\n"
+                if bundled_xml
+                else "ANSWER = 'installed from manifest'\n"
+            ),
             info=f"{spelling}-1.0.dist-info",
+            metadata_headers=(
+                "Requires-Dist: lxml>=3.1.0\n" if bundled_xml else ""
+            ),
             wheel_headers="Generator: delocate\n" if repair or tool else "",
             payload=(
                 {
@@ -460,6 +481,23 @@ def install_case(tmp_path, source, expected, *, repair=False, tool=False):
             ),
         )
     python, _ = dependency_python(tmp_path / "python")
+    if bundled_xml:
+        _local_dependency_wheel(
+            wheels,
+            "lxml",
+            version("lxml"),
+            {},
+        )
+        runtime_wheel = _local_dependency_wheel(
+            tmp_path / "installer-wheels",
+            "lxml",
+            "6.1.3",
+            {},
+        )
+        import zipfile
+
+        with zipfile.ZipFile(runtime_wheel) as archive:
+            archive.extractall(tmp_path / "installer-site")
     host_source = tmp_path / "host-source"
     host_source.mkdir()
     shutil.copytree(
@@ -517,6 +555,37 @@ before = {p.name: p.read_bytes() for p in source.iterdir()}
 
 async def main():
     async with PluginTestHost(root) as host:
+        if sys.argv[7] == "bundled-xml":
+            from dataclasses import replace
+            from qwenpaw.plugins import loader as loader_module
+            from qwenpaw.plugins.dependency_context import (
+                DependencyEnvironmentContext,
+            )
+            from qwenpaw.plugins.execution.environment import (
+                shared_dependency_paths,
+            )
+            runtime_site, target = (
+                root.parent / name
+                for name in ("installer-site", "plugin-site")
+            )
+            target.mkdir()
+            context = DependencyEnvironmentContext(
+                sys.executable, Path(sys.argv[1]),
+                (*shared_dependency_paths(), target), target, (runtime_site,),
+            )
+            loader_module._is_frozen = lambda: True
+            loader_module._plugin_site_dir = lambda: target
+            host._loader._dependency_environment = lambda *_args: context
+            backend = host._loader._python_backend
+            backend.services = replace(
+                backend.services,
+                dependency_environment=lambda *_args: context,
+            )
+            xml_before = importlib.metadata.version("lxml")
+            runtime_before = {
+                p.relative_to(runtime_site): p.read_bytes()
+                for p in runtime_site.rglob('*') if p.is_file()
+            }
         if sys.argv[6] == "tool":
             import shutil
             from qwenpaw.plugins.execution.dependencies import (
@@ -576,6 +645,14 @@ async def main():
             assert result.status == "active"
         else:
             assert (await host.install(source)).ok
+        if sys.argv[7] == "bundled-xml":
+            assert importlib.metadata.version("lxml") == xml_before
+            assert not list(target.glob("lxml*"))
+            assert {
+                p.relative_to(runtime_site): p.read_bytes()
+                for p in runtime_site.rglob('*') if p.is_file()
+            } == runtime_before
+            assert (await host.install(source, replace=True)).ok
         for name in expected:
             assert importlib.metadata.version(name) == "1.0"
             assert (
@@ -669,6 +746,7 @@ asyncio.run(main())
             json.dumps(sorted(expected)),
             "repair" if repair else "install",
             "tool" if tool else "module",
+            "bundled-xml" if bundled_xml else "ordinary",
         ],
         cwd=tmp_path,
         env=env,
@@ -739,6 +817,25 @@ def test_install_includes_every_declared_dependency(
 ):
     source = package(tmp_path, dependencies, requirements, sdk=sdk)
     install_case(tmp_path, source, expected)
+
+
+@pytest.mark.parametrize("repair", [False, True])
+def test_desktop_install_reuses_host_xml_with_a_separate_installer_runtime(
+    tmp_path,
+    repair,
+):
+    source = package(
+        tmp_path,
+        requirements="b01-probe-xml==1.0\n",
+        sdk=False,
+    )
+    install_case(
+        tmp_path,
+        source,
+        {"b01-probe-xml"},
+        repair=repair,
+        bundled_xml=True,
+    )
 
 
 async def test_satisfied_and_marker_excluded_manifest_does_not_install(

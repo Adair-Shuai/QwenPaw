@@ -33,7 +33,7 @@ from packaging.version import InvalidVersion, Version
 
 from ..plugins.bundled import is_plugin_uninstalled
 from ..update_policy import ALLOWED_PRESERVE_PATHS, DEFAULT_PRESERVE_PATHS
-from ..utils.windows_paths import copy_tree, remove_tree
+from ..utils.windows_paths import copy_tree, io_path, remove_tree
 
 logger = logging.getLogger(__name__)
 
@@ -384,6 +384,30 @@ def _copy_component_file(source: str, destination: str) -> None:
     if path.stat().st_nlink > 1:
         raise ComponentUpdateError(f"hard link in component tree: {path}")
     shutil.copy2(path, destination)
+
+
+def _backup_files(root: Path):
+    """Enumerate a preserved tree without hiding unreadable entries."""
+
+    def fail(error: OSError) -> None:
+        raise error
+
+    for current, directories, names in os.walk(root, onerror=fail):
+        directory = Path(current)
+        for name in directories:
+            child = directory / name
+            if _is_link_like(child):
+                raise ComponentUpdateError(f"link in preserved data: {child}")
+        for name in names:
+            child = directory / name
+            metadata = child.lstat()
+            if (
+                _is_link_like(child)
+                or not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_nlink > 1
+            ):
+                raise ComponentUpdateError(f"unsafe preserved file: {child}")
+            yield child
 
 
 def _content_matches(
@@ -1041,6 +1065,7 @@ class ComponentUpdater:
     ) -> _BackupSnapshot | None:
         """Persist and verify data before component activation."""
         # pylint: disable=too-many-branches,too-many-statements
+        source = Path(io_path(source))
         if not plan.preserve_paths or not source.is_dir():
             return None
         if _is_link_like(source):
@@ -1049,6 +1074,9 @@ class ComponentUpdater:
             self.backup_root
             or destination.parent / ".qwenpaw-component-backups"
         )
+        # Prefix the root before deriving paths. Even a short root can have
+        # descendants beyond MAX_PATH after adding the backup ID and data tree.
+        root = Path(io_path(root))
         if root.exists() and _is_link_like(root):
             raise ComponentUpdateError("backup root may not be a symlink")
         root.mkdir(parents=True, exist_ok=True)
@@ -1080,16 +1108,8 @@ class ComponentUpdater:
                     continue
                 target = data_root / relative
                 if candidate.is_dir():
-                    for item in candidate.rglob("*"):
-                        if (
-                            _is_link_like(item)
-                            or item.is_file()
-                            and item.stat().st_nlink > 1
-                        ):
-                            raise ComponentUpdateError(
-                                "preserved data may not contain links: "
-                                f"{item}",
-                            )
+                    for _ in _backup_files(candidate):
+                        pass
                     copy_tree(candidate, target)
                 elif candidate.is_file():
                     if candidate.stat().st_nlink > 1:
@@ -1104,9 +1124,7 @@ class ComponentUpdater:
                         f"unsupported preserved data entry: {relative}",
                     )
             if data_root.exists():
-                for item in sorted(
-                    path for path in data_root.rglob("*") if path.is_file()
-                ):
+                for item in sorted(_backup_files(data_root)):
                     relative = _safe_path(
                         item.relative_to(data_root).as_posix(),
                     )
@@ -1180,10 +1198,12 @@ class ComponentUpdater:
         if backup is None:
             return
         try:
-            metadata_path = backup.path / "backup.json"
-            data_root = backup.path / "data"
+            backup_path = Path(io_path(backup.path))
+            staged = Path(io_path(staged))
+            metadata_path = backup_path / "backup.json"
+            data_root = backup_path / "data"
             if (
-                _is_link_like(backup.path)
+                _is_link_like(backup_path)
                 or _is_link_like(metadata_path)
                 or data_root.exists()
                 and _is_link_like(data_root)
@@ -1218,8 +1238,7 @@ class ComponentUpdater:
             actual_files = (
                 {
                     _safe_path(item.relative_to(data_root).as_posix())
-                    for item in data_root.rglob("*")
-                    if item.is_file()
+                    for item in _backup_files(data_root)
                 }
                 if data_root.exists()
                 else set()
@@ -2208,17 +2227,15 @@ class ComponentUpdater:
             )
             self._prune_backups(backup)
 
-    def apply_full(
+    def prepare_full(
         self,
         plan: ComponentUpdatePlan,
         archive: Path,
-        destination: Path,
+        staged: Path,
         *,
         expected_files: dict[str, dict[str, Any]],
-        preserve_from: Path | None = None,
     ) -> None:
-        """Apply a signed ZIP full artifact using the same atomic boundary."""
-        # pylint: disable=too-many-branches,too-many-statements
+        """Verify and extract a signed candidate before runtime admission."""
         if (
             plan.artifact_kind != "full"
             or plan.component not in self.managed_components
@@ -2233,6 +2250,93 @@ class ComponentUpdater:
             plan.artifact_signature,
             self.public_key_b64,
         )
+        directory_component = self.is_directory_component(plan.component)
+        staged.mkdir()
+        with zipfile.ZipFile(archive) as bundle:
+            infos = bundle.infolist()
+            max_members, max_bytes, max_member_bytes = _archive_limits(
+                plan.component,
+            )
+            if (
+                len(infos) > max_members
+                or sum(info.file_size for info in infos) > max_bytes
+            ):
+                raise ComponentUpdateError(
+                    "full artifact exceeds safety limits",
+                )
+            names = {info.filename for info in infos}
+            if len(names) != len(infos):
+                raise ComponentUpdateError(
+                    "full artifact contains duplicate members",
+                )
+            for info in infos:
+                if (
+                    info.is_dir()
+                    or info.filename.startswith("/")
+                    or info.file_size > max_member_bytes
+                ):
+                    raise ComponentUpdateError(
+                        "invalid full artifact member",
+                    )
+                mode = (info.external_attr >> 16) & 0o170000
+                if mode in {stat.S_IFLNK, stat.S_IFDIR}:
+                    raise ComponentUpdateError(
+                        "full artifact may not contain links",
+                    )
+                relative = _safe_path(info.filename)
+                candidate = (staged / relative).resolve()
+                candidate.relative_to(staged.resolve())
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                with (
+                    bundle.open(info) as source,
+                    candidate.open(
+                        "wb",
+                    ) as target,
+                ):
+                    shutil.copyfileobj(source, target, length=1024 * 1024)
+                _apply_expected_mode(
+                    candidate,
+                    expected_files.get(relative),
+                    relative=relative,
+                )
+        if not _content_matches(
+            _inventory(staged, plan.preserve_paths),
+            expected_files,
+        ):
+            raise ComponentUpdateError("full artifact inventory mismatch")
+        plugin_path = staged / "plugin.json"
+        if not directory_component:
+            if not plugin_path.is_file():
+                raise ComponentUpdateError(
+                    "full artifact has no plugin.json",
+                )
+            try:
+                plugin = json.loads(
+                    plugin_path.read_text(encoding="utf-8"),
+                )
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ComponentUpdateError(
+                    "invalid full plugin JSON",
+                ) from exc
+            if (
+                plugin.get("id") != plan.component
+                or str(plugin.get("version")) != plan.target_version
+            ):
+                raise ComponentUpdateError(
+                    "full plugin identity/version mismatch",
+                )
+
+    def apply_full(
+        self,
+        plan: ComponentUpdatePlan,
+        archive: Path,
+        destination: Path,
+        *,
+        expected_files: dict[str, dict[str, Any]],
+        preserve_from: Path | None = None,
+    ) -> None:
+        """Apply a signed ZIP full artifact using the same atomic boundary."""
+        # pylint: disable=too-many-branches,too-many-statements
         plugins_root = destination.parent
         destination = _resolve_plugin_child(
             destination,
@@ -2273,80 +2377,12 @@ class ComponentUpdater:
             dir=str(destination.parent),
         ) as temp:
             staged = Path(temp) / "component"
-            staged.mkdir()
-            with zipfile.ZipFile(archive) as bundle:
-                infos = bundle.infolist()
-                max_members, max_bytes, max_member_bytes = _archive_limits(
-                    plan.component,
-                )
-                if (
-                    len(infos) > max_members
-                    or sum(info.file_size for info in infos) > max_bytes
-                ):
-                    raise ComponentUpdateError(
-                        "full artifact exceeds safety limits",
-                    )
-                names = {info.filename for info in infos}
-                if len(names) != len(infos):
-                    raise ComponentUpdateError(
-                        "full artifact contains duplicate members",
-                    )
-                for info in infos:
-                    if (
-                        info.is_dir()
-                        or info.filename.startswith("/")
-                        or info.file_size > max_member_bytes
-                    ):
-                        raise ComponentUpdateError(
-                            "invalid full artifact member",
-                        )
-                    mode = (info.external_attr >> 16) & 0o170000
-                    if mode in {stat.S_IFLNK, stat.S_IFDIR}:
-                        raise ComponentUpdateError(
-                            "full artifact may not contain links",
-                        )
-                    relative = _safe_path(info.filename)
-                    candidate = (staged / relative).resolve()
-                    candidate.relative_to(staged.resolve())
-                    candidate.parent.mkdir(parents=True, exist_ok=True)
-                    with (
-                        bundle.open(info) as source,
-                        candidate.open(
-                            "wb",
-                        ) as target,
-                    ):
-                        shutil.copyfileobj(source, target, length=1024 * 1024)
-                    _apply_expected_mode(
-                        candidate,
-                        expected_files.get(relative),
-                        relative=relative,
-                    )
-            if not _content_matches(
-                _inventory(staged, plan.preserve_paths),
-                expected_files,
-            ):
-                raise ComponentUpdateError("full artifact inventory mismatch")
-            plugin_path = staged / "plugin.json"
-            if not directory_component:
-                if not plugin_path.is_file():
-                    raise ComponentUpdateError(
-                        "full artifact has no plugin.json",
-                    )
-                try:
-                    plugin = json.loads(
-                        plugin_path.read_text(encoding="utf-8"),
-                    )
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise ComponentUpdateError(
-                        "invalid full plugin JSON",
-                    ) from exc
-                if (
-                    plugin.get("id") != plan.component
-                    or str(plugin.get("version")) != plan.target_version
-                ):
-                    raise ComponentUpdateError(
-                        "full plugin identity/version mismatch",
-                    )
+            self.prepare_full(
+                plan,
+                archive,
+                staged,
+                expected_files=expected_files,
+            )
             backup = (
                 self._backup_component_data(plan, preserve_from, destination)
                 if preserve_from is not None
@@ -2362,7 +2398,9 @@ class ComponentUpdater:
                     "restored full component inventory mismatch",
                 )
             if not directory_component:
-                plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
+                plugin = json.loads(
+                    (staged / "plugin.json").read_text(encoding="utf-8"),
+                )
                 if (
                     plugin.get("id") != plan.component
                     or str(plugin.get("version")) != plan.target_version

@@ -22,6 +22,7 @@ import {
   useWorkspaceQuotes,
 } from "../../../features/files-workspace/workspaceQuotes";
 import { getActiveSenderTextarea } from "../utils";
+import { FileReferenceButton } from "./AnswerQuoteRequest";
 import styles from "./AnswerQuoteComposer.module.less";
 
 const SOURCE = "[data-answer-quote-source]";
@@ -161,48 +162,63 @@ export function AnswerQuoteComposer({
           data-answer-quotes
           aria-label={t("chat.answerQuote.selected")}
         >
-          {quotes.map((quote) => (
-            <div key={quote.id} className={styles.chip}>
-              <Popover
-                trigger="click"
-                content={<div className={styles.preview}>{quote.text}</div>}
-              >
+          {quotes.map((quote) => {
+            const source = quote.source;
+            return (
+              <div key={quote.id} className={styles.chip}>
+                {source?.kind === "file-reference" ? (
+                  <FileReferenceButton source={source} />
+                ) : (
+                  <>
+                    <Popover
+                      trigger="click"
+                      content={
+                        <div className={styles.preview}>{quote.text}</div>
+                      }
+                    >
+                      <button
+                        type="button"
+                        className={styles.label}
+                        aria-label={t("chat.answerQuote.view", {
+                          text: quote.text,
+                        })}
+                      >
+                        <Quote size={13} />
+                        <span>
+                          {quote.source?.kind === "file"
+                            ? quote.messageId
+                            : quote.text}
+                        </span>
+                      </button>
+                    </Popover>
+                    {source && (
+                      <button
+                        type="button"
+                        aria-label={t("workbench.quotes.locate", {
+                          name: quote.messageId,
+                        })}
+                        onClick={() =>
+                          openQuoteSource(source, workspace?.scope)
+                        }
+                      >
+                        <Quote size={13} />
+                        {t("workbench.quotes.source")}
+                      </button>
+                    )}
+                  </>
+                )}
                 <button
                   type="button"
-                  className={styles.label}
-                  aria-label={t("chat.answerQuote.view", { text: quote.text })}
-                >
-                  <Quote size={13} />
-                  <span>
-                    {quote.source?.kind === "file"
-                      ? quote.messageId
-                      : quote.text}
-                  </span>
-                </button>
-              </Popover>
-              {quote.source && (
-                <button
-                  type="button"
-                  aria-label={t("workbench.quotes.locate", {
-                    name: quote.messageId,
+                  aria-label={t("chat.answerQuote.remove", {
+                    text: quote.text,
                   })}
-                  onClick={() =>
-                    openQuoteSource(quote.source!, workspace?.scope)
-                  }
+                  onClick={() => consumeAnswerQuotes(scope, [quote])}
                 >
-                  <Quote size={13} />
-                  {t("workbench.quotes.source")}
+                  <X size={13} />
                 </button>
-              )}
-              <button
-                type="button"
-                aria-label={t("chat.answerQuote.remove", { text: quote.text })}
-                onClick={() => consumeAnswerQuotes(scope, [quote])}
-              >
-                <X size={13} />
-              </button>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
       {current &&

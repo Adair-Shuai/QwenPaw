@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>工作日程</title><link rel="stylesheet" href="../../../../console/src/styles/tokens.css">
+<style>body{font:14px/1.8 system-ui;background:var(--app-bg);color:var(--app-text);max-width:560px;margin:100px auto;padding:24px}a,button{display:inline-block;padding:8px 16px;border:1px solid var(--app-border);border-radius:8px;color:var(--app-text);background:var(--app-surface);font:inherit;cursor:pointer;text-decoration:none;margin-right:8px}h1{font-size:24px}</style>
+<h1>工作日程已接入应用</h1><p>在 UGSci 的应用列表中打开“工作日程”，粘贴聊天记录或添加截图。</p>
+<a href="http://localhost:5173/apps/research-agenda">打开工作日程</a><button id="backup">下载旧版事项</button><p id="status"></p>
+<script>document.getElementById('backup').onclick=function(){var raw=localStorage.getItem('ugsci.research-agenda.v1');if(!raw){document.getElementById('status').textContent='此浏览器没有旧版事项';return;}var url=URL.createObjectURL(new Blob([raw],{type:'application/json'}));var a=document.createElement('a');a.href=url;a.download='工作日程-旧版备份.json';a.click();setTimeout(function(){URL.revokeObjectURL(url)},1000);};</script></html>

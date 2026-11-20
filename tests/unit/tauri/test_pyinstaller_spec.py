@@ -174,7 +174,8 @@ def test_desktop_spec_reaches_analysis_without_vendor_sdks(
         "Provides-Extra: full\n"
         "Requires-Dist: openai; extra == 'full'\n"
         "Requires-Dist: pydantic; extra == 'full'\n"
-        "Requires-Dist: httpx; extra == 'full'\n",
+        "Requires-Dist: httpx; extra == 'full'\n"
+        "Requires-Dist: python-docx; extra == 'full'\n",
         encoding="utf-8",
     )
     monkeypatch.syspath_prepend(str(tmp_path))
@@ -222,6 +223,8 @@ def test_desktop_spec_reaches_analysis_without_vendor_sdks(
         if destination.endswith(".dist-info")
     }
     host_transitives = {
+        "python-docx",
+        "lxml",
         "typing-extensions",
         "typing-inspection",
         "annotated-types",

@@ -152,6 +152,14 @@ fn watch_backend_child(
     started: Instant,
     mut probe: impl FnMut() -> StartupOutcome,
 ) -> Result<(std::process::ExitStatus, bool, bool), String> {
+    #[cfg(windows)]
+    let job = match StartupJob::assign(child) {
+        Ok(job) => Some(job),
+        Err(error) => {
+            eprintln!("[agent-host] cannot assign backend to a process job: {error}");
+            None
+        }
+    };
     let mut ready = false;
     let mut restart_requested = false;
     let mut initializing = false;
@@ -161,7 +169,11 @@ fn watch_backend_child(
         restart_requested |= outcome == StartupOutcome::Restart;
         initializing |= outcome == StartupOutcome::Starting;
         if !ready && outcome == StartupOutcome::Failed {
-            terminate_owned_child(child.id())?;
+            terminate_owned_child(
+                child.id(),
+                #[cfg(windows)]
+                job.as_ref(),
+            )?;
             break child.wait().map_err(|err| err.to_string())?;
         }
         if ready {
@@ -179,7 +191,11 @@ fn watch_backend_child(
             // A live startup may prepare offline packages for several minutes.
             // Bound hung initialization, but do not confuse it with no endpoint.
             // Kill only this owned child before switching component roots.
-            terminate_owned_child(child.id())?;
+            terminate_owned_child(
+                child.id(),
+                #[cfg(windows)]
+                job.as_ref(),
+            )?;
             break child.wait().map_err(|err| err.to_string())?;
         }
         std::thread::sleep(Duration::from_millis(100));
@@ -259,10 +275,71 @@ fn backend_startup_state(directory: &std::path::Path, previous: Option<&str>) ->
     probe().unwrap_or(StartupOutcome::Unavailable)
 }
 
-fn terminate_owned_child(pid: u32) -> Result<(), String> {
+#[cfg(windows)]
+struct StartupJob(windows::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl StartupJob {
+    fn assign(child: &std::process::Child) -> windows::core::Result<Self> {
+        use std::os::windows::io::AsRawHandle;
+        use windows::core::PCWSTR;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW};
+
+        let job = Self(unsafe { CreateJobObjectW(None, PCWSTR::null()) }?);
+        let process = HANDLE(child.as_raw_handle());
+        unsafe { AssignProcessToJobObject(job.0, process) }?;
+        Ok(job)
+    }
+
+    fn terminate(&self) -> Result<(), String> {
+        use windows::Win32::System::JobObjects::{
+            JobObjectBasicAccountingInformation, QueryInformationJobObject, TerminateJobObject,
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+        };
+
+        unsafe { TerminateJobObject(self.0, 1) }.map_err(|err| err.to_string())?;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+            unsafe {
+                QueryInformationJobObject(
+                    Some(self.0),
+                    JobObjectBasicAccountingInformation,
+                    (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+                    std::mem::size_of_val(&accounting) as u32,
+                    None,
+                )
+            }
+            .map_err(|err| err.to_string())?;
+            if accounting.ActiveProcesses == 0 {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err("Backend startup processes did not finish stopping".into());
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for StartupJob {
+    fn drop(&mut self) {
+        let _ = unsafe { windows::Win32::Foundation::CloseHandle(self.0) };
+    }
+}
+
+fn terminate_owned_child(pid: u32, #[cfg(windows)] job: Option<&StartupJob>) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        if let Some(job) = job {
+            // Terminate the assigned tree by handle, including backend workers.
+            return job.terminate();
+        }
+        // Retain the process-tree fallback when an enclosing job does not
+        // allow nesting. Report failure before switching component roots.
         let status = Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .creation_flags(0x08000000)
@@ -313,6 +390,15 @@ mod tests {
         while !root.join("release").exists() {
             assert!(started.elapsed() < Duration::from_secs(10));
             std::thread::sleep(Duration::from_millis(5));
+        }
+        #[cfg(windows)]
+        if mode == "tree-parent" {
+            let worker_root = root.join("worker");
+            std::fs::create_dir(&worker_root).unwrap();
+            let mut worker = fixture_child(&worker_root, "unavailable");
+            std::fs::write(root.join("worker-ready"), worker.0.id().to_string()).unwrap();
+            worker.0.wait().unwrap();
+            return;
         }
         if mode == "ready_crash" {
             std::process::exit(7);
@@ -424,6 +510,51 @@ mod tests {
             assert!(!restart);
             assert!(child.0.try_wait().unwrap().is_some());
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn startup_job_terminates_backend_and_owned_worker() {
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::JobObjects::IsProcessInJob;
+        use windows::Win32::System::Threading::{
+            OpenProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
+            PROCESS_SYNCHRONIZE,
+        };
+
+        let root = tempfile::tempdir().unwrap();
+        let mut child = fixture_child(root.path(), "tree-parent");
+        let job = StartupJob::assign(&child.0).unwrap();
+        std::fs::write(root.path().join("release"), "1").unwrap();
+        let worker_ready = root.path().join("worker-ready");
+        let started = Instant::now();
+        let worker_id = loop {
+            if let Ok(text) = std::fs::read_to_string(&worker_ready) {
+                if let Ok(id) = text.parse::<u32>() {
+                    break id;
+                }
+            }
+            assert!(started.elapsed() < Duration::from_secs(10));
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let worker = unsafe {
+            OpenProcess(
+                PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                false,
+                worker_id,
+            )
+        }
+        .unwrap();
+        let mut member = windows::core::BOOL::default();
+        let membership = unsafe { IsProcessInJob(worker, Some(job.0), &mut member) };
+        let terminated = job.terminate();
+        let worker_status = unsafe { WaitForSingleObject(worker, 5000) };
+        unsafe { CloseHandle(worker) }.unwrap();
+        membership.unwrap();
+        assert!(member.as_bool());
+        terminated.unwrap();
+        assert!(!child.0.wait().unwrap().success());
+        assert_eq!(worker_status, windows::Win32::Foundation::WAIT_OBJECT_0);
     }
 
     #[test]

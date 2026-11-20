@@ -743,6 +743,61 @@ async def test_certifi_floor_refuses_old_immutable_provider_before_download(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["compatible", "conflict", "invisible"])
+async def test_bundled_guard_uses_the_consumers_observed_version(
+    tmp_path,
+    monkeypatch,
+    case,
+):
+    from qwenpaw.plugins.dependency_context import DependencyEnvironmentContext
+    from qwenpaw.plugins.dependency_gate import SharedDependencyError
+
+    loader = PluginLoader([tmp_path])
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text(
+        "lxml>=6.1.2\n" if case == "conflict" else "lxml<6.1.2\n",
+        encoding="utf-8",
+    )
+    bundled = {"version": "6.1.3", "requires_dist": ()}
+    observed = {"version": "6.1.1", "requires_dist": ()}
+    context = SimpleNamespace(
+        immutable_providers=lambda: {"lxml": bundled},
+        refuse_immutable_provider=(
+            DependencyEnvironmentContext.refuse_immutable_provider
+        ),
+        runtime_identity={"protocol": 1},
+    )
+    pip = Mock(return_value=False)
+    resolver = Mock()
+    monkeypatch.setattr("qwenpaw.plugins.loader.require_pip", pip)
+    monkeypatch.setattr(loader, "_run_subprocess_with_streaming_log", resolver)
+    expected = RuntimeError if case == "compatible" else SharedDependencyError
+    message = "bundled pip is missing" if case == "compatible" else "lxml"
+    with pytest.raises(expected, match=message) as error:
+        await loader._acquire_dependency_wheels(
+            SimpleNamespace(),
+            SimpleNamespace(python_executable="chosen-python"),
+            SimpleNamespace(
+                distributions=(
+                    {} if case == "invisible" else {"lxml": observed}
+                ),
+                marker_environment={},
+            ),
+            tmp_path / "site",
+            "sample-plugin",
+            requirements,
+            dependency_context=context,
+        )
+    if case == "compatible":
+        pip.assert_called_once_with("chosen-python", isolated=True)
+    else:
+        pip.assert_not_called()
+        assert error.value.reason_code == "DEPENDENCY_ENVIRONMENT_PROTECTED"
+        assert ("6.1.1" if case == "conflict" else "6.1.3") in str(error.value)
+    resolver.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_immutable_installer_without_pip_never_runs_ensurepip(
     tmp_path,
     monkeypatch,

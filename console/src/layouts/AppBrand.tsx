@@ -60,12 +60,14 @@ function UpdateCodeBlock({ code }: { code: string }) {
 }
 
 interface AppBrandProps {
+  footerLabel?: ReactNode;
   action?: ReactNode;
   hidden?: boolean;
   version?: string;
 }
 
 export default function AppBrand({
+  footerLabel,
   action,
   hidden = false,
   version: versionProp,
@@ -346,23 +348,32 @@ export default function AppBrand({
 
   return (
     <>
-      <div className={styles.appBrand} hidden={hidden}>
-        <span className={styles.appBrandLogo} onClick={handleLogoClick}>
-          <Slot name="header.logo" kind="replace">
-            <img
-              src={`${import.meta.env.BASE_URL}${
-                isDark
-                  ? "ugsci-mono/brand/lockup-white.svg"
-                  : "ugsci-mono/brand/lockup-black.svg"
-              }`}
-              alt="UGSci"
-              className={styles.logoImg}
-            />
-          </Slot>
-        </span>
-        <span className={styles.logoDivider} />
+      <div
+        className={
+          footerLabel ? styles.workspaceVersionFooter : styles.appBrand
+        }
+        hidden={hidden}
+      >
+        {footerLabel || (
+          <span className={styles.appBrandLogo} onClick={handleLogoClick}>
+            <Slot name="header.logo" kind="replace">
+              <img
+                src={`${import.meta.env.BASE_URL}${
+                  isDark
+                    ? "ugsci-mono/brand/lockup-white.svg"
+                    : "ugsci-mono/brand/lockup-black.svg"
+                }`}
+                alt="UGSci"
+                className={styles.logoImg}
+              />
+            </Slot>
+          </span>
+        )}
+        {!footerLabel && <span className={styles.logoDivider} />}
         {versionContent}
-        {action && <span className={styles.appBrandAction}>{action}</span>}
+        {!footerLabel && action && (
+          <span className={styles.appBrandAction}>{action}</span>
+        )}
       </div>
 
       <Modal

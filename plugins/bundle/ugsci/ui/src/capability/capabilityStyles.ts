@@ -26,5 +26,13 @@ export const CAPABILITY_STYLES = `
 .ugsci-capability-detail-footer :is(.ant-btn-primary,.qwenpaw-btn-primary):not(:disabled) { color:var(--app-action-fg,#fff)!important; }
 .ugsci-capability-advanced summary { cursor:pointer; padding:12px 0; font-weight:500; }
 .ugsci-capability-card-title button:focus-visible { outline:2px solid var(--app-accent); outline-offset:3px; border-radius:4px; }
+.ugsci-skill-detail { max-width:1120px; }
+.ugsci-skill-definition { margin-top:24px; border-top:1px solid var(--app-border-subtle,var(--app-border)); padding-top:20px; min-width:0; }
+.ugsci-skill-definition h3 { font-size:16px; margin:0 0 12px; }
+.ugsci-skill-markdown { line-height:1.8; overflow-wrap:anywhere; }
+.ugsci-skill-markdown pre { overflow:auto; padding:16px; background:var(--app-fill-subtle); border-radius:8px; }
+.ugsci-skill-markdown :is(img,table) { max-width:100%; }
+.ugsci-skill-markdown table { display:block; overflow:auto; }
+.ugsci-skill-source { white-space:pre-wrap; overflow-wrap:anywhere; font:13px/1.8 var(--app-font-mono,monospace); padding:16px; background:var(--app-fill-subtle); border-radius:8px; }
 @media(max-width:680px) { .ugsci-capabilities { padding:16px; } .ugsci-capability-detail { padding:16px; } }
 `;

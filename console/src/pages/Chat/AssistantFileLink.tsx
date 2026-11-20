@@ -12,9 +12,12 @@ import styles from "./AssistantFileLink.module.less";
 import {
   DIRECTORY_REFERENCE_HREF_PREFIX,
   FILE_REFERENCE_HREF_PREFIX,
+  IMAGE_REFERENCE_HREF_PREFIX,
   directoryReferenceFromText,
 } from "./fileReferenceMarkdown";
 import { isDefaultWorkspaceMarkdown } from "../../features/files-workspace/defaultWorkspaceMarkdown";
+import InlineFileImage from "../../features/files-workspace/InlineFileImage";
+import { mimeFromExtension } from "../../utils/mimeForPreview";
 
 export const AssistantFileReferenceScope = createContext<FilePreviewScope>({});
 
@@ -27,8 +30,9 @@ export function AssistantFileLink(props: ComponentProps) {
   const prefix = [
     FILE_REFERENCE_HREF_PREFIX,
     DIRECTORY_REFERENCE_HREF_PREFIX,
+    IMAGE_REFERENCE_HREF_PREFIX,
   ].find((candidate) => href.startsWith(candidate));
-  const inferred = Boolean(prefix);
+  const inferred = Boolean(prefix && prefix !== IMAGE_REFERENCE_HREF_PREFIX);
   if (prefix) {
     try {
       href = decodeURIComponent(href.slice(prefix.length));
@@ -78,7 +82,7 @@ export function AssistantFileLink(props: ComponentProps) {
       ? Code2
       : FileText;
   const Icon = directory ? FolderOpen : FileIcon;
-  return (
+  const link = (
     <a
       href={href}
       className={styles.reference}
@@ -128,4 +132,19 @@ export function AssistantFileLink(props: ComponentProps) {
       )}
     </a>
   );
+  if (
+    !inferred &&
+    !directory &&
+    !target.line &&
+    typeof label === "string" &&
+    mimeFromExtension(target.path)?.startsWith("image/")
+  ) {
+    return (
+      <span className={styles.imageLink}>
+        <InlineFileImage target={target} scope={scope} alt={label} />
+        {link}
+      </span>
+    );
+  }
+  return link;
 }

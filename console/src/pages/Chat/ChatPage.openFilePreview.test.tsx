@@ -5,7 +5,13 @@
  * This file covers the same user path with a thinner render surface.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { Children, isValidElement } from "react";
 import { useWorkspaceQuotes } from "../../features/files-workspace/workspaceQuotes";
 import { readAnswerQuotes, consumeAnswerQuotes } from "./answerQuotes";
@@ -436,6 +442,11 @@ describe("ChatPage message Markdown action", () => {
     const open = await screen.findByRole("button", {
       name: /^(打开工作区|Open Workspace|files.openWorkspace)$/i,
     });
+    expect(
+      within(screen.getByTestId("chat-ui")).queryByRole("button", {
+        name: /^(终端|Terminal|terminal.title)$/i,
+      }),
+    ).not.toBeInTheDocument();
     expect(open.querySelector(".lucide-panel-right-open")).toBeInTheDocument();
     fireEvent.click(open);
     expect(
@@ -792,4 +803,30 @@ describe("ChatPage message Markdown action", () => {
       fileReferenceFixture.workspaceQuote = false;
     }
   });
+});
+
+it("routes floating preview requests through the mounted chat scope and rejects another session", async () => {
+  renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+  await screen.findByTestId("chat-ui");
+  const target = { source: "workspace" as const, path: "preview.png" };
+  act(() =>
+    openFilePreview(
+      target,
+      null,
+      { agentId: "default", sessionId: "other" },
+      "floating",
+    ),
+  );
+  expect(useFilesSurfaceStore.getState().sessionDrawers).toEqual({});
+  act(() =>
+    openFilePreview(
+      target,
+      null,
+      { agentId: "default", sessionId: "new" },
+      "floating",
+    ),
+  );
+  expect(
+    useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+  ).toMatchObject({ kind: "preview", target, presentation: "floating" });
 });

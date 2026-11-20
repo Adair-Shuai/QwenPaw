@@ -14,6 +14,7 @@ import { removePluginRuntime } from "./pluginRuntimeCleanup";
 import { harnessRegistry, refreshHarnessCatalog } from "./harnesses";
 import { subscribeToPluginChanges } from "../utils/pluginChangeEvents";
 import { routeRegistry } from "./registry/store";
+import { notifyPluginChange } from "../utils/pluginChangeEvents";
 
 export interface PluginLoadSummary {
   loaded: number;
@@ -37,6 +38,7 @@ interface FrontendPluginInfo {
 // slots, and React keys. Manifest refreshes must therefore be idempotent per
 // plugin revision while still allowing an upgraded bundle to run.
 const loadedPluginRevisions = new Map<string, string>();
+let observedManifestRevision = "";
 
 const loadingPlugins = new Map<string, Promise<void>>();
 const pendingRequests = new Map<
@@ -283,6 +285,15 @@ export async function loadAllPlugins(
     await refreshHarnessCatalog().catch(() => {});
   // A slow earlier manifest must not restore plugins removed by a newer one.
   if (request !== manifestRequest) return { loaded: 0, failed: [] };
+  observedManifestRevision = JSON.stringify(
+    plugins
+      .map((plugin) => [
+        plugin.id,
+        plugin.frontend_revision || plugin.version,
+        plugin.enabled,
+      ])
+      .sort(),
+  );
   const loadable = plugins.filter(canExecute);
   const loadableIds = new Set(loadable.map((plugin) => plugin.id));
   const removals = [
@@ -416,7 +427,20 @@ export function resetPawAppLoaderForTests(): void {
   revision = 0;
   pendingRequests.clear();
   loadedPluginRevisions.clear();
+  observedManifestRevision = "";
   manifestRequest = 0;
   intentSequence = 0;
   pluginIntents.clear();
+}
+
+/** Observe backend hot updates in every open browser and native window. */
+export async function synchronizeFrontendPlugins(): Promise<void> {
+  const previous = JSON.stringify([...loadedPluginRevisions]);
+  const previousManifest = observedManifestRevision;
+  await loadAllPlugins();
+  if (
+    JSON.stringify([...loadedPluginRevisions]) !== previous ||
+    observedManifestRevision !== previousManifest
+  )
+    notifyPluginChange();
 }

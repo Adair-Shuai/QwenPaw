@@ -34,6 +34,7 @@ repos:
     rev: v1.7.0
     hooks:
       - id: mypy
+        entry: python scripts/mypy_namespace.py
         # The author fixture is checked strictly against the installed SDK by
         # scripts/check_plugin_sdk_artifacts.py during manual artifact validation.
         exclude:
@@ -57,6 +58,7 @@ repos:
           --disable-error-code=truthy-function,
           --follow-imports=skip,
           --explicit-package-bases,
+          --,
         ]
   - repo: https://github.com/psf/black
     rev: 23.3.0

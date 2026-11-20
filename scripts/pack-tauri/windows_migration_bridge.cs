@@ -58,7 +58,7 @@ internal static class UGSciMigrationBridge
         }
         catch (Exception error)
         {
-            MessageBox.Show(error.Message, "UGSci Desktop Update",
+            MessageBox.Show(error.Message, "UGSci Update",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 3;
         }

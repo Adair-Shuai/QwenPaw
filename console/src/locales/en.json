@@ -11,7 +11,16 @@
     "appsFailed": "Applications could not be loaded",
     "retryApps": "Reload applications",
     "openFailed": "Could not open the file. Retry or download it to open.",
-    "revealFailed": "Could not show the delivered file. Please retry."
+    "revealFailed": "Could not show the delivered file. Please retry.",
+    "floatPreview": "Floating preview",
+    "fileMenu": "File actions",
+    "copyPath": "Copy path",
+    "copyImage": "Copy image",
+    "copyFailed": "Could not copy. Try again.",
+    "copied": "Copied",
+    "saveAs": "Save as…",
+    "download": "Download",
+    "dock": "Dock in sidebar"
   },
   "globalSearch": {
     "user": "You",
@@ -75,10 +84,16 @@
     "deliveredCount": "{{count}} deliverables",
     "downloadTurn": "Download turn archive",
     "archiveHint": "This delivery is preserved independently of later changes",
+    "versionDetails": "Version and archive",
+    "changedCount": "Edited {{count}} files",
+    "diffSplit": "Side by side",
+    "diffUnified": "Unified",
+    "diffWrap": "Wrap lines",
     "interrupted": "This turn did not finish normally. Files captured before it ended remain available.",
     "overlap": "Other tasks used these directories at the same time. Changes may include their writes.",
     "incomplete": "Some files could not be captured fully. See capture details.",
     "captureDetails": "Capture details",
+    "scanDetails": "Other workspace file scan details",
     "status": {
       "created": "Added",
       "modified": "Modified",
@@ -90,6 +105,9 @@
     "diff": "View changes",
     "openCurrent": "Open current file",
     "openArchive": "Open archived file",
+    "openBefore": "Preview previous version",
+    "previousVersionLabel": "Before",
+    "downloadPrevious": "Download previous version",
     "downloadBefore": "Download version before deletion",
     "download": "Download this turn's version",
     "unavailable": "This version was not archived and cannot be previewed or downloaded.",
@@ -101,7 +119,9 @@
     "diffTruncated": "Only part of the content is shown. Download the archive for the complete file.",
     "collapse": "Collapse file list",
     "showAll": "Show all {{count}} files",
-    "downloadFailed": "Download failed. Please try again."
+    "downloadFailed": "Download failed. Please try again.",
+    "selectFile": "Select file",
+    "diffUnsupported": "Text comparison is unavailable. Open a preview or download the file."
   },
   "accessibility": {
     "skipToContent": "Skip to content"
@@ -181,16 +201,16 @@
   },
   "desktop": {
     "update": {
-      "title": "Update QwenPaw?",
+      "title": "Update UGSci?",
       "otherWindows": "{{count}} other windows are open.",
       "otherWindows_one": "{{count}} other window is open.",
       "otherWindows_other": "{{count}} other windows are open.",
-      "description": "Updating will close all QwenPaw windows and interrupt running tasks.",
-      "confirm": "Close and update",
+      "description": "Updating will close all UGSci windows and interrupt running tasks.",
+      "confirm": "Close and update UGSci",
       "preparing": "Closing windows…"
     },
     "closeWindow": {
-      "title": "Close QwenPaw?",
+      "title": "Close UGSci?",
       "description": "Keep running in the background to continue your tasks. Quitting completely ends running tasks.",
       "remember": "Remember my choice",
       "showWindow": "Show Window",
@@ -199,7 +219,7 @@
       "keepRunning": "Run in background",
       "quitting": "Quitting…",
       "stopService": "Quit completely",
-      "stopBlocked": "QwenPaw is still in use in other windows or apps. Close them before quitting completely.",
+      "stopBlocked": "UGSci is still in use in other windows or apps. Close them before quitting completely.",
       "preference": "Close Window",
       "askEveryTime": "Ask every time"
     },
@@ -210,6 +230,13 @@
       "retry": "Try again",
       "theme": "Switch appearance",
       "controls": "Desktop controls"
+    },
+    "window": {
+      "minimize": "Minimize window",
+      "maximize": "Maximize window",
+      "restore": "Restore window",
+      "close": "Close window",
+      "failed": "Window action failed. Please try again."
     }
   },
   "chunkError": {
@@ -491,6 +518,7 @@
     "windows": "windows"
   },
   "sidebar": {
+    "pinEntry": "Pin to sidebar",
     "moreGroups": {
       "work": "Work & notifications",
       "configuration": "Configuration",
@@ -520,7 +548,13 @@
     "foldTools": "Collapse menu",
     "expandTools": "Expand menu",
     "dragHandle": "Drag sidebar to float; Enter to toggle docking",
-    "dock": "Return sidebar to left edge",
+    "dock": {
+      "left": "Dock left",
+      "right": "Dock right",
+      "bottom": "Dock bottom",
+      "floating": "Float",
+      "handle": "Drag navigation, or click to choose a dock position"
+    },
     "newVersion": "New version available: v{{version}}, click to upgrade",
     "updateModal": {
       "checkUpdates": "Check for updates",
@@ -538,7 +572,7 @@
       "title": "New version available: v{{version}}",
       "viewReleases": "View Releases",
       "installDesktopUpdate": "Update Now",
-      "desktopInstallHint": "QwenPaw Desktop {{version}} is ready to install. The app will restart after the update.",
+      "desktopInstallHint": "UGSci {{version}} is ready to install. The app will restart after the update.",
       "checking": "Checking for updates…",
       "checkingHint": "Confirming the latest release",
       "downloading": "Downloading update",
@@ -555,7 +589,7 @@
       "errors": {
         "network": "Couldn't reach the update server. Check your internet and try again.",
         "signature": "Update file signature invalid. Try downloading again.",
-        "appLocation": "QwenPaw is running from a read-only macOS location. Move QwenPaw.app to the Applications folder, launch it from there, then try updating again.",
+        "appLocation": "UGSci is running from a read-only macOS location. Move UGSci.app to the Applications folder, launch it from there, then try updating again.",
         "other": "Update failed."
       },
       "updateLater": "Download in Background",
@@ -577,7 +611,7 @@
     "pageStyles": {
       "classic": "Original layout",
       "deepseek": "Simple style",
-      "dual-sidebar": "Dual sidebar"
+      "dual-sidebar": "UGSci Yanjing layout"
     },
     "dualSidebar": {
       "home": "Home",
@@ -598,7 +632,7 @@
     "moreFeatures": "More",
     "interfaceStyles": {
       "classic": "Original",
-      "warm-minimal": "Warm minimal",
+      "warm-minimal": "Yanjing warm white",
       "cool-workspace": "Cool workspace",
       "soft-focus": "Soft focus"
     },
@@ -3574,6 +3608,7 @@
     "loadFailed": "Failed to load the file. Check that it is still in the primary working directory of the current agent workspace.",
     "previewUnavailable": "Preview is unavailable. Metadata and download remain available.",
     "mentionInChat": "Mention in Chat",
+    "mentionFailed": "Could not add this file reference to the draft.",
     "expandWorkspace": "Expand workspace",
     "openWorkspace": "Open workspace",
     "closeWorkspace": "Close workspace",
@@ -6026,6 +6061,10 @@
     "update": "Update",
     "updateAll": "Update all",
     "updateSuccess": "Plugin updated successfully",
+    "confirmDependencyUpdate": "Review dependencies",
+    "coreUpdateRequired": "This update requires a newer UGSci version. Update the main application first.",
+    "updateRestartRequired": "Update completed. Restart to activate it.",
+    "ugsciUpgradeQueued": "Update scheduled. It will activate after restart.",
     "updateAllSuccess": "All plugins updated successfully",
     "updateAllResult": "{{succeeded}} plugins updated; {{failed}} failed: {{names}}",
     "updateFailed": "Plugin update failed",

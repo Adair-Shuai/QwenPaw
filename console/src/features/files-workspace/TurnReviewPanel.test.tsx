@@ -82,14 +82,6 @@ it("reviews the selected real archived turn and requests its exact diff instead 
     name: i18n.t("workbench.review.turn"),
   });
   fireEvent.change(select, { target: { value: "old" } });
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: `${i18n.t("delivery.openWith")} old.txt`,
-    }),
-  );
-  fireEvent.click(
-    await screen.findByRole("menuitem", { name: i18n.t("turnFiles.diff") }),
-  );
   expect(await screen.findByTestId("archive-diff")).toHaveTextContent(
     "archived before → archived after",
   );

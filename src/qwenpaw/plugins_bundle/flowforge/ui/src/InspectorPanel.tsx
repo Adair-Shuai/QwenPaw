@@ -35,7 +35,8 @@ export function InspectorPanel({
       onClose,
       width: Math.min(420, window.innerWidth),
       extra,
-      children,
+      styles: { body: { padding: 0, overflow: "hidden", display: "flex" } },
+      children: <div className="ff-properties-content">{children}</div>,
     });
   if (!open) return null;
   return (

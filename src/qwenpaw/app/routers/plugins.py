@@ -34,7 +34,7 @@ from ...distribution import (
     EXTERNAL_PLUGIN_UPGRADE_HOSTS,
     upgrade_source_requires_digest,
 )
-from ...utils.windows_paths import copy_tree, extract_zip, io_path, remove_tree
+from ...utils.windows_paths import copy_tree, extract_zip, io_path
 
 from ...plugins.dependency_upgrade import (
     DependencyUpgradeRequired,
@@ -349,6 +349,9 @@ def _list_plugins_from_disk() -> list[dict]:
 
     from ...plugins.loader import _is_disabled_plugin_dir
 
+    from ...plugins.downloaded_updates import pending_update_summaries
+
+    pending = pending_update_summaries()
     result: list[dict] = []
     for item in sorted(plugins_dir.iterdir()):
         if not item.is_dir():
@@ -390,6 +393,11 @@ def _list_plugins_from_disk() -> list[dict]:
                 "installation_origin": read_plugin_origin(
                     plugins_dir,
                     manifest.id,
+                ),
+                **(
+                    {"pending_update": pending[manifest.id]}
+                    if manifest.id in pending
+                    else {}
                 ),
             },
         )
@@ -473,6 +481,7 @@ async def _load_plugin_with_optional_force_reinstall(
     pawport_owner: dict | None = None,
     recover_incomplete: bool = False,
     installation_source: str = "",
+    after_force_unload=None,
 ):
     """Load a plugin, optionally unloading first under one lifecycle lock.
 
@@ -510,6 +519,11 @@ async def _load_plugin_with_optional_force_reinstall(
         pawport_owner=pawport_owner,
         recover_incomplete=recover_incomplete,
         installation_source=installation_source,
+        **(
+            {"after_force_unload": after_force_unload}
+            if after_force_unload is not None
+            else {}
+        ),
     )
 
 
@@ -687,6 +701,8 @@ class ReplacePluginRequest(BaseModel):
     version: str | None = None
     sha256: str | None = None
     interrupt_tasks: bool = False
+    defer_if_needed: bool = False
+    background: bool = False
 
 
 async def install_plugin_source(
@@ -1430,12 +1446,58 @@ async def replace_installed_plugin(
             detail=f"Plugin '{plugin_id}' is not installed.",
         )
 
+    from ...plugins.downloaded_updates import _records
+
+    pending_update = (await asyncio.to_thread(_records)).get(plugin_id, {})
+    pending_operation = pending_update.get("operation_id", "")
     temp_dir = Path(await asyncio.to_thread(tempfile.mkdtemp))
     zip_path = temp_dir / "plugin.zip"
     backup_path: Path | None = None
+    retained_archive = temp_dir / "verified.zip"
+    cached = None
+
+    async def defer_update(dependency_operation_id=None):
+        from ...plugins.downloaded_updates import queue_downloaded_plugin
+
+        if not retained_archive.is_file():
+            return None
+        await asyncio.to_thread(
+            queue_downloaded_plugin,
+            body,
+            retained_archive,
+            dependency_operation_id=dependency_operation_id,
+        )
+        return {
+            "id": plugin_id,
+            "name": plugin_id,
+            "version": body.version,
+            "loaded": False,
+            "queued": True,
+            "downloaded": True,
+            "restart_required": not bool(dependency_operation_id),
+            "requires_confirmation": bool(dependency_operation_id),
+        }
+
     try:
+        from ...plugins.downloaded_updates import pending_dependency_operation
+
+        operation = await pending_dependency_operation(
+            loader,
+            pending_update,
+            body.version,
+            body.source,
+            background=body.background,
+        )
+        if operation is not None:
+            raise DependencyUpgradeRequired(operation)
         if bundled_source is None:
-            await _async_download(source, zip_path)
+            from ...plugins.downloaded_updates import cached_archive
+
+            cached = await asyncio.to_thread(cached_archive, body)
+            if cached is not None:
+                await asyncio.to_thread(shutil.copyfile, cached, zip_path)
+            else:
+                await _async_download(source, zip_path)
             actual_sha256 = await asyncio.to_thread(_sha256_file, zip_path)
             if expected_sha256 and actual_sha256 != expected_sha256:
                 raise ValueError("Plugin archive SHA256 verification failed")
@@ -1444,6 +1506,11 @@ async def replace_installed_plugin(
                 zip_path,
                 expected_plugin_id=plugin_id,
                 expected_version=(body.version or "").strip() or None,
+            )
+            await asyncio.to_thread(
+                shutil.copyfile,
+                zip_path,
+                retained_archive,
             )
             source_path = await asyncio.to_thread(
                 _extract_downloaded_plugin_zip,
@@ -1454,6 +1521,13 @@ async def replace_installed_plugin(
             source_path = bundled_source
 
         from packaging.version import Version
+
+        await _stamp_market_provenance(source_path, source)
+        _, incoming_manifest = await asyncio.to_thread(
+            loader.read_source_manifest,
+            source_path,
+        )
+        body = body.model_copy(update={"version": incoming_manifest.version})
 
         # Backup and replacement share one reentrant lifecycle lock.
         async with loader.plugin_lifecycle(plugin_id):
@@ -1497,23 +1571,91 @@ async def replace_installed_plugin(
                 concrete_backup_path,
             )
 
-            record = await _load_plugin_with_optional_force_reinstall(
-                loader,
-                request,
-                source_path,
-                force=True,
-                **_interrupt_options(body.interrupt_tasks),
-                installation_source=body.source,
-            )
+            if body.defer_if_needed or cached is not None:
+                from ...components.update import (
+                    ComponentUpdater,
+                    ComponentUpdatePlan,
+                )
+                from ...components.runtime_updates import (
+                    preserve_candidate_data,
+                )
+                from ...update_policy import DEFAULT_PRESERVE_PATHS
+
+                preservation = ComponentUpdater(
+                    public_key_b64="",
+                    managed_components={plugin_id},
+                    core_version="0.0.0",
+                    backup_root=plugins_dir.parent / "components" / "backups",
+                )
+                preserve_paths = (
+                    (*DEFAULT_PRESERVE_PATHS, "visualization/data")
+                    if plugin_id == "ugsci"
+                    else DEFAULT_PRESERVE_PATHS
+                )
+                plan = ComponentUpdatePlan(
+                    plugin_id,
+                    current_manifest.version,
+                    incoming_manifest.version,
+                    "full",
+                    "",
+                    "",
+                    "",
+                    preserve_paths,
+                    None,
+                )
+
+                async def preserve(_plugin_id):
+                    await asyncio.to_thread(
+                        preserve_candidate_data,
+                        preservation,
+                        plan,
+                        destination,
+                        source_path,
+                    )
+
+                if loader.get_loaded_plugin(plugin_id) is None:
+                    await preserve(plugin_id)
+                record = await _load_plugin_with_optional_force_reinstall(
+                    loader,
+                    request,
+                    source_path,
+                    force=True,
+                    **_interrupt_options(body.interrupt_tasks),
+                    after_force_unload=preserve,
+                    installation_source=body.source,
+                )
+            else:
+                record = await _load_plugin_with_optional_force_reinstall(
+                    loader,
+                    request,
+                    source_path,
+                    force=True,
+                    **_interrupt_options(body.interrupt_tasks),
+                    installation_source=body.source,
+                )
     except HTTPException:
         raise
     except (DependencyUpgradeRequired, SharedDependencyError) as exc:
+        if isinstance(exc, DependencyUpgradeRequired):
+            deferred = await defer_update(exc.operation["id"])
+            if body.background and deferred is not None:
+                return deferred
         raise dependency_http_error(exc) from exc
     except PluginBusyError as exc:
+        if body.defer_if_needed:
+            deferred = await defer_update()
+            if deferred is not None:
+                return deferred
         # Busy is raised before the lifecycle transaction mutates the plugin.
         # Preserve the confirmation contract and do not attempt a reinstall.
         raise HTTPException(status_code=409, detail=exc.detail) from exc
     except Exception as exc:
+        if body.defer_if_needed and (
+            getattr(exc, "needs_restart", False) or "needs_restart" in str(exc)
+        ):
+            deferred = await defer_update()
+            if deferred is not None:
+                return deferred
         # Only the loader may roll back its transaction under the lock.
         # Retrying here can overwrite a later successful replacement.
         if isinstance(exc, (ValueError, zipfile.BadZipFile)):
@@ -1527,9 +1669,16 @@ async def replace_installed_plugin(
             detail=f"Plugin upgrade failed: {exc}",
         ) from exc
     finally:
-        if await asyncio.to_thread(temp_dir.exists):
-            await asyncio.to_thread(remove_tree, temp_dir)
+        await loader.cleanup_preparation_source(temp_dir)
 
+    from ...plugins.downloaded_updates import acknowledge_downloaded_plugin
+
+    await asyncio.to_thread(
+        acknowledge_downloaded_plugin,
+        plugin_id,
+        record.manifest.version,
+        pending_operation,
+    )
     return {
         "id": record.manifest.id,
         "name": record.manifest.name,

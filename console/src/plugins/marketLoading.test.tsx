@@ -186,4 +186,309 @@ describe.each([
       ),
     ).toBe(false);
   });
+
+  it("installs a signed expert package through the mounted market and resumes a failed job", async () => {
+    const fallback = fetchHost.getMockImplementation()!;
+    let status = "planned";
+    let attempts = 0;
+    const job = () => ({
+      id: "a".repeat(64),
+      name: "方法专家",
+      status,
+      runtime_verified: status === "ready",
+      optional_setup: ["商业模拟器"],
+    });
+    fetchHost.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/expert-packages/plan")
+        return Response.json({
+          ...job(),
+          version: "1.0.0",
+          skills: 2,
+          download_bytes: 1024,
+        });
+      if (url === "/expert-packages/installations")
+        return Response.json(status === "planned" ? [] : [job()]);
+      if (
+        url.startsWith("/expert-packages/installations/") &&
+        init?.method === "POST"
+      ) {
+        attempts += 1;
+        status = attempts === 1 ? "failed" : "verifying";
+        return Response.json({
+          ...job(),
+          error: status === "failed" ? "下载中断" : undefined,
+        });
+      }
+      return fallback(url, init);
+    });
+    await openMarket();
+    finishExperts(
+      Response.json({
+        agents: [
+          {
+            id: "methods",
+            name: "方法专家",
+            description: "带方法库",
+            tags: [],
+            package_manifest: "expert-packages/manifests/test.json",
+          },
+        ],
+      }),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: /人才市场/ }));
+    await userEvent.click(await screen.findByText("方法专家"));
+    await userEvent.click(screen.getByRole("button", { name: "安装专家包" }));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/2 个技能，配套方法服务与运行依赖/),
+      ).toBeVisible(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "安装专家包" }));
+    expect(await screen.findByText("方法专家 · 安装失败")).toBeVisible();
+    expect(
+      screen.queryByText("方法专家 · 基础能力已就绪"),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "继续安装" }));
+    expect(await screen.findByText("方法专家 · 执行方法自检")).toBeVisible();
+    status = "starting";
+    expect(
+      await screen.findByText(
+        "方法专家 · 启动专家并检查方法工具",
+        {},
+        { timeout: 4000 },
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "取消安装" })).toBeDisabled();
+    status = "startup_failed";
+    expect(
+      await screen.findByText(
+        "方法专家 · 已安装，启动检查未通过",
+        {},
+        { timeout: 4000 },
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("方法专家 · 基础能力已就绪"),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "重试启动" }));
+    status = "ready";
+    expect(
+      await screen.findByText(
+        "方法专家 · 基础能力已就绪",
+        {},
+        { timeout: 4000 },
+      ),
+    ).toBeVisible();
+    expect(screen.getByText(/可选能力需另行配置：商业模拟器/)).toBeVisible();
+    expect(
+      fetchHost.mock.calls.some(
+        ([url, init]) => url === "/agents" && init?.method === "POST",
+      ),
+    ).toBe(false);
+    expect(attempts).toBe(3);
+  });
+
+  it("opens scoped expert recovery actions and rejects unknown destinations", async () => {
+    const host = (window as any).QwenPaw.host;
+    let selected = "researcher";
+    const events: string[] = [];
+    host.setSelectedAgent = vi.fn((id: string) => {
+      selected = id;
+      events.push(`select:${id}`);
+    });
+    const navigate = vi.fn((route: string) =>
+      events.push(`navigate:${selected}:${route}`),
+    );
+    host.useNavigate = () => navigate;
+    const fallback = fetchHost.getMockImplementation()!;
+    fetchHost.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/expert-packages/installations")
+        return Response.json([
+          ...["models", "skills", "tools", "https://untrusted.example"].map(
+            (action, index) => ({
+              id: String(index).repeat(64),
+              agent_id: `expert-${action}`,
+              name: action,
+              status: "startup_failed",
+              error: "请完成配置后重试",
+              problem: {
+                code:
+                  action === "models"
+                    ? "model_required"
+                    : action === "skills"
+                    ? "skills_required"
+                    : action === "tools"
+                    ? "service_unavailable"
+                    : "required",
+                action,
+              },
+            }),
+          ),
+          {
+            id: "e".repeat(64),
+            name: "旧版环境",
+            status: "repair_required",
+            error: "运行环境需要修复",
+          },
+        ]);
+      return fallback(url, init);
+    });
+    await openMarket();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "选择对话模型" }),
+    );
+    expect(navigate).toHaveBeenLastCalledWith("/models");
+    expect(host.setSelectedAgent).not.toHaveBeenCalled();
+    expect(screen.getByText("models · 待选择对话模型")).toBeVisible();
+    expect(screen.getByText("skills · 待补齐必需技能")).toBeVisible();
+    expect(screen.getByText("tools · 方法服务尚未可用")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "检查必需技能" }));
+    await userEvent.click(screen.getByRole("button", { name: "检查方法服务" }));
+    expect(events).toEqual([
+      "navigate:researcher:/models",
+      "select:expert-skills",
+      "navigate:expert-skills:/ugsci-tools-skills?tab=skills",
+      "select:expert-tools",
+      "navigate:expert-tools:/ugsci-tools-skills?tab=tools",
+    ]);
+    await userEvent.click(screen.getByRole("button", { name: "查看专家配置" }));
+    expect(navigate).toHaveBeenLastCalledWith("/ugsci-experts");
+    expect(
+      screen.queryByRole("button", { name: "继续安装" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "重试启动" })).toHaveLength(4);
+    delete host.setSelectedAgent;
+    await userEvent.click(screen.getByRole("button", { name: "检查必需技能" }));
+    expect(await screen.findByText(/无法切换到此专家/)).toBeVisible();
+    expect(navigate).toHaveBeenCalledTimes(4);
+  });
+
+  it("repairs an installed expert through the mounted market without recreating it", async () => {
+    const id = "f".repeat(64);
+    let status = "repair_required";
+    let rejectRepair = true;
+    const fallback = fetchHost.getMockImplementation()!;
+    const state = () => ({
+      id,
+      name: "待修复专家",
+      agent_id: "existing-expert",
+      status,
+      operation: "repair",
+      runtime_verified: false,
+      ...(status === "startup_failed"
+        ? { problem: { code: "agent_disabled", action: "experts" } }
+        : {}),
+    });
+    fetchHost.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/expert-packages/installations")
+        return Response.json([state()]);
+      if (url === `/expert-packages/installations/${id}/repair`) {
+        if (rejectRepair)
+          return Response.json({ detail: "请先停用专家" }, { status: 409 });
+        status = "repairing";
+        return Response.json(state());
+      }
+      if (url === `/expert-packages/installations/${id}`) {
+        status = "startup_failed";
+        return Response.json(state());
+      }
+      return fallback(url, init);
+    });
+    await openMarket();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "修复运行环境" }),
+    );
+    expect(await screen.findByText(/请先停用专家/)).toBeVisible();
+    rejectRepair = false;
+    await userEvent.click(screen.getByRole("button", { name: "修复运行环境" }));
+    expect(
+      await screen.findByText("待修复专家 · 准备新的运行环境"),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "取消修复" })).toBeEnabled();
+    status = "repair_committing";
+    await waitFor(
+      () =>
+        expect(screen.getByRole("button", { name: "取消修复" })).toBeDisabled(),
+      { timeout: 4000 },
+    );
+    status = "repair_failed";
+    await userEvent.click(
+      await screen.findByRole(
+        "button",
+        { name: "修复运行环境" },
+        { timeout: 4000 },
+      ),
+    );
+    for (const [next, label] of [
+      ["interrupted", "环境修复已中断，可重试"],
+      ["cancelled", "环境修复已取消"],
+    ]) {
+      status = next;
+      expect(
+        await screen.findByText(`待修复专家 · ${label}`, {}, { timeout: 4000 }),
+      ).toBeVisible();
+      await userEvent.click(
+        screen.getByRole("button", { name: "修复运行环境" }),
+      );
+    }
+    status = "repaired";
+    const start = await screen.findByRole(
+      "button",
+      { name: "检查并启动" },
+      { timeout: 4000 },
+    );
+    expect(
+      screen
+        .getByText("待修复专家 · 运行环境已修复，可检查启动")
+        .closest(".ant-alert"),
+    ).not.toHaveClass("ant-alert-success");
+    await userEvent.click(start);
+    expect(await screen.findByText("待修复专家 · 专家尚未启用")).toBeVisible();
+    const writes = fetchHost.mock.calls
+      .filter(([, init]) => init?.method === "POST")
+      .map(([url]) => url);
+    expect(writes).toEqual([
+      "/market/search",
+      ...Array(5).fill(`/expert-packages/installations/${id}/repair`),
+      `/expert-packages/installations/${id}`,
+    ]);
+    expect(
+      fetchHost.mock.calls.some(([, init]) => init?.method === "DELETE"),
+    ).toBe(false);
+  });
+
+  it("blocks expert package creation when the signed installation plan is rejected", async () => {
+    const fallback = fetchHost.getMockImplementation()!;
+    fetchHost.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/expert-packages/plan")
+        return Response.json({ detail: "专家包签名校验失败" }, { status: 400 });
+      return fallback(url, init);
+    });
+    await openMarket();
+    finishExperts(
+      Response.json({
+        agents: [
+          {
+            id: "bad",
+            name: "待验证专家",
+            description: "签名包",
+            tags: [],
+            package_manifest: "expert-packages/manifests/bad.json",
+          },
+        ],
+      }),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: /人才市场/ }));
+    await userEvent.click(await screen.findByText("待验证专家"));
+    await userEvent.click(screen.getByRole("button", { name: "安装专家包" }));
+    await waitFor(() =>
+      expect(screen.getByText(/专家包签名校验失败/)).toBeVisible(),
+    );
+    expect(screen.getByRole("button", { name: "安装专家包" })).toBeDisabled();
+    expect(
+      fetchHost.mock.calls.some(
+        ([url, init]) => url === "/agents" && init?.method === "POST",
+      ),
+    ).toBe(false);
+  });
 });

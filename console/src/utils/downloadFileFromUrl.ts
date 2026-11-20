@@ -57,7 +57,7 @@ function filenameFromContentDisposition(value: string | null): string {
 }
 
 /** Trigger a normal browser download by clicking a temporary blob-backed link. */
-function triggerBrowserDownload(blob: Blob, filename: string): void {
+export function triggerBrowserDownload(blob: Blob, filename: string): void {
   const a = document.createElement("a");
   const objectUrl = URL.createObjectURL(blob);
   a.href = objectUrl;

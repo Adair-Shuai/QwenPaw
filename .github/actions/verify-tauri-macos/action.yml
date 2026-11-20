@@ -1,6 +1,6 @@
 name: Verify Desktop (Tauri macOS)
 description: |
-  Unpack the Tauri .app zip, launch the real shell, require a native
+  Verify the drag-install DMG, copy and launch its signed app, require a native
   embedded-WKWebView plugin registration report, and run supplemental
   Playwright WebKit compatibility checks. Stop /
   cleanup / log upload steps live in the caller workflow because
