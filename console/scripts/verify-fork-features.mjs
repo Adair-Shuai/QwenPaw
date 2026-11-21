@@ -737,9 +737,11 @@ for (const [file, titles] of [
   ],
   [
     "src/plugins/storageLedger.test.tsx",
-    ["opens a duplicate well day and saves its source row and review reason",
-     "creates a project from the library and records data in its own scope",
-     "links a map well, comparison, casing source and pending day across independent documents"],
+    [
+      "opens a duplicate well day and saves its source row and review reason",
+      "creates a project from the library and records data in its own scope",
+      "links a map well, comparison, casing source and pending day across independent documents",
+    ],
   ],
   [
     "src/plugins/storageCapacity.test.tsx",

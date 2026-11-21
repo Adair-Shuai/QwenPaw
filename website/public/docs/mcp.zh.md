@@ -255,26 +255,26 @@ QwenPaw 提供了一组开箱即用的内置工具，智能体可以直接调用
 
 ### 内置工具列表
 
-| 类型         | 工具名称                  | 功能说明                                              |
-| ------------ | ------------------------- | ----------------------------------------------------- |
-| 文件操作     | `read_file`               | 读取文件内容，支持按行范围读取                        |
-| 文件操作     | `write_file`              | 创建或覆盖文件                                        |
-| 文件操作     | `edit_file`               | 使用查找替换修改文件内容（替换所有匹配项）            |
-| 文件操作     | `append_file`             | 追加内容到文件末尾                                    |
-| 文件搜索     | `grep_search`             | 按内容搜索文件，支持正则表达式和上下文                |
-| 文件搜索     | `glob_search`             | 按文件名模式查找文件                                  |
-| 网页搜索     | `web_search`              | 搜索网页，支持 DeepSeek、Tavily、AnySearch 和 Firecrawl         |
-| 网页读取     | `web_fetch`               | 读取网页内容并转换为 Markdown                         |
-| 命令执行     | `execute_shell_command`   | 执行 Shell 命令，支持异步执行                         |
-| 智能体委托   | `delegate_external_agent` | 通过 ACP 将任务委托给外部智能体 runner                |
-| 浏览器自动化 | `browser`                 | 通过 Unified Browser SDK 执行异步 Python 浏览器自动化 |
-| 截图         | `desktop_screenshot`      | 捕获桌面或窗口截图                                    |
-| 图像分析     | `view_image`              | 加载图片到上下文供模型分析                            |
-| 文件传输     | `send_file_to_user`       | 发送文件给用户，自动识别文件类型                      |
-| 记忆搜索     | `memory_search`           | 在 MEMORY.md 中语义搜索过往信息                       |
-| 时间         | `get_current_time`        | 获取当前时间和时区                                    |
-| 时间         | `set_user_timezone`       | 设置用户时区偏好                                      |
-| 统计         | `get_token_usage`         | 查询 LLM Token 使用量统计                             |
+| 类型         | 工具名称                  | 功能说明                                                |
+| ------------ | ------------------------- | ------------------------------------------------------- |
+| 文件操作     | `read_file`               | 读取文件内容，支持按行范围读取                          |
+| 文件操作     | `write_file`              | 创建或覆盖文件                                          |
+| 文件操作     | `edit_file`               | 使用查找替换修改文件内容（替换所有匹配项）              |
+| 文件操作     | `append_file`             | 追加内容到文件末尾                                      |
+| 文件搜索     | `grep_search`             | 按内容搜索文件，支持正则表达式和上下文                  |
+| 文件搜索     | `glob_search`             | 按文件名模式查找文件                                    |
+| 网页搜索     | `web_search`              | 搜索网页，支持 DeepSeek、Tavily、AnySearch 和 Firecrawl |
+| 网页读取     | `web_fetch`               | 读取网页内容并转换为 Markdown                           |
+| 命令执行     | `execute_shell_command`   | 执行 Shell 命令，支持异步执行                           |
+| 智能体委托   | `delegate_external_agent` | 通过 ACP 将任务委托给外部智能体 runner                  |
+| 浏览器自动化 | `browser`                 | 通过 Unified Browser SDK 执行异步 Python 浏览器自动化   |
+| 截图         | `desktop_screenshot`      | 捕获桌面或窗口截图                                      |
+| 图像分析     | `view_image`              | 加载图片到上下文供模型分析                              |
+| 文件传输     | `send_file_to_user`       | 发送文件给用户，自动识别文件类型                        |
+| 记忆搜索     | `memory_search`           | 在 MEMORY.md 中语义搜索过往信息                         |
+| 时间         | `get_current_time`        | 获取当前时间和时区                                      |
+| 时间         | `set_user_timezone`       | 设置用户时区偏好                                        |
+| 统计         | `get_token_usage`         | 查询 LLM Token 使用量统计                               |
 
 ### 工具详细说明
 

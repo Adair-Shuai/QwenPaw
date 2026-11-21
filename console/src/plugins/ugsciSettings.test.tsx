@@ -118,9 +118,7 @@ describe.each([
       screen.getByRole("textbox", { name: "搜索设置" }),
       "GenUI",
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "UGSci 设置" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "UGSci 设置" }));
     expect(screen.getByRole("heading", { name: "UGSci 设置" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "GenUI" })).toBeVisible();
     const toggle = await screen.findByRole("switch", { name: "启用 GenUI" });

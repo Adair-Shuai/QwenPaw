@@ -21,6 +21,7 @@ import zipfile
 from .official_channel_catalog import (
     bundled_channel_owners,
     official_channel_for_plugin,
+    official_channel_owners,
 )
 from .channel_bootstrap import (
     resolve_default_channel_runtime,
@@ -360,9 +361,9 @@ async def prepare_channel_upgrade():
                         or binding.description.payload.descriptor.channel_key
                         != key
                     ):
-                        errors[
-                            plugin_id
-                        ] = "OFFICIAL_CHANNEL_IDENTITY_MISMATCH"
+                        errors[plugin_id] = (
+                            "OFFICIAL_CHANNEL_IDENTITY_MISMATCH"
+                        )
                         continue
                     await loader.lifecycle.preflight_backend(
                         binding,

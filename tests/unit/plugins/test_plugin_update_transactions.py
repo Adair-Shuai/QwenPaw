@@ -511,9 +511,8 @@ async def test_channel_tombstone_cleanup_recovers_on_restart(
     from qwenpaw.plugins.settings import record_plugin_uninstall
 
     plugin_id = "telegram"
-    monkeypatch.setattr(__name__ + ".PLUGIN_ID", plugin_id)
     loader, _, plugins = update_environment
-    source = _source(tmp_path / "source", "1.0.0")
+    source = _source(tmp_path / "source", "1.0.0", plugin_id=plugin_id)
 
     def remove_channel(cfg):
         cfg.channel_plugin_state.uninstalled.append(plugin_id)
