@@ -51,6 +51,11 @@ jobs:
           esac
           python -m compileall -q "$PLUGIN_DIR/backend"
           python -m pip install -e ".[test]"
+          requirements=$(jq -r '(.dependencies // [])[]' "$PLUGIN_DIR/plugin.json")
+          if [ -n "$requirements" ]; then
+            mapfile -t app_requirements <<< "$requirements"
+            python -m pip install -- "${app_requirements[@]}"
+          fi
           python -m pytest tests/unit/pawapp/test_app_contract.py -q
           case "$PLUGIN_ID" in
             research-agenda|storage-ledger|surface-network)
