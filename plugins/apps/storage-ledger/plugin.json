@@ -1,0 +1,30 @@
+{
+  "id": "storage-ledger",
+  "name": "储气库数据管理",
+  "type": "app",
+  "version": "0.3.0",
+  "author": "UGSci Team",
+  "description": "储气库工程数据管理，提供项目库、井位图、单井及对井曲线、井筒结构、地面管网、日报质控、来源追溯与备份恢复。",
+  "dependencies": ["openpyxl>=3.1", "xlrd>=2.0"],
+  "pack_exclude": ["src", "build.mjs"],
+  "entry": {
+    "backend": "backend/main.py",
+    "frontend": "ui/index.js"
+  },
+  "qwenpaw_version": {
+    "min": "2.2.2b9",
+    "max": "3.0.0"
+  },
+  "meta": {
+    "pawapp": {
+      "icon": "▥",
+      "category": "research",
+      "entry_page": "/apps/storage-ledger",
+      "launch_scope": "page"
+    },
+    "permissions": {
+      "chat": false,
+      "storage": false
+    }
+  }
+}

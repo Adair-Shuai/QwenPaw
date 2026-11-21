@@ -1,0 +1,22 @@
+{
+  "id": "brainstorm",
+  "name": "头脑风暴",
+  "version": "0.1.0",
+  "type": "app",
+  "description": "从一个问题开始，通过连续追问、换角度和自由发散探索想法，把讨论整理成待验证的假设和行动。",
+  "author": "UGSci Team",
+  "channel": "ugsci",
+  "dependencies": ["defusedxml>=0.7.1", "pypdf>=4"],
+  "entry": { "backend": "backend/main.py", "frontend": "ui/index.js" },
+  "pack_exclude": ["tests"],
+  "qwenpaw_version": { "min": "2.2.2b9", "max": "3.0.0" },
+  "meta": {
+    "pawapp": {
+      "icon": "💡",
+      "category": "productivity",
+      "entry_page": "/apps/brainstorm",
+      "launch_scope": "page"
+    },
+    "permissions": { "chat": true, "storage": true }
+  }
+}

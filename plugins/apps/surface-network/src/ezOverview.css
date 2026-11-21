@@ -1,0 +1,322 @@
+.sn-ez[hidden],
+.sn-ez .sn-project-views[hidden],
+.sn-ez .sn-ez-columns[hidden],
+.sn-overview-grid[hidden],
+.sn-assembly[hidden] {
+  display: none;
+}
+.sn-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(215px, 22%, 285px);
+  gap: 12px;
+  align-items: stretch;
+  margin-top: 12px;
+}
+.sn-assembly {
+  min-width: 0;
+  align-self: start;
+}
+.sn-assembly-head,
+.sn-assembly-strip,
+.sn-pair-legend,
+.sn-assembly-tools,
+.sn-related header,
+.sn-related li > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sn-assembly-head,
+.sn-assembly-strip {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--sn-line);
+}
+.sn-assembly-head .sn-tabs,
+.sn-assembly-head .sn-tabs button {
+  flex-shrink: 0;
+}
+.sn-assembly-tools {
+  flex-wrap: wrap;
+}
+.sn-assembly-tools label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--sn-muted);
+  font-size: var(--sn-caption);
+}
+.sn-assembly-tools input {
+  margin: 0;
+  accent-color: var(--sn-accent);
+}
+.sn-assembly-tools button,
+.sn-ez .sn-actions > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sn-assembly-tools select {
+  max-width: clamp(124px, 16vw, 260px);
+}
+.sn-assembly-stage {
+  position: relative;
+  height: clamp(350px, 47vh, 660px);
+  min-width: 0;
+  overflow: hidden;
+  background: var(--sn-sheet);
+}
+.sn-assembly-canvas,
+.sn-assembly-canvas canvas,
+.sn-assembly-labels {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.sn-assembly-canvas canvas {
+  touch-action: none;
+  cursor: grab;
+  outline-offset: -3px;
+}
+.sn-assembly-canvas canvas:active {
+  cursor: grabbing;
+}
+.sn-assembly-labels {
+  pointer-events: none;
+  overflow: hidden;
+}
+.sn-app .sn-assembly-labels button {
+  position: absolute;
+  min-height: 17px;
+  max-width: 136px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: auto;
+  padding: 1px 5px;
+  line-height: 1.3;
+  border-radius: 3px;
+  color: var(--sn-draw-ink);
+  background: var(--sn-card);
+  font-size: var(--sn-caption);
+}
+.sn-assembly-scale {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+  min-height: 15px;
+  min-width: 10px;
+  border: solid var(--sn-muted);
+  border-width: 0 1px 1px;
+  color: var(--sn-muted);
+  font: var(--sn-caption) / 1.1 var(--sn-mono);
+  text-align: center;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--sn-sheet) 80%, transparent);
+}
+.sn-assembly-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  gap: 10px;
+  text-align: center;
+  color: var(--sn-muted);
+  font-size: var(--sn-secondary);
+}
+.sn-assembly-missing {
+  position: static;
+  min-height: 230px;
+}
+.sn-assembly-strip {
+  border-bottom: 0;
+  border-top: 1px solid var(--sn-line);
+  font-size: var(--sn-caption);
+  color: var(--sn-muted);
+}
+.sn-pair-legend {
+  flex-wrap: wrap;
+  border-top: 1px solid var(--sn-line);
+  padding: 6px 11px;
+  color: var(--sn-muted);
+  font-size: var(--sn-caption);
+}
+.sn-pair-legend strong {
+  color: var(--sn-ink);
+}
+.sn-pair-legend button,
+.sn-related button:not(.sn-table-link) {
+  min-height: 24px;
+  padding: 2px 6px;
+  font-size: var(--sn-caption);
+}
+.sn-owner-a::before,
+.sn-owner-b::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #e77428;
+}
+.sn-owner-b::before {
+  background: #9463db;
+}
+.sn-extent-spec {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0 8px;
+  padding: 8px 13px;
+  font-size: var(--sn-secondary);
+}
+.sn-extent-spec dt,
+.sn-extent-spec dd {
+  margin: 0;
+  padding: 5px 0;
+  overflow-wrap: anywhere;
+}
+.sn-extent-spec dt {
+  color: var(--sn-muted);
+}
+.sn-extent-spec dd {
+  text-align: right;
+}
+.sn-overview-aside {
+  max-height: clamp(422px, calc(47vh + 112px), 775px);
+  overflow: auto;
+}
+.sn-overview-aside .sn-pane-head {
+  flex-wrap: wrap;
+}
+.sn-overview-aside .sn-pane-head > code {
+  max-width: 100%;
+}
+.sn-overview-aside .sn-empty {
+  padding-top: 8px;
+}
+.sn-related {
+  padding: 8px 12px;
+  border-block: 1px solid var(--sn-rule);
+  font-size: var(--sn-secondary);
+}
+.sn-related header,
+.sn-related li > div {
+  justify-content: space-between;
+}
+.sn-related h4 {
+  font-size: var(--sn-secondary);
+}
+.sn-related header small {
+  margin-left: 3px;
+}
+.sn-relation-note {
+  margin: 8px 12px 0;
+  font-size: var(--sn-caption);
+  color: var(--sn-muted);
+}
+.sn-related ul {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+}
+.sn-related li {
+  padding: 6px 0;
+  border-top: 1px solid var(--sn-rule);
+  min-width: 0;
+}
+.sn-related li > div {
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.sn-related li > div > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sn-related-role,
+.sn-related small {
+  display: inline-block;
+  color: var(--sn-muted);
+  font-size: var(--sn-caption);
+}
+.sn-related p {
+  color: var(--sn-muted);
+  font-size: var(--sn-caption);
+  padding: 7px 0;
+}
+.sn-relations {
+  margin-top: 12px;
+}
+.sn-relations .sn-ez-controls .sn-search {
+  max-width: 360px;
+}
+.sn-relation-scroll {
+  overflow: auto;
+  max-height: 315px;
+}
+.sn-relation-scroll table {
+  min-width: 695px;
+}
+.sn-relation-scroll small {
+  display: block;
+  color: var(--sn-muted);
+}
+.sn-relation-scroll details {
+  max-width: 260px;
+}
+.sn-relation-scroll summary {
+  white-space: nowrap;
+}
+.sn-relation-scroll details span {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: var(--sn-caption);
+}
+.sn-relation-scroll .sn-table-link {
+  white-space: normal;
+}
+@container sn-workbench (max-width:970px) {
+  .sn-overview-grid {
+    grid-template-columns: minmax(0, 1fr) 206px;
+    gap: 8px;
+  }
+  .sn-assembly-tools select {
+    max-width: 175px;
+  }
+}
+@container sn-workbench (max-width:740px) {
+  .sn-overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sn-overview-aside {
+    max-height: 360px;
+  }
+  .sn-assembly-stage {
+    height: clamp(290px, 55cqw, 400px);
+  }
+}
+@container sn-workbench (max-width:460px) {
+  .sn-assembly-head {
+    padding: 7px 8px;
+  }
+  .sn-assembly-tools {
+    gap: 5px;
+  }
+  .sn-assembly-tools select {
+    max-width: 150px;
+  }
+  .sn-assembly-strip {
+    gap: 3px;
+  }
+  .sn-relations .sn-ez-controls select {
+    max-width: 46%;
+  }
+}

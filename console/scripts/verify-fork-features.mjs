@@ -23,6 +23,18 @@ const requireCases = (file, titles) =>
     readFileSync(path.join(root, file), "utf8"),
     titles,
   );
+requireCases("src/plugins/brainstorm.test.tsx", [
+  "imports a document excerpt and uses the edited material in the opening question",
+  "discards a late model reply after the selected expert changes",
+]);
+requireCases("src/plugins/storageLedger.test.tsx", [
+  "opens a duplicate well day and saves its source row and review reason",
+  "creates a project from the library and records data in its own scope",
+]);
+requireCases("src/plugins/surfaceNetwork.test.tsx", [
+  "keeps the same worksite scene and station range across directory and drawing navigation",
+  "links sensor tags to measured and modeled values and excludes boundary flows",
+]);
 requireCases("src/plugins/researchAgenda.test.tsx", [
   "imports material, reviews source evidence, edits the proposal and schedules confirmed work",
   "retains pasted input after model failure and permits retry without creating tasks",
@@ -284,6 +296,9 @@ const suites = {
   ],
   workspaceAndPlugins: [
     "src/plugins/researchAgenda.test.tsx",
+    "src/plugins/brainstorm.test.tsx",
+    "src/plugins/storageLedger.test.tsx",
+    "src/plugins/surfaceNetwork.test.tsx",
     "src/plugins/pluginRuntimeCleanup.test.ts",
     "src/plugins/pawapp-sdk/sessionRouting.test.ts",
     "src/os/DesktopAppLabels.test.tsx",

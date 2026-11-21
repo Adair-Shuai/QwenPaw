@@ -1,0 +1,30 @@
+{
+  "id": "surface-network",
+  "name": "地面管网",
+  "version": "0.6.1",
+  "type": "app",
+  "description": "储气库地面管网二维与三维联查，支持 eZWalker 工区总图、连接关系与测点对比。",
+  "author": "UGSci Team",
+  "entry": {
+    "backend": "backend/main.py",
+    "frontend": "ui/index.js"
+  },
+  "qwenpaw_version": {
+    "min": "2.1.0",
+    "max": "3.0.0"
+  },
+  "pack_exclude": ["src", "tests", "build.mjs"],
+  "meta": {
+    "pawapp": {
+      "icon": "◇",
+      "category": "research",
+      "entry_page": "/apps/surface-network",
+      "launch_scope": "page"
+    },
+    "permissions": {
+      "chat": false,
+      "storage": false
+    },
+    "settings": []
+  }
+}
