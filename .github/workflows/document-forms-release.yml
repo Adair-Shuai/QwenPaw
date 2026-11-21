@@ -65,8 +65,9 @@ jobs:
         run: python scripts/pack/publish_document_forms.py
       - name: Preserve publication evidence
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: document-forms-release
-          path: dist/document-forms/
+          path: dist/document-forms/index.json
           retention-days: 30

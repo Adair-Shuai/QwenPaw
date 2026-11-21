@@ -73,8 +73,9 @@ jobs:
         run: python scripts/pack/publish_storage_capacity.py
       - name: Preserve publication evidence
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: storage-capacity-release
-          path: dist/storage-capacity/
+          path: dist/storage-capacity/index.json
           retention-days: 30

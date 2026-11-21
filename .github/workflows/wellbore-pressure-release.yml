@@ -60,8 +60,9 @@ jobs:
         run: python scripts/pack/publish_wellbore_pressure.py
       - name: Preserve release evidence
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: wellbore-pressure-release
-          path: dist/wellbore-pressure/
+          path: dist/wellbore-pressure/index.json
           retention-days: 30
