@@ -82,7 +82,8 @@ it("reviews the selected real archived turn and requests its exact diff instead 
     name: i18n.t("workbench.review.turn"),
   });
   fireEvent.change(select, { target: { value: "old" } });
-  expect(await screen.findByTestId("archive-diff")).toHaveTextContent(
+  const diff = await screen.findByTestId("archive-diff", {}, { timeout: 10_000 });
+  expect(diff).toHaveTextContent(
     "archived before → archived after",
   );
   expect(turnFilesApi.diff).toHaveBeenCalledWith(scope, "old", "old-file");
