@@ -109,7 +109,7 @@ def _identity(request, agent_id, user_id, overlay=None):
     )
 
 
-async def _call(dispatcher, identity, method, path, key="", body=None):
+async def _call(dispatcher, identity, method, path, *, key="", body=None):
     try:
         response = await dispatcher.dispatch(
             identity,
@@ -169,7 +169,8 @@ async def start(request, client_key, body):
         )
     except Exception as exc:
         logger.warning(
-            "Deferred MCP OAuth candidate cleanup for source %r in workspace %r: %s",
+            "Deferred MCP OAuth candidate cleanup for source %r "
+            "in workspace %r: %s",
             client_key,
             workspace.agent_id,
             driver_error_diagnostic(exc),
@@ -216,47 +217,50 @@ async def start(request, client_key, body):
             identity,
             "POST",
             "/oauth/start/{client_key:path}",
-            client_key,
-            {**body, "_management_token": binding_token},
+            key=client_key,
+            body={**body, "_management_token": binding_token},
         )
-        current = await service.load_card(client_key, protocol="mcp")
-        if (
-            not workspace_is_current(
-                request.app.state.plugin_registry,
-                workspace,
-            )
-            or _revision(current) != revision
+        async with _workspace_commit_lock(
+            request.app.state.multi_agent_manager,
         ):
-            raise HTTPException(409, "OAuth source changed")
+            current = await service.load_card(client_key, protocol="mcp")
+            if (
+                not workspace_is_current(
+                    request.app.state.plugin_registry,
+                    workspace,
+                )
+                or _revision(current) != revision
+            ):
+                raise HTTPException(409, "OAuth source changed")
+            now = time.monotonic()
+            for key, previous in tuple(attempts(request).items()):
+                scope = previous.overlay
+                if (
+                    previous.phase == "pending"
+                    and scope.workspace_id == workspace.agent_id
+                    and scope.card.name == client_key
+                    and scope.user_id == identity.user_id
+                    and scope.channel == identity.channel
+                ):
+                    previous.finish("cancelled", now)
+                    grants.pop(key, None)
+            grants[result["session_id"]] = RoutingGrant(
+                workspace.agent_id,
+                _instance_id(workspace),
+                client_key,
+                revision,
+                dispatcher.generation,
+                identity.user_id,
+                now + _TTL_SECONDS,
+            )
+            attempts(request)[result["session_id"]] = PendingAuthorization(
+                overlay,
+                expected,
+                binding_token,
+            )
     except BaseException:
         overlay.close()
         raise
-    now = time.monotonic()
-    for key, previous in tuple(attempts(request).items()):
-        scope = previous.overlay
-        if (
-            previous.phase == "pending"
-            and scope.workspace_id == workspace.agent_id
-            and scope.card.name == client_key
-            and scope.user_id == identity.user_id
-            and scope.channel == identity.channel
-        ):
-            previous.finish("cancelled", now)
-            grants.pop(key, None)
-    grants[result["session_id"]] = RoutingGrant(
-        workspace.agent_id,
-        _instance_id(workspace),
-        client_key,
-        revision,
-        dispatcher.generation,
-        identity.user_id,
-        now + _TTL_SECONDS,
-    )
-    attempts(request)[result["session_id"]] = PendingAuthorization(
-        overlay,
-        expected,
-        binding_token,
-    )
     return result
 
 
@@ -333,6 +337,11 @@ async def _callback(request, body, grant, attempt):
     async def publish():
         async with _oauth_publication(manager, dispatcher):
             try:
+                if attempt.phase != "pending":
+                    raise StaleContextError(
+                        "OAuth attempt is no longer active",
+                    )
+                attempt.publishing = True
                 await commit_credential_binding(
                     service.card_store,
                     service.credential_store,
@@ -366,10 +375,12 @@ async def _callback(request, body, grant, attempt):
 async def _workspace_commit_lock(manager):
     # The real manager serializes publication/replacement under this lock.
     lock = getattr(manager, "_lock", None)
-    if isinstance(lock, asyncio.Lock):
-        async with lock:
-            yield
-    else:
+    if not isinstance(lock, asyncio.Lock):
+        lock = getattr(manager, "oauth_commit_lock", None)
+        if lock is None:
+            lock = asyncio.Lock()
+            manager.oauth_commit_lock = lock
+    async with lock:
         yield
 
 
@@ -442,17 +453,24 @@ async def revoke(request, client_key):
         dispatcher.plugin._guard()  # pylint: disable=protected-access
         protocol = registry.describe_driver_protocol("mcp")
         profile = load_config().agents.profiles.get(workspace.agent_id)
-        if (
-            protocol is None
-            or not protocol.active
-            or protocol.plugin_id != dispatcher.app_id
-            or protocol.generation != dispatcher.generation
-            or not dispatcher.admitted()
-            or not workspace_is_current(registry, workspace)
-            or getattr(manager, "_closing", False)
+        protocol_active = (
+            protocol is not None
+            and protocol.active
+            and protocol.plugin_id == dispatcher.app_id
+            and protocol.generation == dispatcher.generation
+            and dispatcher.admitted()
+        )
+        if not protocol_active:
+            raise StaleContextError("OAuth source changed")
+        workspace_closing = (
+            getattr(manager, "_closing", False)
             or id(workspace) in getattr(manager, "_agent_stop_tasks", {})
             or workspace.agent_id
             in getattr(manager, "_uninstalling_agents", ())
+        )
+        if (
+            workspace_closing
+            or not workspace_is_current(registry, workspace)
             or profile is None
             or not profile.enabled
         ):
@@ -497,7 +515,8 @@ async def revoke(request, client_key):
             await service.reload_driver_best_effort(client_key)
         if cleanup_failure:
             logger.warning(
-                "MCP OAuth token cleanup failed for source %r in workspace %r: %s",
+                "MCP OAuth token cleanup failed for source %r "
+                "in workspace %r: %s",
                 client_key,
                 workspace.agent_id,
                 driver_error_diagnostic(cleanup_failure),
@@ -619,8 +638,9 @@ async def cancel(request, client_key, session_id):
     require_runtime(request)
     workspace = await configuration_workspace(request)
     await DriverConfigService(workspace).load_card(client_key, protocol="mcp")
-    attempt = _scoped_attempt(request, workspace, client_key, session_id)
-    if attempt and attempt.phase == "pending":
-        _ledger(request).pop(session_id, None)
-        attempt.finish("cancelled", time.monotonic())
+    async with _workspace_commit_lock(request.app.state.multi_agent_manager):
+        attempt = _scoped_attempt(request, workspace, client_key, session_id)
+        if attempt and attempt.phase == "pending":
+            _ledger(request).pop(session_id, None)
+            attempt.finish("cancelled", time.monotonic())
     return {"message": "OAuth session cancelled"}

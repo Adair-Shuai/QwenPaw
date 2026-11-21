@@ -17,6 +17,7 @@ class PendingAuthorization:
     binding_token: str = field(repr=False)
     phase: str = "pending"
     retain_until: float = 0
+    publishing: bool = False
 
     def finish(self, phase, now):
         self.phase = phase
@@ -35,7 +36,11 @@ def attempts(request):
 def purge(request, grants, now):
     saved = attempts(request)
     for key, attempt in tuple(saved.items()):
-        if attempt.phase == "pending" and attempt.overlay.expires_at <= now:
+        if (
+            attempt.phase == "pending"
+            and not attempt.publishing
+            and attempt.overlay.expires_at <= now
+        ):
             attempt.finish("expired", now)
             grants.pop(key, None)
         if attempt.phase != "pending" and attempt.retain_until <= now:

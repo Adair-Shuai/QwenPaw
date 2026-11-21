@@ -39,6 +39,14 @@ PEER = ROOT / "tests/fixtures/mcp/plugin_peer.py"
 pytestmark = [pytest.mark.integration, pytest.mark.p1]
 
 
+@pytest.fixture(autouse=True)
+def peer_proxy_bypass(monkeypatch):
+    # The fixture owns an ephemeral loopback peer even on desktops with
+    # a system-wide proxy. Keep the SDK and subprocess requests local.
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
+
+
 @asynccontextmanager
 async def local_peer(tmp_path, transport):
     """The host owns stdio; this fixture owns only the HTTP server process."""
@@ -65,11 +73,12 @@ async def local_peer(tmp_path, transport):
             "sse" if transport == "sse" else "streamable-http",
             str(port),
             str(evidence),
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=log,
             stderr=log,
         )
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 async with asyncio.timeout(15):
                     while True:
                         assert process.returncode is None, "Local peer exited"
@@ -97,7 +106,7 @@ async def echo(host, key="echo", text="hello"):
 
 async def assert_sessions_terminated(endpoint):
     url = endpoint["url"]
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(trust_env=False) as client:
         response = await client.get(url.removesuffix("/mcp") + "/sessions")
         response.raise_for_status()
         sessions = response.json()
@@ -122,7 +131,7 @@ async def assert_endpoint_credentials_isolated(host, tmp_path, endpoint):
         "streamable_http",
     ) as other:
         bases = [row["url"].removesuffix("/mcp") for row in (endpoint, other)]
-        async with httpx.AsyncClient() as http:
+        async with httpx.AsyncClient(trust_env=False) as http:
 
             async def history(index):
                 return (await http.get(bases[index] + "/requests")).json()
@@ -176,7 +185,8 @@ async def assert_endpoint_credentials_isolated(host, tmp_path, endpoint):
                 async with asyncio.timeout(10):
                     while not await history(1):
                         await asyncio.sleep(0.01)
-                await call()  # A may be denied immediately after a binding change.
+                # A may be denied as soon as its binding changes.
+                await call()
                 assert set((await history(0))[before:]) == {"Bearer target-A"}
                 await http.post(bases[1] + "/control", json={"blocked": False})
                 await drain_reload()
@@ -377,7 +387,7 @@ async def test_qwenpaw_mcp_management_and_authentication(tmp_path):
 
 
 async def test_existing_workspace_installs_bundled_mcp_on_startup(tmp_path):
-    """An upgrade reuses existing cards and secrets without a manual install."""
+    """Reuse cards and secrets during automatic offline installation."""
     from qwenpaw.app.mcp_plugin_upgrade import (
         prepare_startup_plugins,
         read_startup_migration,
@@ -418,7 +428,9 @@ async def test_existing_workspace_installs_bundled_mcp_on_startup(tmp_path):
         for _ in range(2):
             startup = read_startup_migration(plugins_dir=loader.plugin_dirs[0])
             result = await prepare_startup_plugins(
-                loader, manager, startup=startup
+                loader,
+                manager,
+                startup=startup,
             )
             record = loader.get_loaded_plugin("qwenpaw-mcp")
             assert record is not None and record.status == "active", result
