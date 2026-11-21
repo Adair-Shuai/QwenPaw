@@ -1,7 +1,7 @@
 {
   "id": "uproject",
   "name": "UProject 科研项目",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "app",
   "description": "科研项目工作台：项目总览、事项看板、负责人和截止日期、依赖关系、里程碑、甲乙方会议与 AI 简报。",
   "description_i18n": {
