@@ -42,8 +42,13 @@ def client(tmp_path, monkeypatch):
         return await next_handler(request)
 
     application.include_router(main.router, prefix="/api/brainstorm")
-    with TestClient(application) as http:
-        yield http
+    try:
+        with TestClient(application) as http:
+            yield http
+    finally:
+        for child in tuple(sys.modules):
+            if child.startswith(f"{name}."):
+                sys.modules.pop(child, None)
 
 
 @pytest.fixture
