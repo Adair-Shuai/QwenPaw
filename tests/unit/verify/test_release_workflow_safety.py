@@ -1120,12 +1120,17 @@ def test_desktop_latest_aliases_reuse_versioned_objects_and_restore(
         links.pop(key, None)
         objects[key] = data
 
+    def get_object(key):
+        if key not in objects:
+            raise Missing(key)
+        return BytesIO(objects[key])
+
     bucket = SimpleNamespace(
         head_object=head,
         get_symlink=lambda key: SimpleNamespace(target_key=links[key]),
         put_symlink=link,
         delete_object=delete,
-        get_object=lambda key: BytesIO(objects[key]),
+        get_object=get_object,
         get_object_to_file=lambda key, path: Path(path).write_bytes(
             objects[key]
         ),
@@ -1172,7 +1177,10 @@ def test_desktop_latest_aliases_reuse_versioned_objects_and_restore(
     objects[previous] = b"previous versioned artifact"
     links[latest[0]] = previous
     objects[latest[1]] = b"legacy duplicate"
-    objects[aliases.INDEX_KEYS[0]] = b"previous updater manifest"
+    old_manifest = json.dumps(
+        {"platforms": {"windows-x86_64": {"url": "/" + previous}}},
+    ).encode()
+    objects[aliases.INDEX_KEYS[0]] = old_manifest
     aliases.snapshot(bucket, tmp_path)
     public = []
     monkeypatch.setattr(
@@ -1182,8 +1190,9 @@ def test_desktop_latest_aliases_reuse_versioned_objects_and_restore(
 
     assert links == dict(zip(latest, versioned))
     assert not set(latest) & objects.keys()
-    assert aliases.protected_targets(bucket) == set(versioned) | {
-        aliases.metadata_key(key) for key in versioned
+    protected = set(versioned) | {previous}
+    assert aliases.protected_targets(bucket) == protected | {
+        aliases.metadata_key(key) for key in protected
     }
     assert public == [
         ("https://oss.example/" + key, target, len(objects[target]))
@@ -1194,7 +1203,7 @@ def test_desktop_latest_aliases_reuse_versioned_objects_and_restore(
             json.loads(objects[aliases.metadata_key(key)])["url"]
             == "/" + target
         )
-    assert objects[aliases.INDEX_KEYS[0]] == b"previous updater manifest"
+    assert objects[aliases.INDEX_KEYS[0]] == old_manifest
     public_base = "https://oss.example/files/apps/desktop"
     objects[aliases.INDEX_KEYS[0]] = json.dumps(
         {

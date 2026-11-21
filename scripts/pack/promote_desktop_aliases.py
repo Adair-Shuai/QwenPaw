@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 import oss2
@@ -175,8 +176,28 @@ def protected_targets(bucket) -> set[str]:
             continue
         target = symlink_target(bucket, key, head)
         if target:
-            targets.update((target, metadata_key(target)))
-    return targets
+            targets.add(target)
+
+    indexes = {}
+    for key in INDEX_KEYS[:2]:
+        try:
+            indexes[key] = json.loads(bucket.get_object(key).read())
+        except MISSING:
+            indexes[key] = {}
+    updater, desktop = (indexes[key] for key in INDEX_KEYS[:2])
+    active_downloads = [
+        platform["url"] for platform in updater.get("platforms", {}).values()
+    ]
+    active_downloads.extend(
+        desktop["files"][platform["latest"]]["url"]
+        for platform in desktop.get("platforms", {}).values()
+        if platform.get("latest")
+    )
+    for url in active_downloads:
+        target = urlsplit(url).path.lstrip("/")
+        if target.startswith(DESKTOP_PREFIX):
+            targets.add(target)
+    return targets | {metadata_key(target) for target in targets}
 
 
 def current_alias_version(bucket, public_base: str) -> tuple[str, int]:

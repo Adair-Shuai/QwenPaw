@@ -470,7 +470,7 @@ jobs:
           echo "Main index updated"
 
       - name: Roll back mutable desktop pointers on failure
-        if: ${{ failure() && steps.snapshot.outcome == 'success' }}
+        if: ${{ (failure() || cancelled()) && steps.snapshot.outcome == 'success' }}
         env:
           OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
