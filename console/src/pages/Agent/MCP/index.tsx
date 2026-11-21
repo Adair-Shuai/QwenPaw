@@ -11,11 +11,26 @@ import { LockKeyhole, Plus, Server, Search } from "lucide-react";
 import type { MCPClientInfo } from "../../../api/types";
 import { MCPClientCard } from "./components";
 import { useMCP } from "./useMCP";
+import { useMCPPlugin } from "./useMCPPlugin";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import styles from "./index.module.less";
 
 type MCPTransport = "stdio" | "streamable_http" | "sse";
+
+const recoveryGuidance: Record<string, string> = {
+  invalid_upgrade_record: "Review the MCP installation record, then retry",
+  orphaned_installation_record:
+    "Review the MCP installation record, then retry",
+  offline_upgrade_failed_check_dependencies_and_storage:
+    "Check offline dependencies and storage, then retry",
+  workspace_needs_review:
+    "Review this workspace’s saved MCP configuration, then retry",
+  invalid_plugin_settings: "Review the MCP plugin settings, then retry",
+  plugin_runtime_failed:
+    "The MCP plugin failed to load. Open Plugin Manager and select Repair and retry.",
+};
 
 function normalizeTransport(raw?: unknown): MCPTransport | undefined {
   if (typeof raw !== "string") return undefined;
@@ -80,6 +95,8 @@ const defaultForm = {
 
 export interface MCPPageProps {
   /** Render inside a plugin-owned page without route breadcrumbs. */
+  managementAvailable?: boolean;
+  managementMounted?: boolean;
   embedded?: boolean;
   /** Host-supplied presentation copy for a branded embedded surface. */
   embeddedLabels?: {
@@ -91,8 +108,28 @@ export interface MCPPageProps {
   };
 }
 
-function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
+function MCPPage({
+  embedded = false,
+  embeddedLabels,
+  managementAvailable = embedded,
+  managementMounted = embedded,
+}: MCPPageProps = {}) {
   const { t } = useTranslation();
+  const plugin = useMCPPlugin(managementMounted);
+  const activeButUnavailable =
+    plugin.state?.status === "active" && plugin.state.available === false;
+  const readOnly =
+    plugin.busy ||
+    !managementAvailable ||
+    plugin.state?.status !== "active" ||
+    activeButUnavailable ||
+    plugin.state.workspace?.eligible === false;
+  const recoveryCodes = [
+    ...new Set([
+      ...(plugin.state?.diagnostics ?? []),
+      ...(plugin.state?.workspace?.diagnostics ?? []),
+    ]),
+  ].filter((code) => recoveryGuidance[code]);
   const {
     agentId,
     clients,
@@ -319,6 +356,7 @@ function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
 
   const createButton = (
     <Button
+      disabled={readOnly}
       type="primary"
       icon={<Plus size={14} />}
       onClick={() => setCreateModalOpen(true)}
@@ -345,6 +383,109 @@ function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
         <PageHeader
           current={t("mcp.title")}
           extra={ready ? createButton : undefined}
+        />
+      )}
+
+      {plugin.state?.version && (
+        <div>{t("mcp.plugin.version", { version: plugin.state.version })}</div>
+      )}
+      {plugin.state?.update && (
+        <Alert
+          type="info"
+          showIcon
+          message={t("mcp.plugin.updateAvailable", {
+            version: plugin.state.update.version,
+          })}
+          action={
+            <Button loading={plugin.busy} onClick={() => void plugin.update()}>
+              {t("mcp.plugin.update")}
+            </Button>
+          }
+        />
+      )}
+      {plugin.state?.update_diagnostics?.length ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("mcp.plugin.versionCheckUnavailable")}
+        />
+      ) : null}
+      {!readOnly && plugin.error && (
+        <Alert type="error" showIcon message={plugin.error} />
+      )}
+
+      {plugin.state?.legacy_mcp_archived && (
+        <Alert type="warning" showIcon message={t("mcp.legacyArchived")} />
+      )}
+
+      {recoveryCodes.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("mcp.recovery.title", {
+            defaultValue: "MCP needs attention",
+          })}
+          description={recoveryCodes.map((code) => (
+            <div key={code}>
+              {t(`mcp.recovery.${code}`, {
+                defaultValue: recoveryGuidance[code],
+              })}
+            </div>
+          ))}
+          action={
+            recoveryCodes.includes("plugin_runtime_failed") ? (
+              <Link to="/market?tab=plugins&view=installed&plugin=qwenpaw-mcp">
+                {t("nav.pluginManager")}
+              </Link>
+            ) : (
+              <Button loading={plugin.busy} onClick={plugin.activate}>
+                {t("common.retry", { defaultValue: "Retry" })}
+              </Button>
+            )
+          }
+        />
+      )}
+
+      {readOnly && recoveryCodes.length === 0 && (
+        <Alert
+          type={
+            plugin.error || plugin.state?.status === "failed" ? "error" : "info"
+          }
+          showIcon
+          message={
+            plugin.error ||
+            t(`mcp.plugin.${plugin.state?.status ?? "loading"}`, {
+              defaultValue:
+                plugin.state?.status === "disabled"
+                  ? "MCP plugin is disabled"
+                  : plugin.state?.installed
+                  ? "MCP management is unavailable"
+                  : "Install the MCP plugin to manage servers",
+            })
+          }
+          description={t("mcp.readOnly")}
+          action={
+            (plugin.error ||
+              activeButUnavailable ||
+              (plugin.state && plugin.state.status !== "active")) && (
+              <Button
+                loading={plugin.busy}
+                onClick={
+                  plugin.state?.status === "active"
+                    ? plugin.refresh
+                    : plugin.activate
+                }
+              >
+                {plugin.error ||
+                plugin.state?.status === "failed" ||
+                activeButUnavailable
+                  ? t("common.retry", { defaultValue: "Retry" })
+                  : plugin.state?.installed
+                  ? t("common.enable", { defaultValue: "Enable" })
+                  : t("common.install", { defaultValue: "Install" })}
+              </Button>
+            )
+          }
         />
       )}
 
@@ -443,6 +584,7 @@ function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
                     {visibleClients.map((client, index) => (
                       <Cascade key={`${agentId}:${client.key}`} index={index}>
                         <MCPClientCard
+                          readOnly={readOnly}
                           client={client}
                           onToggle={handleToggleEnabled}
                           onDelete={handleDelete}
@@ -509,7 +651,7 @@ function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
       <CapabilityConfig
         centered
         title={t("mcp.create")}
-        open={ready && createModalOpen}
+        open={ready && createModalOpen && !readOnly}
         onCancel={() => {
           setCreateModalOpen(false);
           resetModal();

@@ -51,11 +51,10 @@ async def test_service_shutdown_escapes_agent_id(caplog, reusable, reused):
 
 @pytest.mark.parametrize("reason", ["removed", "config_changed"])
 async def test_discard_reload_escapes_agent_id(caplog, reason):
-    # Exercise real internals and verify lifecycle state in this test.
-    # pylint: disable=protected-access
-    candidate = SimpleNamespace(stop=AsyncMock())
+    manager = MultiAgentManager()
+    candidate = SimpleNamespace(stop=AsyncMock(return_value=None))
     with caplog.at_level(logging.INFO):
-        await MultiAgentManager._discard_reload_candidate(
+        await manager._discard_reload_candidate(
             candidate,
             "agent\r\nFORGED",
             reason,

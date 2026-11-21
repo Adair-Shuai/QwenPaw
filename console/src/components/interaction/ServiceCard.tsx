@@ -18,6 +18,7 @@ export function ServiceCard({
   actions,
   surfaceId,
   icon,
+  disabled = false,
 }: {
   surfaceId?: string;
   icon?: ReactNode;
@@ -28,6 +29,7 @@ export function ServiceCard({
   onConfigure: () => void;
   onToggle: () => Promise<void> | void;
   actions?: ReactNode;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const reducedMotion = useReducedMotion();
@@ -57,7 +59,7 @@ export function ServiceCard({
             )
           )
             return;
-          onConfigure();
+          if (!disabled) onConfigure();
         }}
       >
         <div className={styles.heading}>
@@ -65,7 +67,12 @@ export function ServiceCard({
             <span className={styles.avatar}>{icon || <Plug size={21} />}</span>
           )}
           <h3>
-            <button type="button" title={name} onClick={onConfigure}>
+            <button
+              type="button"
+              disabled={disabled}
+              title={name}
+              onClick={onConfigure}
+            >
               {name}
             </button>
           </h3>
@@ -75,6 +82,7 @@ export function ServiceCard({
         <div className={styles.metadata}>{metadata}</div>
         <div className={styles.actions}>
           <Button
+            disabled={disabled}
             type="text"
             icon={<Settings2 size={16} />}
             onClick={onConfigure}
@@ -84,6 +92,7 @@ export function ServiceCard({
           <div className={styles.trailing}>
             {actions}
             <Switch
+              disabled={disabled}
               checked={enabled}
               loading={pending}
               aria-label={`${t(

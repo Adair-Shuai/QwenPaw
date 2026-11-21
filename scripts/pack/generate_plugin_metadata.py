@@ -66,7 +66,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-KIND_DIRS = ("bundle", "tool", "memory", "apps", "channel", "hub", "harness")
+KIND_DIRS = (
+    "bundle",
+    "tool",
+    "memory",
+    "apps",
+    "channel",
+    "hub",
+    "harness",
+    "protocol",
+    "transcription",
+)
+# The shared release publisher accepts bundle archives. The catalog still
+# uses the source category so users can find transcription plugins together.
+ARCHIVE_KINDS = {"transcription": "bundle"}
 _RELEASE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
 EXCLUDE_PATTERNS = (

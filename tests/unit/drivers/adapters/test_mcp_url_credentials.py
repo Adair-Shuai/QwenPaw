@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """URL query tokens are stored and resolved like header credentials."""
+
 # pylint: disable=protected-access  # White-box host lifecycle contracts.
 
 from types import SimpleNamespace
@@ -90,8 +91,8 @@ def test_duplicate_query_credentials_rejected_and_public_query_preserved():
 
 @pytest.mark.asyncio
 async def test_http_handler_rebuilds_query_from_saved_credential(monkeypatch):
-    from qwenpaw.drivers.handlers import mcp as handlers
-    from qwenpaw.drivers.credentials.providers import NoneProvider
+    from plugins.protocol.mcp import connection as handlers
+    from unittest.mock import AsyncMock, Mock
 
     client = {
         "name": "patsnap",
@@ -117,14 +118,23 @@ async def test_http_handler_rebuilds_query_from_saved_credential(monkeypatch):
         async def close(self, **kwargs):
             pass
 
-    handler = handlers.MCPDriverHandler(card, NoneProvider())
-
-    async def credentials():
-        return {"static": ResolvedCredential(secrets=record.secrets)}
-
-    monkeypatch.setattr(handler, "_resolve_credentials", credentials)
+    context = SimpleNamespace(
+        logger=Mock(), source_id="patsnap", workspace_id="test"
+    )
+    resolver = SimpleNamespace(
+        resolve=AsyncMock(
+            return_value={
+                "static": ResolvedCredential(secrets=record.secrets)
+            },
+        ),
+    )
+    handler = handlers.MCPConnection(
+        context,
+        SimpleNamespace(source_id="patsnap", endpoint=card.endpoint),
+        resolver,
+    )
     monkeypatch.setattr(handlers, "HttpAutoClient", FakeClient)
-    await handler._setup()
+    await handler.open()
     assert parse_qs(urlsplit(captured["url"]).query)["apikey"] == ["a+b&c"]
     assert "a+b&c" not in str(card.endpoint)
-    await handler._teardown()
+    await handler.close()

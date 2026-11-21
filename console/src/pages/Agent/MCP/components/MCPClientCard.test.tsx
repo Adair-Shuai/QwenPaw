@@ -6,6 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+
 import type { MCPClientInfo } from "@/api/types";
 import { CapabilityWorkspace } from "@/components/interaction/CapabilityWorkspace";
 import { MCPClientCard } from "./MCPClientCard";
@@ -26,14 +27,18 @@ vi.mock("@/components/interaction/ServiceCard", () => ({
   ServiceCard: ({
     onConfigure,
     actions,
+    disabled,
     metadata,
   }: {
     onConfigure: () => void;
     actions: ReactNode;
+    disabled?: boolean;
     metadata?: ReactNode;
   }) => (
     <>
-      <button onClick={onConfigure}>Configure connection</button>
+      <button disabled={disabled} onClick={onConfigure}>
+        Configure connection
+      </button>
       {metadata}
       {actions}
     </>
