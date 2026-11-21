@@ -41,6 +41,7 @@ def test_default_discovery_uses_desktop_managed_roots_and_denylist():
         "qwenpaw-pet",
         "qwenpaw-creator",
         "azure-bot",
+        "imessage",
     }
     assert selected_ids == all_ids & helper.BUNDLED_PLUGIN_IDS
     assert {
@@ -58,6 +59,7 @@ def test_default_discovery_uses_desktop_managed_roots_and_denylist():
     assert app_ids
     assert selected_ids.isdisjoint(app_ids)
     assert "azure-bot" not in selected_ids
+    assert "imessage" not in selected_ids
     assert "qwenpaw-creator" not in selected_ids
     assert "middleware-demo-thinking-log" not in selected_ids
     assert "wan27-tool" not in selected_ids
