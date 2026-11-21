@@ -47,4 +47,22 @@ describe("useSessionFavicon", () => {
     renderHook(() => useSessionFavicon(false));
     expect(icon.getAttribute("href")).toBe("/console/online.svg");
   });
+
+  it("preserves the raster fallback and the SVG artwork geometry", () => {
+    const fallback = document.createElement("link");
+    fallback.rel = "icon";
+    fallback.href = "/favicon.ico";
+    document.head.insertBefore(fallback, icon);
+    try {
+      const { unmount } = renderHook(() => useSessionFavicon(true));
+      expect(fallback.getAttribute("href")).toBe("/favicon.ico");
+      expect(svg()).toContain('viewBox="0 0 64 64"');
+      expect(svg()).toContain('<rect width="64" height="64"');
+      expect(svg().match(/<svg\b/g)).toHaveLength(1);
+      unmount();
+      expect(icon.getAttribute("href")).toBe("/console/online.svg");
+    } finally {
+      fallback.remove();
+    }
+  });
 });

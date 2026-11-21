@@ -44,6 +44,9 @@ node_modules
 **/dist
 !src/qwenpaw/console/dist
 !src/qwenpaw/console/dist/**
+# The optional MCP plugin ships its prebuilt frontend for offline migration.
+!plugins/protocol/mcp/frontend/dist
+!plugins/protocol/mcp/frontend/dist/index.js
 **/.vite
 
 # Example and local config (mount at runtime instead)

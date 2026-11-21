@@ -407,6 +407,23 @@ def test_docker_context_excludes_both_visualization_fixture_trees():
     assert "src/qwenpaw/plugins_bundle/ugsci/visualization/data" in patterns
 
 
+def test_docker_carries_console_brand_and_offline_mcp_assets():
+    dockerfile = (ROOT / "deploy/Dockerfile").read_text(encoding="utf-8")
+    assert "COPY console /app/console" in dockerfile
+    assert (
+        "COPY --from=console-builder /app/console/dist/ ./src/qwenpaw/console/"
+        in dockerfile
+    )
+    assert "COPY plugins/protocol/mcp ./plugins/protocol/mcp" in dockerfile
+    patterns = (
+        (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    )
+    frontend = "plugins/protocol/mcp/frontend/dist"
+    assert patterns.index("**/dist") < patterns.index("!" + frontend)
+    assert patterns.index("**/dist") < patterns.index(f"!{frontend}/index.js")
+    assert (ROOT / frontend / "index.js").stat().st_size > 0
+
+
 def test_packaged_visualization_imports_user_data_without_shipped_examples(
     tmp_path,
     monkeypatch,
