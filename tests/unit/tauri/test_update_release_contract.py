@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Future releases must remain consumable by the actual current updater."""
+
 # pylint: disable=protected-access  # White-box host lifecycle contracts.
 
 import base64
@@ -114,6 +115,48 @@ def _release_fixture(tmp_path, request):
         release_id="candidate",
     )
     return tmp_path, output, manifest, private, public
+
+
+def test_builds_and_verifies_signed_deltas_in_deep_release_tree(release):
+    tmp_path, _, manifest, private, public = release
+    document = json.loads(manifest.read_text())
+    output = tmp_path / ("nested-release-directory-" * 4) / ("artifacts-" * 8)
+    assert (
+        len(
+            str(
+                output
+                / "artifacts/components/windows-x86_64/demo"
+                / ("a" * 64),
+            ),
+        )
+        > 260
+    )
+    raw_key = private.private_bytes(
+        serialization.Encoding.Raw,
+        serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+    target = document["target"]
+    path = build_release(
+        tmp_path / "source",
+        output,
+        product="qwenpaw",
+        channel="stable",
+        target=target,
+        core_min_version=document["core_min_version"],
+        base_url=BASE_URL,
+        private_key_b64=base64.b64encode(raw_key).decode(),
+        base_root=tmp_path / "bases",
+        release_id="candidate",
+    )
+    result = verify_release(
+        output,
+        path,
+        target=target,
+        base_url=BASE_URL,
+        public_key=public,
+    )
+    assert result["artifacts"] == 5
 
 
 def resign_manifest(path, document, private):
@@ -282,9 +325,11 @@ def test_current_updater_preserves_data_across_future_release_routes(
     monkeypatch.setenv(
         "QWENPAW_COMPONENT_PROTOCOL",
         str(
-            manifest["protocol_version"] - 1
-            if route == "old_protocol"
-            else manifest["protocol_version"],
+            (
+                manifest["protocol_version"] - 1
+                if route == "old_protocol"
+                else manifest["protocol_version"]
+            ),
         ),
     )
     monkeypatch.setenv(
@@ -293,16 +338,18 @@ def test_current_updater_preserves_data_across_future_release_routes(
     )
     monkeypatch.setenv(
         "QWENPAW_HOST_FINGERPRINT",
-        "different"
-        if route == "changed_host"
-        else manifest["host_fingerprint"],
+        (
+            "different"
+            if route == "changed_host"
+            else manifest["host_fingerprint"]
+        ),
     )
     updater = ComponentUpdater(
         public_key_b64=public,
         managed_components={"demo", "python-runtime"},
-        core_version="0.0.0"
-        if route == "old_core"
-        else manifest["release_version"],
+        core_version=(
+            "0.0.0" if route == "old_core" else manifest["release_version"]
+        ),
         target=manifest["target"],
         directory_components={"python-runtime"},
     )

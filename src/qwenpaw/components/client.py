@@ -19,6 +19,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from packaging.version import InvalidVersion, Version
 
+from ..utils.windows_paths import io_path
 from .update import ComponentUpdateError, ComponentUpdater
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,7 @@ class ComponentClient:
         default_allowed_host: str | None = None,
     ):
         self.updater = updater
-        self.cache_root = cache_root.resolve()
+        self.cache_root = Path(io_path(cache_root.resolve()))
         self.client = client or httpx.Client(
             timeout=httpx.Timeout(30.0, read=120.0),
             follow_redirects=False,
@@ -319,10 +320,7 @@ class ComponentClient:
                         staged.unlink()
                     else:
                         shutil.rmtree(staged)
-                temporary = (
-                    manifests_root
-                    / f".{digest}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
-                )
+                temporary = manifests_root / f".{uuid.uuid4().hex}.tmp"
                 try:
                     temporary.mkdir(parents=True, exist_ok=False)
                     (temporary / "manifest.json").write_bytes(manifest)

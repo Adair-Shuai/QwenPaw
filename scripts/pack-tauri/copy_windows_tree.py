@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 
 
-def _filesystem_path(path: Path) -> str:
+def filesystem_path(path: Path) -> str:
     native = os.path.abspath(os.fspath(path))
     if os.name != "nt" or native.startswith("\\\\?\\"):
         return native
@@ -20,7 +20,7 @@ def _filesystem_path(path: Path) -> str:
 
 def remove_tree(path: Path, *, ignore_errors: bool = False) -> None:
     """Remove a tree through an extended-length Windows path."""
-    value = _filesystem_path(path.resolve(strict=False))
+    value = filesystem_path(path.resolve(strict=False))
     if not os.path.isdir(value):
         return
     try:
@@ -41,8 +41,8 @@ def copy_tree(source: Path, destination: Path) -> None:
         pass
     else:
         raise ValueError("copy destination may not be inside source")
-    source_io = _filesystem_path(source)
-    destination_io = _filesystem_path(destination)
+    source_io = filesystem_path(source)
+    destination_io = filesystem_path(destination)
     os.makedirs(destination_io, exist_ok=True)
     errors: list[OSError] = []
     for current, directories, names in os.walk(

@@ -263,6 +263,7 @@ REQUIRED_CASES = {
     },
     "tests/unit/tauri/test_update_release_contract.py": {
         "test_publication_gate_verifies_full_fallback_and_all_deltas",
+        "test_builds_and_verifies_signed_deltas_in_deep_release_tree",
         "test_publication_gate_blocks_broken_but_present_artifacts",
         "test_current_updater_preserves_data_across_future_release_routes",
         "test_update_release_gates_cannot_be_bypassed_by_publication",

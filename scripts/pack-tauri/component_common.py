@@ -21,6 +21,8 @@ from typing import Any, Iterator
 from cryptography.hazmat.primitives import serialization
 from packaging.version import InvalidVersion, Version
 
+from copy_windows_tree import filesystem_path
+
 DEFAULT_PRESERVE_PATHS = (
     "engines",
     "data",
@@ -162,7 +164,7 @@ def canonical_json(data: Any) -> bytes:
 
 def atomic_write_bytes(path: Path, payload: bytes) -> None:
     """Write *payload* to *path* atomically (temp file + ``os.replace``)."""
-    path = Path(path)
+    path = Path(filesystem_path(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.",

@@ -137,7 +137,8 @@ def test_signed_manifest_pointer_prevents_json_signature_mismatch(tmp_path):
         target="windows-x86_64",
         core_version="1.0.0",
     )
-    downloader = ComponentClient(updater, tmp_path / "cache", client=client)
+    cache = tmp_path / ("relocated-user-" * 6) / ("managed-cache-" * 6)
+    downloader = ComponentClient(updater, cache, client=client)
     assert (
         downloader.fetch_manifest("https://oss.example/current.json")["target"]
         == "windows-x86_64"

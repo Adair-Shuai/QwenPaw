@@ -20,6 +20,7 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from copy_windows_tree import filesystem_path
 from component_common import (
     DEFAULT_PRESERVE_PATHS,
     atomic_write_bytes,
@@ -312,6 +313,17 @@ def build_release(
         raise ValueError("history_count must be between 1 and 10")
     private = _private_key(private_key_b64)
     components: dict[str, dict] = {}
+    result_root = output_root
+    source_root = Path(filesystem_path(source_root))
+    output_root = Path(filesystem_path(output_root))
+    if base_root is not None:
+        base_root = Path(filesystem_path(base_root))
+    if history_input is not None:
+        history_input = Path(filesystem_path(history_input))
+    if history_signature_input is not None:
+        history_signature_input = Path(
+            filesystem_path(history_signature_input),
+        )
     artifact_root = output_root / "artifacts" / "components" / target
     artifact_root.mkdir(parents=True, exist_ok=True)
     seen_components: set[str] = set()
@@ -518,7 +530,10 @@ def build_release(
             history_signature=history_signature,
             private=private,
         )
-    return manifest_path
+    result = result_root / manifest_path.relative_to(output_root)
+    if os.name == "nt" and len(os.path.abspath(result)) >= 260:
+        return manifest_path
+    return result
 
 
 def main() -> int:
