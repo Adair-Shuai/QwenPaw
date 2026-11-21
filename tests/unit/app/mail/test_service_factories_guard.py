@@ -121,7 +121,7 @@ def test_mail_and_acp_history_prepare_mcp_without_loading_workspace(
     from qwenpaw.app.mcp_plugin_upgrade import inventory_mcp_usage
 
     config = tmp_path / "config.json"
-    config.write_text(json.dumps(raw))
+    config.write_text(json.dumps({**raw, "agents": {"profiles": {}}}))
     decision = classify_mcp_usage(
         inventory_mcp_usage(
             config_path=config,
@@ -172,7 +172,8 @@ async def test_healthy_mcp_mail_check_does_not_reenter_installation(
         )
         migrate = AsyncMock()
         monkeypatch.setattr(
-            "qwenpaw.drivers.adapters.mcp_legacy_config.migrate_legacy_mcp_if_needed",
+            "qwenpaw.drivers.adapters.mcp_legacy_config."
+            "migrate_legacy_mcp_if_needed",
             migrate,
         )
         starts = []
