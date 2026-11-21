@@ -7,7 +7,7 @@ on:
         description: "Application (specialized apps retain their own release workflows)"
         required: true
         type: choice
-        options: [uideas, ulit, agent-kanban, research-agenda]
+        options: [uideas, ulit, agent-kanban, research-agenda, brainstorm, storage-ledger, surface-network]
       upload_to_oss:
         description: "Publish after verification; false only builds and tests"
         required: true
@@ -45,19 +45,39 @@ jobs:
 
       - name: Verify selected application behavior
         run: |
-          case "$PLUGIN_ID" in uideas|ulit|agent-kanban|research-agenda) ;; *) exit 1 ;; esac
-          node --check "$PLUGIN_DIR/ui/index.js"
+          case "$PLUGIN_ID" in
+            uideas|ulit|agent-kanban|research-agenda|brainstorm|storage-ledger|surface-network) ;;
+            *) exit 1 ;;
+          esac
           python -m compileall -q "$PLUGIN_DIR/backend"
           python -m pip install -e ".[test]"
           python -m pytest tests/unit/pawapp/test_app_contract.py -q
           case "$PLUGIN_ID" in
+            research-agenda|storage-ledger|surface-network)
+              npm --prefix console ci
+              node "$PLUGIN_DIR/build.mjs"
+              ;;
+            brainstorm) npm --prefix console ci ;;
+          esac
+          node --check "$PLUGIN_DIR/ui/index.js"
+          case "$PLUGIN_ID" in
             uideas) python -m pytest tests/unit/plugins/test_uideas_workbench.py -q ;;
             ulit) python -m pytest tests/unit/plugins/test_ulit_database.py -q ;;
             research-agenda)
-              npm --prefix console ci
-              node "$PLUGIN_DIR/build.mjs"
               python -m pytest "$PLUGIN_DIR/tests" -q
               npm --prefix console run test:run -- src/plugins/researchAgenda.test.tsx
+              ;;
+            brainstorm)
+              python -m pytest "$PLUGIN_DIR/tests" tests/unit/plugins/test_brainstorm_app.py -q
+              npm --prefix console run test:run -- src/plugins/brainstorm.test.tsx
+              ;;
+            storage-ledger)
+              python -m pytest tests/unit/plugins/test_storage_ledger.py -q
+              npm --prefix console run test:run -- src/plugins/storageLedger.test.tsx
+              ;;
+            surface-network)
+              python -m pytest "$PLUGIN_DIR/tests" -q
+              npm --prefix console run test:run -- src/plugins/surfaceNetwork.test.tsx
               ;;
           esac
 

@@ -1074,6 +1074,11 @@ def test_macos_updater_metadata_latest_and_prerelease_hardening() -> None:
     assert "--brand ugsci" in promote
     assert "--include-updater-metadata" in promote
 
+    # Prerelease detection covers PEP 440 short tags and the dead no-op block
+    # is gone.
+    assert "[-.])b[0-9]" in release
+    assert "component artifacts are checked below" not in release
+
 
 def test_desktop_latest_aliases_reuse_versioned_objects_and_restore(
     monkeypatch, tmp_path
@@ -1189,12 +1194,6 @@ def test_desktop_latest_aliases_reuse_versioned_objects_and_restore(
     assert links == {latest[0]: previous}
     assert objects[latest[1]] == b"legacy duplicate"
     assert all(aliases.metadata_key(key) not in objects for key in latest)
-
-    # Prerelease detection covers PEP 440 short tags and the dead no-op block
-    # is gone.
-    assert "[-.])b[0-9]" in release
-    assert "component artifacts are checked below" not in release
-
 
 def test_workflow_bash_blocks_have_no_dangling_merge_residue() -> None:
     """Guard: no bash keyword may be followed by a bare token on same line.
