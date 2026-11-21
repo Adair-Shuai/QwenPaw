@@ -18,6 +18,10 @@ from qwenpaw.expert_packages.service import ExpertInstallService
 from qwenpaw.expert_packages.source import Channel
 from qwenpaw.expert_packages.runtime import host_python
 from scripts.build_expert_release import build
+from tests.integration.driver_mcp_fakes import (
+    mcp_runtime_host,  # noqa: F401
+    sdk_mcp_manager,
+)
 
 SERVER = """import json, sys
 from example_method import answer
@@ -273,17 +277,12 @@ async def test_expert_startup_is_awaited_and_retried_without_reinstall(
 async def test_installed_expert_runs_through_host_drivers_and_checks_prerequisites(  # noqa: E501
     isolated,
     monkeypatch,
+    mcp_runtime_host,
 ):
     from types import SimpleNamespace
     from qwenpaw.config.config import ModelSlotConfig
     from qwenpaw.config.utils import load_config
     from qwenpaw.providers import ProviderManager
-    from qwenpaw.drivers.manager import DriverManager
-    from qwenpaw.drivers.credentials.store import AsyncCredentialStore
-    from qwenpaw.drivers.handlers.mcp import (
-        MCPDriverHandler,
-        validate_mcp_endpoint,
-    )
     from qwenpaw.drivers.capabilities import (
         DriverInvocation,
         format_capability_id,
@@ -322,7 +321,6 @@ async def test_installed_expert_runs_through_host_drivers_and_checks_prerequisit
         "items": ["example"],
     }
     skills.enable_skill("example")
-    monkeypatch.setattr("qwenpaw.drivers.handlers.mcp.load_envs", lambda: {})
 
     class Gate:
         calls = 0
@@ -332,15 +330,10 @@ async def test_installed_expert_runs_through_host_drivers_and_checks_prerequisit
             assert context.driver_name == "expert-methods"
 
     gate = Gate()
-    drivers = DriverManager(
-        workspace / "drivers",
-        AsyncCredentialStore(workspace / "credentials.yaml"),
+    drivers = await sdk_mcp_manager(
+        mcp_runtime_host,
+        workspace,
         approval_gate=gate,
-    )
-    drivers.register_handler_type(
-        "mcp",
-        MCPDriverHandler,
-        validate_mcp_endpoint,
     )
 
     class Host:
@@ -364,7 +357,7 @@ async def test_installed_expert_runs_through_host_drivers_and_checks_prerequisit
             ),
         )
         assert result.ok, result
-        assert result.value.structuredContent == {"answer": 42}
+        assert result.value.structured_content == {"answer": 42}
         assert gate.calls == 1
         denied = await drivers.invoke_capability(
             DriverInvocation(
