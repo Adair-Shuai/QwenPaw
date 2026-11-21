@@ -527,6 +527,27 @@
   justify-content: center;
 }
 
+.cardDependencyDetails {
+  cursor: default;
+  color: var(--app-text-secondary);
+  font-size: var(--app-font-caption);
+  overflow-wrap: anywhere;
+
+  summary {
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid var(--app-focus-ring);
+      outline-offset: 2px;
+    }
+  }
+
+  ul {
+    margin: 6px 0 0;
+    padding-inline-start: 20px;
+  }
+}
+
 .cardActions {
   position: relative;
   margin-top: auto;

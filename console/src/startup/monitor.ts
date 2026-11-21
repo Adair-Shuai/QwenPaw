@@ -17,6 +17,7 @@ import {
 import type { ErrorLike } from "../utils/chunkRecovery";
 import { waitForChunkServerReady } from "../utils/chunkServerReadiness";
 import { copyText } from "../utils/clipboard";
+import { DEFAULT_UI_LANGUAGE, readUiLanguage } from "../utils/uiLanguage";
 
 export interface StartupMessages {
   startup: {
@@ -45,12 +46,7 @@ export interface StartupMessages {
 export function installStartupMonitor(
   translations: Record<string, StartupMessages>,
 ): () => void {
-  let language = navigator.language;
-  try {
-    language = localStorage.getItem("language") || language;
-  } catch {
-    // Startup recovery also works when WebView storage is restricted.
-  }
+  const language = readUiLanguage();
   const locale =
     Object.keys(translations).find(
       (key) => key.toLowerCase() === language.toLowerCase(),
@@ -58,7 +54,8 @@ export function installStartupMonitor(
     Object.keys(translations).find(
       (key) => key.split("-")[0] === language.toLowerCase().split("-")[0],
     );
-  const messages = translations[locale ?? "en"];
+  const messages =
+    translations[locale ?? DEFAULT_UI_LANGUAGE] ?? translations.en;
   const startedAt = Date.now();
   let stopped = false;
   let failedPreload: string | null = null;

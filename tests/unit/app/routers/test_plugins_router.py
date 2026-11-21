@@ -477,6 +477,7 @@ def _write_upgrade_archive(archive, plugin_id, source_kind):
         ("external", False),
         ("external", True),
         ("bundled", False),
+        ("bundled-preserve", False),
         ("bundled", True),
         ("bundled-failed", False),
         ("bundled-broken", False),
@@ -565,9 +566,15 @@ def test_replace_installed_plugin_full_isolated_lifecycle(
         archive,
     )
 
+    preserved = installed / "data" / "user-record.txt"
+    if source_kind == "bundled-preserve":
+        preserved.parent.mkdir()
+        preserved.write_text("user data", encoding="utf-8")
+
     async def upgrade():
         body = plugin_router.ReplacePluginRequest(
             source=source,
+            defer_if_needed=source_kind == "bundled-preserve",
             plugin_id=plugin_id,
             version="1.1.0",
             sha256=digest if source_kind == "external" else None,
@@ -591,6 +598,9 @@ def test_replace_installed_plugin_full_isolated_lifecycle(
         assert "1.0.0" in (installed / "dist/index.js").read_text()
         return
     result = asyncio.run(upgrade())
+    if source_kind == "bundled-preserve":
+        assert preserved.read_text(encoding="utf-8") == "user data"
+        assert not (Path(source) / "data").exists()
 
     assert result["version"] == "1.1.0"
     assert loader.get_loaded_plugin(plugin_id).manifest.version == "1.1.0"

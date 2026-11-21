@@ -24,6 +24,8 @@ async def test_sidecar_retains_supervised_pid_and_stops_on_restart(
 ):
     monkeypatch.syspath_prepend(str(APP))
     from backend import service_compat
+    from backend.context_gateway import ContextGateway
+    from backend.engine_gateway import EngineGateway
 
     monkeypatch.setattr(service_compat, "APP_DATA_DIR", tmp_path)
     monkeypatch.setenv("UNGRANTED_SECRET", "host-only")
@@ -37,6 +39,7 @@ async def test_sidecar_retains_supervised_pid_and_stops_on_restart(
             """\
             import json
             import os
+            from pathlib import Path
             import socket
             import sys
 
@@ -50,6 +53,7 @@ async def test_sidecar_retains_supervised_pid_and_stops_on_restart(
             def _response():
                 payload = json.dumps({
                     "pid": os.getpid(),
+                    "home": str(Path.home()),
                     "secret": os.environ.get("MODEL_SECRET"),
                     "host_secret": os.environ.get("UNGRANTED_SECRET"),
                     "paths": list(sys.path),
@@ -116,10 +120,23 @@ async def test_sidecar_retains_supervised_pid_and_stops_on_restart(
             first_url = service.base_url
             first = (await client.get(first_url)).json()
             assert first["pid"] == service.diagnostics()["pid"]
+            assert Path(first["home"]) == Path.home()
             assert first["secret"] == "first"
             assert first["host_secret"] is None
             assert str(host_modules) not in first["paths"]
             assert first["args"][-1] == "argument with spaces"
+            monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+            monkeypatch.setenv("NO_PROXY", "")
+            for gateway, endpoint in (
+                (ContextGateway(service, "test"), "/api/health"),
+                (EngineGateway(service, "test"), "/health"),
+            ):
+                await gateway.start()
+                try:
+                    response = await gateway.json("GET", endpoint)
+                    assert response["pid"] == first["pid"]
+                finally:
+                    await gateway.stop()
             model["MODEL_SECRET"] = "rotated"
             await service.restart()
             second_url = service.base_url

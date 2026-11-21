@@ -30,13 +30,17 @@ def format_search_results(results: list[dict]) -> str:
         return "No results found."
     lines: list[str] = []
     for i, r in enumerate(results, 1):
-        title = r.get("title", "")
-        url = r.get("url", "")
-        content = r.get("content", "")
+        # Keep result headings distinct from multiline page text so clients
+        # can recover source links from both streamed and stored results.
+        title = " ".join((r.get("title") or "").split())
+        url = (r.get("url") or "").strip()
+        if any(char.isspace() for char in url):
+            url = ""
+        content = r.get("content") or r.get("snippet") or ""
         lines.append(f"[{i}] {title}")
         lines.append(f"    URL: {url}")
         if content:
-            lines.append(f"    {content}")
+            lines.extend(f"    {line}" for line in content.splitlines())
         lines.append("")
     return "\n".join(lines).rstrip()
 

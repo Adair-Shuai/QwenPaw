@@ -13,9 +13,8 @@ import type { ToolInfo } from "../../../api/modules/tools";
  *
  * Deliberately not driven by ``tool.config_fields`` like the generic
  * ``ToolConfigModal``: web_search only ever has two fixed fields
- * (provider select + api_key password). The api_key field is optional for
- * every provider: tavily stays keyless when empty, anysearch may register
- * anonymously. Keeping this as a standalone component means the shared
+ * (provider select + api_key password). DeepSeek requires a key.
+ * Keeping this as a standalone component means the shared
  * ``ToolConfigModal`` — used by all plugin tools — is never touched by
  * web_search-specific behavior.
  *
@@ -182,9 +181,17 @@ export function WebSearchConfigModal({
               <Select.Option value="tavily">tavily</Select.Option>
               <Select.Option value="anysearch">anysearch</Select.Option>
               <Select.Option value="firecrawl">firecrawl</Select.Option>
+              <Select.Option value="deepseek">DeepSeek</Select.Option>
             </Select>
           </Form.Item>
-          <Form.Item name="api_key" label={t("tools.webSearchApiKeyLabel")}>
+          <Form.Item
+            name="api_key"
+            label={
+              providerValue === "deepseek"
+                ? "DeepSeek API Key"
+                : t("tools.webSearchApiKeyLabel")
+            }
+          >
             <Input.Password
               autoComplete="off"
               disabled={isLoading || isError}

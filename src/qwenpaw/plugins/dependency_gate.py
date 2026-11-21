@@ -311,12 +311,27 @@ class DependencyGate:
                     f"syntax: {', '.join(parsed.unsupported)}"
                 ),
             )
+        from importlib.metadata import Distribution
+        from packaging.utils import canonicalize_name
         from .execution.dependencies import _dependency_closure
+        from .execution.duplicate_providers import (
+            compare_recorded_payloads,
+            duplicate_choice,
+        )
+
+        duplicates = {}
 
         class InstalledRequirements(dict):
             # Fetch only metadata reached through active requirements/extras.
             def get(self, name, default=None):
                 if name not in self:
+                    choice = duplicate_choice(
+                        name, Distribution.discover(name=name)
+                    )
+                    if choice is not None:
+                        duplicates[name] = choice
+                        self[name] = {"requires_dist": choice.requirements}
+                        return self[name]
                     try:
                         self[name] = {
                             "version": _dist_version(name),
@@ -349,12 +364,56 @@ class DependencyGate:
         # Markers were evaluated with their parent extras by the closure.
         for req in reqs:
             req.marker = None
+        for req in reqs:
+            choice = duplicates.get(canonicalize_name(req.name))
+            if (
+                choice is not None
+                and allow_install
+                and (
+                    not choice.same_requirements or not choice.compatible(req)
+                )
+            ):
+                return GateDecision(
+                    False,
+                    False,
+                    missing=[str(req)],
+                    reason=choice.refusal(str(req)),
+                    reason_code="DEPENDENCY_ENVIRONMENT_AMBIGUOUS",
+                )
         missing = [
-            str(req) for req in reqs if not is_requirement_satisfied(req)
+            str(req)
+            for req in reqs
+            if canonicalize_name(req.name) not in duplicates
+            and not is_requirement_satisfied(req)
         ]
+        if allow_install:
+            for name, choice in duplicates.items():
+                if (
+                    compare_recorded_payloads(choice, include_loaded=True)
+                    == "different"
+                ):
+                    return GateDecision(
+                        False,
+                        False,
+                        missing=[name],
+                        reason=f"{choice.refusal(name)} Recorded package files differ.",
+                        reason_code="DEPENDENCY_ENVIRONMENT_AMBIGUOUS",
+                    )
+        if missing and allow_install:
+            for name, choice in duplicates.items():
+                if not choice.uniform_contract:
+                    return GateDecision(
+                        False,
+                        False,
+                        missing=missing,
+                        reason=choice.refusal(name),
+                        reason_code="DEPENDENCY_ENVIRONMENT_AMBIGUOUS",
+                    )
         if not missing:
             warnings = []
             for req in reqs:
+                if canonicalize_name(req.name) in duplicates:
+                    continue  # Final admission reports the consumer's sources.
                 if not requirement_applies(req):
                     continue
                 try:

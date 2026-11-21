@@ -290,6 +290,14 @@
     "installedCount": "{{count}} apps",
     "clearFilters": "Clear filters",
     "moreActions": "More actions",
+    "duplicatePythonDependencies": "Duplicate Python dependencies detected",
+    "dependencyAdvice": {
+      "review_files": "Recorded files differ between copies of this version. Check their installation sources before choosing a provider.",
+      "reuse": "The loaded provider satisfies this requirement.",
+      "compatible_candidates": "The candidate versions satisfy this requirement. The loaded provider is unconfirmed.",
+      "review_versions": "Check the candidate versions, requirements and loaded paths. Align requirements before installing or updating.",
+      "observed": "Loaded provider"
+    },
     "openApp": "Open app",
     "noDescription": "No description",
     "search": "Search apps...",
@@ -4673,6 +4681,7 @@
     "system": "System"
   },
   "chat": {
+    "webSearchSources": "Search sources",
     "assignAgent": "Assign Agent",
     "sessionSettings": {
       "advanced": "Advanced options",

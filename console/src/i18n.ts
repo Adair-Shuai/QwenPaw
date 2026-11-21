@@ -1,6 +1,7 @@
 import { createInstance, type BackendModule, type ReadCallback } from "i18next";
 import { initReactI18next } from "react-i18next";
 import en from "./locales/en.json";
+import { readUiLanguage } from "./utils/uiLanguage";
 
 type LocaleResource = Record<string, unknown>;
 
@@ -66,8 +67,6 @@ const localeBackend: BackendModule = {
   },
 };
 
-const initialLanguage =
-  localStorage.getItem("language") || navigator.language || "en";
 const localeCodes = Object.keys(localeLoaders) as SupportedLanguage[];
 // nonExplicitSupportedLngs reduces a region-qualified code to its language
 // part before matching supportedLngs, so "pt-BR" is looked up as "pt" and
@@ -79,12 +78,15 @@ const languageOnlyAliases = localeCodes
 const supportedLngs = [...localeCodes, ...languageOnlyAliases];
 
 const i18n = createInstance();
+i18n.on("languageChanged", (language) => {
+  document.documentElement.lang = i18n.resolvedLanguage || language;
+});
 
 export const i18nReady = i18n
   .use(localeBackend)
   .use(initReactI18next)
   .init({
-    lng: initialLanguage,
+    lng: readUiLanguage(),
     fallbackLng: "en",
     supportedLngs,
     nonExplicitSupportedLngs: true,

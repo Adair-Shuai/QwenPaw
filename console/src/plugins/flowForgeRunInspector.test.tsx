@@ -14,6 +14,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.hoisted(() => localStorage.setItem("language", "zh"));
+
 // Build the real plugin components with the same external React contract as
 // production. The plugin checkout has its own development React installation.
 const buildOptions = {

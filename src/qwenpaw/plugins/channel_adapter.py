@@ -525,6 +525,45 @@ class ChannelBackend:
 
             if not isinstance(snapshot, DependencyReadEvidence):
                 return observed
+            # The worker may already have imported a different provider than
+            # this process. Metadata timestamps cannot witness sys.modules.
+            ambiguous = {
+                warning.partition(":")[0]
+                for warning in snapshot.warnings
+                if warning.endswith(
+                    ": DEPENDENCY_ENVIRONMENT_AMBIGUOUS; attempting load"
+                )
+            }
+            if ambiguous:
+                from importlib.metadata import Distribution
+                from .execution.duplicate_providers import read_providers
+
+                def verify_worker_versions():
+                    for name, version in snapshot.versions.items():
+                        providers = read_providers(
+                            name,
+                            Distribution.discover(
+                                name=name,
+                                path=snapshot.sites,
+                            ),
+                        )
+                        if (len(providers) > 1) != (name in ambiguous):
+                            return False
+                        if version is not None and not any(
+                            provider.version == version
+                            for provider in providers
+                        ):
+                            return False
+                    return True
+
+                before = await run_sync_io(witness, snapshot)
+                if not await run_sync_io(verify_worker_versions) or (
+                    before != await run_sync_io(witness, snapshot)
+                ):
+                    raise RuntimeError(
+                        "DEPENDENCY_ENVIRONMENT_IDENTITY_CHANGED"
+                    )
+                return observed
             metadata_before = await run_sync_io(witness, snapshot)
             try:
                 view, relevant = await run_sync_io(
@@ -533,6 +572,7 @@ class ChannelBackend:
                     snapshot.sites,
                     description.requirements,
                     marker_environment=snapshot.marker_environment,
+                    report_all_duplicates=True,
                 )
             except ProtocolValidationError as exc:
                 if any(

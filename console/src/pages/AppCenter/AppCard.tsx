@@ -1,5 +1,6 @@
 import { UgsciAppIcon, ugsciAppIconUrls } from "@/components/UgsciAppIcon";
 import { pickAppDescription } from "./appDescription";
+import { DependencyDetails } from "./DependencyDetails";
 import { InteractiveCard } from "@/components/interaction/InteractiveCard";
 /**
  * AppCard.tsx — Individual app card for the App Center grid.
@@ -16,6 +17,8 @@ import { CommunityFeedback } from "@/components/CommunityFeedback";
 import styles from "./index.module.less";
 
 const { Text, Paragraph } = Typography;
+const duplicateDependencyWarning =
+  /^[a-z0-9][a-z0-9._-]*: DEPENDENCY_ENVIRONMENT_AMBIGUOUS; attempting load$/;
 
 export interface AppCardData {
   installation_origin?: InstallationOrigin | null;
@@ -57,6 +60,17 @@ interface AppCardProps {
 export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
   const { t, i18n } = useTranslation();
   const available = canOpenApp(app);
+  const diagnostics = app.diagnostics ?? [];
+  const dependencyWarnings = new Set(
+    available
+      ? diagnostics.filter((message) =>
+          duplicateDependencyWarning.test(message),
+        )
+      : [],
+  );
+  const inlineDiagnostics = diagnostics.filter(
+    (message) => !dependencyWarnings.has(message),
+  );
   const open = () => {
     if (available) onClick(app);
   };
@@ -191,11 +205,11 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
                 )}
               </Tag>
             )}
-            {app.diagnostics?.length ? (
-              <Paragraph type="secondary" title={app.diagnostics.join("\n")}>
-                {app.diagnostics.join("; ")}
+            {inlineDiagnostics.length > 0 && (
+              <Paragraph type="secondary" title={inlineDiagnostics.join("\n")}>
+                {inlineDiagnostics.join("; ")}
               </Paragraph>
-            ) : null}
+            )}
             <div className={styles.cardFooter}>
               {app.category && (
                 <span className={styles.cardMeta}>{app.category}</span>
@@ -203,6 +217,13 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
             </div>
           </div>
         </div>
+        {dependencyWarnings.size > 0 && (
+          <DependencyDetails
+            key={JSON.stringify([app.id, app.version, ...dependencyWarnings])}
+            pluginId={app.id}
+            warnings={dependencyWarnings}
+          />
+        )}
         <div className={styles.cardActions}>
           <Button
             disabled={!available}

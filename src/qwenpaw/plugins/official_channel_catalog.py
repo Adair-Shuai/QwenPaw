@@ -100,13 +100,6 @@ OFFICIAL_CHANNELS: tuple[dict[str, str], ...] = (
         "doc_url": "https://qwenpaw.agentscope.io/docs/channels",
     },
     {
-        "channel_key": "imessage",
-        "plugin_id": "imessage",
-        "source_dir": "imessage",
-        "icon": "",
-        "doc_url": "https://qwenpaw.agentscope.io/docs/channels",
-    },
-    {
         "channel_key": "onebot",
         "plugin_id": "onebot",
         "source_dir": "onebot",
@@ -137,13 +130,29 @@ OFFICIAL_CHANNELS: tuple[dict[str, str], ...] = (
 )
 
 
+# An operator can install the native Messages driver separately on macOS.
+_IMESSAGE = {
+    "channel_key": "imessage",
+    "plugin_id": "imessage",
+    "source_dir": "imessage",
+    "icon": "",
+    "doc_url": "https://qwenpaw.agentscope.io/docs/channels",
+}
+
+
+def bundled_channel_owners() -> dict[str, str]:
+    return {row["channel_key"]: row["plugin_id"] for row in OFFICIAL_CHANNELS}
+
+
 def official_channel_owners() -> dict[str, str]:
     """Map channel routing keys to the plugin that may claim them."""
-    return {row["channel_key"]: row["plugin_id"] for row in OFFICIAL_CHANNELS}
+    return {**bundled_channel_owners(), "imessage": "imessage"}
 
 
 def official_channel_for_plugin(plugin_id: str) -> dict[str, str] | None:
     """Resolve a delivered plugin independently of its routing/source name."""
+    if plugin_id == "imessage":
+        return _IMESSAGE
     return next(
         (row for row in OFFICIAL_CHANNELS if row["plugin_id"] == plugin_id),
         None,

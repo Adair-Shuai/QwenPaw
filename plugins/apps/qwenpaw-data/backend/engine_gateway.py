@@ -53,6 +53,12 @@ class EngineGateway:
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(120.0, connect=5.0),
             follow_redirects=False,
+            # Managed endpoints live on loopback even with a system proxy.
+            mounts={
+                "all://127.0.0.1": None,
+                "all://localhost": None,
+                "all://[::1]": None,
+            },
         )
 
     async def stop(self) -> None:

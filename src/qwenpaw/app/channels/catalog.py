@@ -8,7 +8,10 @@ import json
 
 from packaging.version import Version
 
-from ...plugins.official_channel_catalog import official_channel_owners
+from ...plugins.official_channel_catalog import (
+    bundled_channel_owners,
+    official_channel_owners,
+)
 
 OFFICIAL_CHANNEL_OWNERS = official_channel_owners()
 RESPONSE_FIELDS = frozenset(
@@ -218,9 +221,12 @@ def _assemble_channel_catalog(
     from ...plugins.official_channel_catalog import OFFICIAL_CHANNELS
 
     registry = PluginRegistry()
-    owners = official_channel_owners()
+    owners = bundled_channel_owners()
     result = {}
     for key, field in ChannelConfig.model_fields.items():
+        if key == "imessage":
+            # The native driver contributes its own row when installed.
+            continue
         model = field.annotation
         official = key in owners
         result[key] = {
@@ -310,6 +316,8 @@ def _assemble_channel_catalog(
                 ),
             )
     for key in saved_keys:
+        if key == "imessage":
+            continue
         result.setdefault(
             key,
             {

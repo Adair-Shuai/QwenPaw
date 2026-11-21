@@ -1,7 +1,22 @@
 {
   "groups": {
+    "web_search": [
+      "tests/unit/agents/tools/test_websearch_providers.py",
+      "tests/unit/app/routers/test_tools_router_web_search_config.py"
+    ],
+    "storage_ledger": ["tests/unit/plugins/test_storage_ledger.py"],
+    "surface_network": [
+      "plugins/apps/surface-network/tests/test_ezwalker.py",
+      "plugins/apps/surface-network/tests/test_ezscene.py",
+      "plugins/apps/surface-network/tests/test_eztopology.py",
+      "plugins/apps/surface-network/tests/test_ezassembly_api.py"
+    ],
     "research_agenda": [
       "plugins/apps/research-agenda/tests/test_agenda.py"
+    ],
+    "brainstorm": [
+      "tests/unit/plugins/test_brainstorm_app.py",
+      "plugins/apps/brainstorm/tests/test_materials.py"
     ],
     "desktop_delivery": [
       "tests/unit/routers/test_desktop_delivery.py"
@@ -190,6 +205,8 @@
       "tests/unit/plugins/test_plugin_update_transactions.py",
       "tests/unit/plugins/test_pawapp_listing.py",
       "tests/unit/pawapp/test_app_contract.py",
+      "tests/unit/pawapp/test_qwenpaw_data_runtime.py",
+      "tests/unit/pawapp/test_qwenpaw_data_service_lifecycle.py",
       "tests/unit/plugins/test_pawapp_service_lifecycle.py",
       "tests/unit/plugins/test_bundled_startup_safety.py",
       "tests/unit/tauri/test_component_service.py",
@@ -316,6 +333,7 @@
       "tests/unit/plugins/test_download_catalog.py",
       "tests/unit/plugins/test_generate_plugin_metadata.py",
       "tests/unit/plugins/test_loader_dep_probing.py",
+      "tests/unit/plugins/test_duplicate_providers.py",
       "tests/unit/plugins/test_loader_helpers.py",
       "tests/unit/plugins/test_plugin_failure_recovery.py",
       "tests/unit/plugins/test_plugin_install_target_safety.py",
@@ -362,6 +380,60 @@
     ]
   },
   "required_cases": {
+    "tests/unit/agents/tools/test_websearch_providers.py": [
+      "test_deepseek_search_with_sources",
+      "test_deepseek_search_requires_its_own_key"
+    ],
+    "plugins/apps/brainstorm/tests/test_materials.py": [
+      "test_word_paragraph_location_and_explicit_truncation",
+      "test_slides_use_presentation_order_including_reordered_slides",
+      "test_pdf_page_evidence_and_image_only_feedback",
+      "test_bad_material_does_not_enter_the_discussion"
+    ],
+    "tests/unit/plugins/test_brainstorm_app.py": [
+      "test_discussion_uses_real_model_adapter_context_and_persisted_history",
+      "test_long_discussions_fit_the_model_window_and_preserve_full_source",
+      "test_retries_conflicts_and_model_errors_preserve_the_last_saved_turn",
+      "test_other_accounts_and_experts_cannot_open_or_extend_a_session"
+    ],
+    "tests/unit/plugins/test_storage_ledger.py": [
+      "test_import_review_reconcile_and_preserve_source",
+      "test_text_reading_and_failed_import_are_traceable",
+      "test_casing_and_surface_sources_reach_well_archive",
+      "test_projects_isolate_restore_and_archive_without_touching_original",
+      "test_edited_raw_reading_and_source_retirement",
+      "test_editions_merge_by_well_day_with_original_lineage",
+      "test_engineering_objects_read_original_coordinates_and_link_exact_endpoints",
+      "test_engineering_series_respects_review_calendar_null_zero_and_lineage"
+    ],
+    "plugins/apps/surface-network/tests/test_ezscene.py": [
+      "test_assembled_cylinders_inherit_owner_and_transform_all_ancestors",
+      "test_separate_model_trees_keep_placements_and_unresolved_models_separate",
+      "test_indexed_shell_combines_quantization_mesh_placement_and_assembly",
+      "test_nonuniform_instance_is_excluded_from_circular_end_evidence",
+      "test_scene_rejects_out_of_bounds_resource_pointers_and_cycles",
+      "test_torus_uses_its_own_plane_and_meets_both_native_cylinder_ends",
+      "test_signed_arc_extrema_fit_the_shared_floor_plan_without_straight_segments",
+      "test_slender_mesh_uses_source_triangles_when_overview_clustering_collapses",
+      "test_parent_asset_locates_owned_children_without_duplicating_geometry"
+    ],
+    "plugins/apps/surface-network/tests/test_eztopology.py": [
+      "test_preserves_typed_endpoint_fields_and_names_without_joining_ambiguous_assets",
+      "test_indexes_weld_membership_bidirectionally_without_guessing_split_line_sections",
+      "test_pages_filter_and_locate_matching_face_candidates_apart_from_process_links"
+    ],
+    "plugins/apps/surface-network/tests/test_ezassembly_api.py": [
+      "test_assembled_faces_require_opposed_unique_ends_and_exclude_crossings",
+      "test_scene_and_relations_follow_live_catalog_scope_and_revision",
+      "test_catalog_publish_rejects_a_stale_rebuild_without_replacing_project",
+      "test_older_attribute_catalog_recovers_relations_without_positioning_local_parts",
+      "test_compact_indexes_preserve_search_results_evidence_and_local_geometry",
+      "test_compressed_scene_revalidates_only_with_current_scope_and_revision"
+    ],
+    "plugins/apps/surface-network/tests/test_ezwalker.py": [
+      "test_import_keeps_duplicate_tags_and_original_attribute_values",
+      "test_wlp_reports_reference_without_opening_external_path"
+    ],
     "plugins/apps/research-agenda/tests/test_agenda.py": [
       "test_text_import_review_apply_is_persistent_and_idempotent",
       "test_missing_evidence_and_invalid_images_are_rejected",
@@ -579,7 +651,8 @@
     ],
     "tests/unit/plugins/test_official_channel_bundle.py": [
       "test_official_bundle_keeps_current_closed_host_identity",
-      "test_official_bundle_retains_current_runtime_source"
+      "test_official_bundle_retains_current_runtime_source",
+      "test_native_imessage_platform_admission"
     ],
     "tests/unit/agents/tools/test_office_tools.py": [
       "test_managed_officecli_passes_update_guard_to_real_child"
@@ -1167,6 +1240,16 @@
     "tests/unit/plugins/test_loader_dep_probing.py": [
       "test_bundled_guard_uses_the_consumers_observed_version"
     ],
+    "tests/unit/plugins/test_duplicate_providers.py": [
+      "test_duplicate_providers_follow_the_consumer_across_plugins",
+      "test_app_registration_and_http_listing_preserve_per_app_constraints",
+      "test_frozen_installer_metadata_cannot_certify_a_host_module",
+      "test_duplicate_provider_requires_consistent_metadata_and_ownership",
+      "test_worker_reports_its_own_version_and_ambiguous_writes_remain_guarded",
+      "test_channel_reprobes_duplicate_sources_and_rejects_stale_worker_metadata",
+      "test_only_matching_recorded_payloads_quiet_unloaded_duplicates",
+      "test_desktop_keeps_task_packages_available_only_to_task_children"
+    ],
     "tests/unit/plugins/test_plugin_process.py": [
       "test_dependency_resolution_reuses_consumer_bundled_provider",
       "test_dependency_preparation_rejects_protected_environment"
@@ -1255,6 +1338,13 @@
     "tests/unit/plugins/test_pawapp_listing.py": [
       "test_app_listing_merges_failed_disabled_pending_and_active",
       "test_app_listing_excludes_backups_removed_and_malformed_manifests"
+    ],
+    "tests/unit/pawapp/test_qwenpaw_data_runtime.py": [
+      "test_skills_in_selected_sidecar_environment",
+      "test_runtime_survives_replacement_of_plugin_code"
+    ],
+    "tests/unit/pawapp/test_qwenpaw_data_service_lifecycle.py": [
+      "test_sidecar_retains_supervised_pid_and_stops_on_restart"
     ],
     "tests/unit/pawapp/test_app_contract.py": [
       "test_managed_service_recovers_after_process_exit",

@@ -33,6 +33,9 @@ const localStorageMock = (() => {
 })();
 Object.defineProperty(globalThis, "localStorage", { value: localStorageMock });
 
+// Console integration fixtures use English accessible names.
+localStorage.setItem("language", "en");
+
 // matchMedia (required by antd)
 Object.defineProperty(window, "matchMedia", {
   writable: true,

@@ -4,7 +4,7 @@
 """Web search and fetch tools.
 
 web_search delegates to a pluggable search provider (AnySearch by
-default, Tavily or Firecrawl when the per-agent Console config
+default, Tavily, Firecrawl or DeepSeek when the per-agent Console config
 selects them).
 web_fetch uses direct HTTP GET + a stdlib HTML-to-Markdown converter.
 """
@@ -28,12 +28,6 @@ from .websearch import format_search_results, get_search_provider
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 30
-
-_SEARCH_FALLBACK_HINT = (
-    "This tool uses a free API with rate limits. "
-    "Try again later, or fall back to "
-    "execute_shell_command with curl as a last resort."
-)
 
 _FETCH_FALLBACK_HINT = "Try execute_shell_command with curl as a last resort."
 
@@ -143,7 +137,11 @@ async def web_search(search_term: str) -> ToolChunk:
     - Current events or technology news.
     - Informational queries similar to what you might search on the web.
 
-    FALLBACK - This tool uses a free API with rate limits. If it returns an error due to network issues or quota limits, fall back to execute_shell_command with curl.
+    When using these results in an answer, cite the supporting page beside
+    the claim using a Markdown link with its title and exact result URL.
+
+    If a network or quota error prevents searching, try again later or
+    use execute_shell_command with curl as a last resort.
 
     Args:
         search_term: The search term to look up on the web. Be specific and include relevant keywords for better results. For technical queries, include version numbers or dates if relevant.
@@ -180,7 +178,7 @@ async def web_search(search_term: str) -> ToolChunk:
         )
     except Exception as exc:
         logger.warning(f"web_search failed: {exc}")
-        text = f"web_search failed: {exc}\n\n" f"{_SEARCH_FALLBACK_HINT}"
+        text = f"web_search failed: {exc}"
 
     return ToolChunk(
         is_last=True,

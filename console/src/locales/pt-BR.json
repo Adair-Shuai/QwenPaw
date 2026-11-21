@@ -199,6 +199,14 @@
     "installedCount": "{{count}} aplicativos",
     "clearFilters": "Limpar filtros",
     "moreActions": "Mais ações",
+    "duplicatePythonDependencies": "Foram encontradas dependências Python duplicadas",
+    "dependencyAdvice": {
+      "review_files": "Os arquivos registrados diferem entre cópias desta versão. Confira as origens de instalação antes de escolher uma cópia.",
+      "reuse": "A dependência carregada atende aos requisitos.",
+      "compatible_candidates": "As versões candidatas atendem aos requisitos. A origem carregada ainda não foi confirmada.",
+      "review_versions": "Confira as versões, os requisitos e os caminhos dos módulos carregados. Alinhe os requisitos antes de instalar ou atualizar.",
+      "observed": "Origem carregada"
+    },
     "openApp": "Abrir aplicativo",
     "noDescription": "Sem descrição",
     "search": "Pesquisar aplicativos...",

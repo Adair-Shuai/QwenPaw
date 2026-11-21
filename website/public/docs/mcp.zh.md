@@ -141,7 +141,7 @@ Tavily 是一个专为 AI 优化的网络搜索服务，可让智能体进行实
 
 > **内置支持**：系统启动时会自动创建名为 `tavily_search` 的客户端。如果环境变量中已设置 `TAVILY_API_KEY`，该客户端会自动启用。你也可以直接修改tavily mcp的配置。
 
-这是 Tavily 的 **MCP 客户端**配置。QwenPaw 的内置 `web_search` 工具可选择 Tavily、AnySearch 或 Firecrawl，配置方式见下方[网页搜索](#网页搜索web_search)。
+这是 Tavily 的 **MCP 客户端**配置。QwenPaw 的内置 `web_search` 工具可选择 DeepSeek、Tavily、AnySearch 或 Firecrawl，配置方式见下方[网页搜索](#网页搜索web_search)。
 
 #### 远程 MCP 服务
 
@@ -263,7 +263,7 @@ QwenPaw 提供了一组开箱即用的内置工具，智能体可以直接调用
 | 文件操作     | `append_file`             | 追加内容到文件末尾                                    |
 | 文件搜索     | `grep_search`             | 按内容搜索文件，支持正则表达式和上下文                |
 | 文件搜索     | `glob_search`             | 按文件名模式查找文件                                  |
-| 网页搜索     | `web_search`              | 搜索网页，支持 Tavily、AnySearch 和 Firecrawl         |
+| 网页搜索     | `web_search`              | 搜索网页，支持 DeepSeek、Tavily、AnySearch 和 Firecrawl         |
 | 网页读取     | `web_fetch`               | 读取网页内容并转换为 Markdown                         |
 | 命令执行     | `execute_shell_command`   | 执行 Shell 命令，支持异步执行                         |
 | 智能体委托   | `delegate_external_agent` | 通过 ACP 将任务委托给外部智能体 runner                |
@@ -282,6 +282,7 @@ QwenPaw 提供了一组开箱即用的内置工具，智能体可以直接调用
 
 在 **智能体 → 工具** 中启用 `web_search`，选择搜索供应商，并按需填写该供应商的 API Key。每个智能体可独立配置；未选择供应商时默认使用 AnySearch。
 
+- **DeepSeek** 使用独立网页搜索接口，需在工具卡片填写 DeepSeek 官方 API Key，可搭配其他聊天模型。四种搜索供应商都支持在回答下方查看搜索来源，正文中的来源链接会标注对应序号。
 - **AnySearch**（默认）：支持无密钥的匿名搜索，但受匿名额度限制。填写 AnySearch API Key 后使用带密钥的请求；匿名额度用尽时，服务端也可能返回自动注册的密钥，工具会尝试保存并重试。
 - **Tavily**：无需 API Key 即可使用匿名搜索；填写 Tavily API Key 后优先使用带密钥的请求。带密钥请求遇到 HTTP 401、429 或 432 时会回退到匿名搜索。
 - **Firecrawl**：API Key 可选。填写后优先使用带密钥的请求；若返回 HTTP 401，会尝试一次无密钥请求。无密钥请求是否可用及额度取决于服务端。
@@ -302,7 +303,7 @@ QwenPaw 提供了一组开箱即用的内置工具，智能体可以直接调用
 }
 ```
 
-`provider` 可设为 `tavily`、`anysearch` 或 `firecrawl`。API Key 请通过控制台填写，不要写入此配置文件。`web_search` 接受 `search_term` 参数；`web_fetch` 接受 `url` 参数，用于读取搜索结果中的网页。
+`provider` 可设为 `deepseek`、`tavily`、`anysearch` 或 `firecrawl`。API Key 通过控制台填写。`web_search` 接受 `search_term` 参数，`web_fetch` 接受 `url` 参数，用于读取搜索结果中的网页。
 
 **文件操作**
 

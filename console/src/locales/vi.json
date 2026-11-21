@@ -200,6 +200,14 @@
     "installedCount": "{{count}} ứng dụng",
     "clearFilters": "Xóa bộ lọc",
     "moreActions": "Thao tác khác",
+    "duplicatePythonDependencies": "Phát hiện các gói phụ thuộc Python trùng lặp",
+    "dependencyAdvice": {
+      "review_files": "Các bản cùng phiên bản có tệp đã đăng ký khác nhau. Kiểm tra nguồn cài đặt trước khi chọn bản sử dụng.",
+      "reuse": "Gói đã nạp đáp ứng yêu cầu.",
+      "compatible_candidates": "Các phiên bản tìm thấy đều đáp ứng yêu cầu. Chưa xác nhận được nguồn đã nạp.",
+      "review_versions": "Kiểm tra phiên bản, yêu cầu và đường dẫn mô-đun đã nạp. Thống nhất yêu cầu trước khi cài đặt hoặc cập nhật.",
+      "observed": "Nguồn đã nạp"
+    },
     "openApp": "Mở ứng dụng",
     "noDescription": "Không có mô tả",
     "search": "Tìm kiếm ứng dụng...",

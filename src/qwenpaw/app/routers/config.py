@@ -133,7 +133,7 @@ def _validated_channel_config(
     """Use trusted static schemas with or without installed channel code."""
     from ...plugins.registry import PluginRegistry
     from ...plugins.channel_config import validate_channel_config
-    from ...plugins.official_channel_catalog import official_channel_owners
+    from ...plugins.official_channel_catalog import bundled_channel_owners
     from ...plugins.official_channels import bundled_channel_description
 
     if not isinstance(values, dict):
@@ -148,8 +148,8 @@ def _validated_channel_config(
         schema = None
         if row is not None and row.description_record is not None:
             schema = row.description_record.descriptor.config_schema
-        elif name in official_channel_owners():
-            plugin_id = official_channel_owners()[name]
+        elif name in bundled_channel_owners():
+            plugin_id = bundled_channel_owners()[name]
             description = official_description or bundled_channel_description(
                 plugin_id,
             )
@@ -176,11 +176,11 @@ def _validated_channel_config(
 async def _validated_channel_config_async(name: str, values: dict):
     """Prefetch official schemas without moving registry reads off-loop."""
     from ...plugins.registry import PluginRegistry
-    from ...plugins.official_channel_catalog import official_channel_owners
+    from ...plugins.official_channel_catalog import bundled_channel_owners
     from ...plugins.official_channels import bundled_channel_description
 
     description = None
-    owner = official_channel_owners().get(name)
+    owner = bundled_channel_owners().get(name)
     row = PluginRegistry().get_channel_catalog_entry(name)
     if owner is not None and (row is None or row.description_record is None):
         try:
@@ -553,7 +553,7 @@ def _management_http_error(error: ManagementError) -> HTTPException:
 async def _managed_qrcode_sessions(request, channel):
     """Select QR descriptors, including offline official takeover metadata."""
     from ...channel_protocol.management import MANAGEMENT_CAPABILITIES
-    from ...plugins.official_channel_catalog import official_channel_owners
+    from ...plugins.official_channel_catalog import bundled_channel_owners
     from ...plugins.official_channels import bundled_channel_description
 
     loader = getattr(request.app.state, "plugin_loader", None)
@@ -562,7 +562,7 @@ async def _managed_qrcode_sessions(request, channel):
     )
     description = row.description_record if row is not None else None
     if description is None:
-        owner = official_channel_owners().get(channel)
+        owner = bundled_channel_owners().get(channel)
         if owner is not None:
             try:
                 description = await run_sync_io(

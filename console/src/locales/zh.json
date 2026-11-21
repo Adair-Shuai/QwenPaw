@@ -290,6 +290,14 @@
     "installedCount": "{{count}} 个应用",
     "clearFilters": "清除筛选",
     "moreActions": "更多操作",
+    "duplicatePythonDependencies": "检测到重复的 Python 依赖",
+    "dependencyAdvice": {
+      "review_files": "同版本副本的已登记文件存在差异。请核对各自的安装来源，再决定保留哪一份。",
+      "reuse": "当前进程已加载满足要求的依赖，可以继续使用。",
+      "compatible_candidates": "候选版本都满足要求，当前加载来源尚未确认。",
+      "review_versions": "请核对候选版本、依赖声明和加载路径，统一版本要求后再安装或更新。",
+      "observed": "已加载来源"
+    },
     "openApp": "打开应用",
     "noDescription": "暂无描述",
     "search": "搜索应用...",
@@ -4507,6 +4515,7 @@
     "system": "跟随系统"
   },
   "chat": {
+    "webSearchSources": "搜索来源",
     "assignAgent": "选择指派智能体",
     "sessionSettings": {
       "advanced": "高级选项",

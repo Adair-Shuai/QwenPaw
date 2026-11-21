@@ -55,6 +55,19 @@ def test_context_python_preserves_virtualenv_launcher_symlink(
     assert selected != launcher.resolve()
 
 
+def test_runtime_survives_replacement_of_plugin_code(tmp_path, monkeypatch):
+    runtime = _load_runtime_module()
+    monkeypatch.delenv("QWENPAW_DATA_CONTEXT_PYTHON", raising=False)
+    runtime.RUNTIME_ENV = tmp_path / "apps" / "qwenpaw-data" / ".venv-qwenpaw-data"
+    launcher = runtime.RUNTIME_ENV / "Scripts" / "python.exe"
+    launcher.parent.mkdir(parents=True)
+    launcher.touch()
+    for version in ("installed", "replacement"):
+        runtime.PLUGIN_DIR = tmp_path / version
+        runtime.PLUGIN_DIR.mkdir()
+        assert runtime.context_python() == launcher
+
+
 def test_runtime_packages_available_probes_service_entrypoints(
     monkeypatch,
 ) -> None:
@@ -87,6 +100,23 @@ def test_runtime_packages_unavailable_when_engine_entrypoint_is_missing(
     monkeypatch.setattr(runtime.importlib, "import_module", import_module)
 
     assert not runtime.runtime_packages_available()
+
+
+@pytest.mark.parametrize(
+    ("launcher", "site"),
+    [("Scripts/python.exe", "Lib"), ("bin/python", "lib/python3.11")],
+)
+def test_skills_in_selected_sidecar_environment(tmp_path, monkeypatch, launcher, site):
+    runtime = _load_runtime_module()
+    python = tmp_path / launcher
+    python.parent.mkdir()
+    python.touch()
+    (tmp_path / "pyvenv.cfg").touch()
+    skills = tmp_path / site / "site-packages/qwenpaw_data_skills/skills"
+    skills.mkdir(parents=True)
+    monkeypatch.delenv("QWENPAW_DATA_SKILLS_DIR", raising=False)
+    monkeypatch.setenv("QWENPAW_DATA_CONTEXT_PYTHON", str(python))
+    assert runtime.skills_root() == skills
 
 
 def test_skill_layers_return_only_category_directories(tmp_path: Path) -> None:

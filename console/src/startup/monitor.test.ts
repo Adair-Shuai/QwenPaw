@@ -54,6 +54,7 @@ beforeEach(() => {
     return true;
   });
   localStorage.clear();
+  localStorage.setItem("language", "en");
   sessionStorage.clear();
   vi.spyOn(navigator, "language", "get").mockReturnValue("en");
   vi.stubGlobal(
@@ -411,6 +412,18 @@ describe("Console startup recovery", () => {
     document.head.append(entry);
     entry.dispatchEvent(new Event("error"));
     expect(readChunkDiagnostic()?.frontendBuild).toBe(entry.src);
+  });
+
+  it("uses Simplified Chinese for startup errors without a saved language", () => {
+    stop();
+    localStorage.removeItem("language");
+    stop = installStartupMonitor(translations);
+    window.dispatchEvent(
+      new ErrorEvent("error", { error: new Error("Startup failed") }),
+    );
+    expect(document.querySelector("h1")?.textContent).toBe(
+      zh.chunkError.startup.title,
+    );
   });
 
   it.each(Object.keys(translations) as (keyof typeof translations)[])(

@@ -148,12 +148,12 @@ def test_official_discovery_and_descriptor_snapshot_are_static(
         "xiaoyi",
         "wechat",
         "matrix",
-        "imessage",
         "onebot",
         "azure_bot",
         "voice",
         "sip",
     } <= set(official)
+    assert "imessage" not in get_configurable_channel_catalog(["imessage"])
     from qwenpaw.channel_protocol.errors import ProtocolValidationError
     from qwenpaw.plugins.architecture import PluginManifest
     from qwenpaw.plugins.channel_adapter import describe_channel
@@ -1450,6 +1450,9 @@ async def test_update_replaces_worker_and_preserves_data(
     await host.loader.load_plugin_from_path(first)
     await host.loader.lifecycle.update_config(KEY, {"custom": "keep"})
     old, before = await host.identity(ws)
+    # Windows may assign the old PID to the replacement. Keep its creation
+    # time as part of the identity checked by psutil.Process.is_running().
+    old_worker = psutil.Process(before["pid"])
     data = ws.workspace_dir / "business.json"
     data.write_text('{"retained":true}')
     candidate = host.artifact("2.0.0", sdk=dependency_change)
@@ -1487,7 +1490,7 @@ async def test_update_replaces_worker_and_preserves_data(
         assert (
             len(calls) == 1
         )  # The staged replacement retains the successful wheels.
-        assert alive(before["pid"])
+        assert old_worker.is_running()
         assert (await host.identity(ws))[1]["sdk"] == "old-sdk"
         result = await manager.apply(operation["id"])
         assert result["status"] == "succeeded", result
@@ -1495,7 +1498,7 @@ async def test_update_replaces_worker_and_preserves_data(
         report = await host.loader.lifecycle.reload(KEY, new_source=candidate)
         assert report.ok, report.errors
     fresh, after = await host.identity(ws)
-    assert not alive(before["pid"]) and after["version"] == "2.0.0"
+    assert not old_worker.is_running() and after["version"] == "2.0.0"
     assert fresh._launch_spec.generation > old._launch_spec.generation
     assert Path(after["source"]).is_relative_to(host.installed)
     connections = rows(host.ledger, "connected")

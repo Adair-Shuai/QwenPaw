@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 #   azure-bot              : lives in plugins/channel (not a default bundled
 #                            root) but listed here for explicit intent.
 PLUGIN_DENYLIST = frozenset(
-    {"cloudpaw", "qwenpaw-pet", "qwenpaw-creator", "azure-bot"},
+    {"cloudpaw", "qwenpaw-pet", "qwenpaw-creator", "azure-bot", "imessage"},
 )
 DEFAULT_PLUGIN_ROOTS = ("bundle",)
 BUNDLED_PLUGIN_IDS = runpy.run_path(

@@ -198,6 +198,14 @@
     "installedCount": "{{count}} 個のアプリ",
     "clearFilters": "フィルターをクリア",
     "moreActions": "その他の操作",
+    "duplicatePythonDependencies": "Python の依存パッケージが重複しています",
+    "dependencyAdvice": {
+      "review_files": "同じバージョンのコピーで記録されたファイルが異なります。採用する前にインストール元を確認してください。",
+      "reuse": "読み込み済みの依存パッケージは要件を満たしています。",
+      "compatible_candidates": "候補のバージョンは要件を満たしています。読み込み元は未確認です。",
+      "review_versions": "候補のバージョン、要件、読み込み元を確認し、要件を揃えてからインストールまたは更新してください。",
+      "observed": "読み込み元"
+    },
     "openApp": "アプリを開く",
     "noDescription": "説明はありません",
     "search": "アプリを検索...",

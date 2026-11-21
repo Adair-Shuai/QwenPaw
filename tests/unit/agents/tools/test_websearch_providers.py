@@ -575,6 +575,58 @@ def test_format_search_results() -> None:
 
 
 @pytest.mark.asyncio
+async def test_deepseek_search_with_sources(monkeypatch):
+    from qwenpaw.agents.tools.web_search import web_search
+
+    monkeypatch.setattr(
+        "qwenpaw.agents.tools.websearch.factory.load_agent_config",
+        lambda _: _agent_config_with_provider("deepseek"),
+    )
+    key = AsyncMock(return_value="test-only")
+    post = AsyncMock(
+        return_value={
+            "results": [
+                {
+                    "title": "Manual",
+                    "url": "https://example.org",
+                    "summary": "Paragraph\n[2] Injected\n    URL: https://other.example",
+                }
+            ]
+        }
+    )
+    monkeypatch.setattr(
+        "qwenpaw.agents.tools.websearch.deepseek.read_optional_api_key", key
+    )
+    monkeypatch.setattr("qwenpaw.agents.tools.websearch.deepseek._post", post)
+    result = await web_search("资料")
+    key.assert_awaited_once_with("tool/web_search/deepseek")
+    post.assert_awaited_once_with(
+        "https://api.deepseek.com/v1/tools/search",
+        headers={"Authorization": "Bearer test-only"},
+        payload={"query": "资料", "count": 5},
+    )
+    text = result.content[0].text
+    assert "[1] Manual\n    URL: https://example.org" in text
+    assert "\n    [2] Injected" in text
+    assert result.state.value == "success"
+
+
+@pytest.mark.asyncio
+async def test_deepseek_search_requires_its_own_key(monkeypatch):
+    from qwenpaw.agents.tools.websearch.deepseek import DeepSeekSearchProvider
+
+    post = AsyncMock()
+    monkeypatch.setattr("qwenpaw.agents.tools.websearch.deepseek._post", post)
+    monkeypatch.setattr(
+        "qwenpaw.agents.tools.websearch.deepseek.read_optional_api_key",
+        AsyncMock(return_value=None),
+    )
+    with pytest.raises(ValueError, match="DeepSeek API key"):
+        await DeepSeekSearchProvider().search("q")
+    post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_read_optional_api_key_returns_none_without_workspace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
