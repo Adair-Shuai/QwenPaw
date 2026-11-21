@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import Protocol, Callable, Awaitable, TYPE_CHECKING
 
+from ..utils.io_utils import run_sync_io
 from .errors import SDKError, StaleContextError, ToolInputError, ResourceError
 from .resources import Registration, ResourceOwner, ResourceScope
 from .storage import MediaStore, PluginConfig, PluginStorage
@@ -31,6 +32,7 @@ from .apps import PawApp
 if TYPE_CHECKING:
     from .harnesses import HarnessSpec
     from .logging import PluginLogger
+    from .drivers import DriverProtocolSpec
 
 
 _activation_owners = ContextVar("sdk_activation_owners", default=frozenset())
@@ -454,13 +456,14 @@ class PluginContext:  # pylint: disable=protected-access
         deadline=None,
     ):
         import jsonschema
+        from ..utils.json_schema import schema_validator
 
         self._guard()
         spec, handle, _ = self._tools[name]
         if handle.closed:
             raise StaleContextError(f"Tool {name!r} has been released")
         try:
-            jsonschema.validate(arguments, spec.input_schema)
+            schema_validator(spec.input_schema).validate(arguments)
         except jsonschema.ValidationError as exc:
             raise ToolInputError(exc.message) from exc
         async with self._invocation(
@@ -470,7 +473,6 @@ class PluginContext:  # pylint: disable=protected-access
         ) as context:
             if spec.config_fields:
                 values = dict(self._api.config)
-                from ..utils.io_utils import run_sync_io
 
                 settings = (
                     await run_sync_io(
@@ -506,8 +508,6 @@ class PluginContext:  # pylint: disable=protected-access
             ):
                 result = spec.handler(context, arguments)
             else:
-                from ..utils.io_utils import run_sync_io
-
                 result = await run_sync_io(spec.handler, context, arguments)
             if inspect.isawaitable(result):
                 result = await result
@@ -820,7 +820,6 @@ class PluginContext:  # pylint: disable=protected-access
     async def _call(handler, context, *arguments):
         if inspect.iscoroutinefunction(handler):
             return await handler(context, *arguments)
-        from ..utils.io_utils import run_sync_io
 
         result = await run_sync_io(handler, context, *arguments)
         return await result if inspect.isawaitable(result) else result
@@ -1213,7 +1212,6 @@ class PluginContext:  # pylint: disable=protected-access
 
     def register_skills(self, spec: SkillSpec) -> Registration:
         from pathlib import Path
-        from ..utils.io_utils import run_sync_io
 
         self._guard()
         if getattr(self, "_skills_registered", False):
@@ -1377,6 +1375,15 @@ class PluginContext:  # pylint: disable=protected-access
 
     def register_memory(self, spec: MemorySpec) -> Registration:
         from ._memory import register
+
+        return register(self, spec)
+
+    def register_driver_protocol(
+        self,
+        spec: DriverProtocolSpec,
+    ) -> Registration:
+        """Declare an owned protocol without opening or discovering sources."""
+        from ._drivers import register
 
         return register(self, spec)
 

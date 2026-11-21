@@ -73,6 +73,18 @@ class ProviderRegistration:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class DriverProtocolState:
+    """In-memory runtime facts; registration is an opaque identity token."""
+
+    plugin_id: str
+    generation: int
+    active: bool
+    blocked: bool
+    revoked: bool
+    registration: object = field(repr=False)
+
+
 @dataclass
 class HookRegistration:
     """Hook registration record."""
@@ -215,6 +227,10 @@ class PluginRegistry:  # pylint:disable=too-many-public-methods
 
         self.dependency_usage = DependencyUsageRegistry(self.runtime_owners)
         self._channels: Dict[str, ChannelRegistration] = {}
+        self._driver_protocols: dict[str, Any] = {}
+        self._protocol_preparation = None
+        self.protocol_resolver: Optional[Callable] = None
+        self.protocol_eligibility: Optional[Callable] = None
         self.channel_runtime = None
         self._runtime_helpers = None
         self._plugin_manifests: Dict[str, Dict[str, Any]] = {}
@@ -529,6 +545,77 @@ class PluginRegistry:  # pylint:disable=too-many-public-methods
                 plugin_id,
             )
 
+    def register_driver_protocol(self, owner, spec) -> None:
+        """Reject duplicate protocol names before recording the exact owner."""
+        if spec.protocol in self._driver_protocols:
+            previous = self._driver_protocols[spec.protocol].owner
+            raise SDKError(
+                f"Driver protocol {spec.protocol!r} is already registered "
+                f"by plugin {previous.plugin_id!r}",
+            )
+        self._driver_protocols[spec.protocol] = owner
+
+    def unregister_driver_protocol(self, protocol, *, expected_owner) -> None:
+        """A retained handle may release only its own registration."""
+        current = self._driver_protocols.get(protocol)
+        if current is not None and current.owner is expected_owner:
+            del self._driver_protocols[protocol]
+
+    def register_protocol_preparation(self, service) -> None:
+        """Bind preparation and its callbacks to one explicit host owner."""
+        self._protocol_preparation = service
+        self.protocol_resolver = service.ensure_protocol
+        self.protocol_eligibility = service.eligible
+
+    def get_protocol_preparation(self):
+        return self._protocol_preparation
+
+    def unregister_protocol_preparation(self, service) -> None:
+        if self._protocol_preparation is service:
+            self._protocol_preparation = None
+            self.protocol_resolver = None
+            self.protocol_eligibility = None
+
+    def driver_protocol_loader(self, protocol, *, plugin_id):
+        """Find an existing owner's loader for host preparation bootstrap."""
+        descriptor = self._driver_protocols.get(protocol)
+        if descriptor is not None and descriptor.owner.plugin_id == plugin_id:
+            # Host preparation resolves the loader bound to the SDK instance.
+            # pylint: disable-next=protected-access
+            return descriptor.plugin._loader
+        return None
+
+    def describe_driver_protocol(self, protocol, *, loader=None):
+        """Read runtime ownership without discovery, I/O or admission."""
+        descriptor = self._driver_protocols.get(protocol)
+        if descriptor is None:
+            return None
+        owner = descriptor.owner
+        owner_loader = self.driver_protocol_loader(
+            protocol,
+            plugin_id=owner.plugin_id,
+        )
+        record = owner_loader.get_loaded_plugin(owner.plugin_id)
+        active = bool(
+            (loader is None or loader is owner_loader)
+            and record is not None
+            and record.enabled
+            and record.status == "active",
+        )
+        if active:
+            try:
+                descriptor.guard()
+            except SDKError:
+                active = False
+        return DriverProtocolState(
+            owner.plugin_id,
+            owner.generation,
+            active,
+            owner.plugin_id in owner_loader.startup_blocked_plugins,
+            descriptor.revoked,
+            descriptor,
+        )
+
     @property
     def backend_registry_initialized(self):
         """Check declaration presence without importing backend machinery."""
@@ -594,6 +681,8 @@ class PluginRegistry:  # pylint:disable=too-many-public-methods
             app: The root ``FastAPI`` instance.
         """
         self._plugin_http_app = app
+        if app is None:
+            return
         from ._harness_http import install_gateway
 
         install_gateway(self, app)
@@ -836,6 +925,12 @@ class PluginRegistry:  # pylint:disable=too-many-public-methods
             MultiAgentManager instance or None
         """
         return self._workspace_manager
+
+    def get_driver_workspace(self, agent_id):
+        """Resolve the live or standalone owner without starting it."""
+        manager = self._workspace_manager
+        live = getattr(manager, "agents", getattr(manager, "workspaces", {}))
+        return live.get(agent_id) or self._stop_workspaces.get(agent_id)
 
     def register_stop_workspace(self, agent_id: str, workspace: Any) -> None:
         """Expose a standalone workspace without replacing the app manager."""

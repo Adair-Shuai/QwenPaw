@@ -1998,13 +1998,31 @@
       "scopePlaceholder": "openid profile email",
       "authEndpoint": "Authorization Endpoint (override)",
       "tokenEndpoint": "Token Endpoint (override)",
-      "endpointHint": "Leave empty to auto-discover from the MCP server. Fill in to skip discovery."
+      "endpointHint": "Leave empty to auto-discover from the MCP server. Fill in to skip discovery.",
+      "attemptFailed": "This authorization did not complete. Your previous authentication configuration is unchanged. You can try again."
     },
     "local": "Local",
     "remote": "Remote",
     "headerAuth": "Token / key authentication",
     "headerAuthHint": "Uses the configured token or key when connecting; no additional OAuth flow is needed. This label does not indicate that the credential has been validated.",
-    "invalidJson": "Enter valid JSON containing at least one MCP server."
+    "invalidJson": "Enter valid JSON containing at least one MCP server.",
+    "legacyArchived": "Some legacy connections were not migrated. The original configuration was backed up.",
+    "recovery": {
+      "title": "MCP needs attention",
+      "invalid_upgrade_record": "Review the MCP installation record, then retry",
+      "orphaned_installation_record": "Review the MCP installation record, then retry",
+      "offline_upgrade_failed_check_dependencies_and_storage": "Check offline dependencies and storage, then retry",
+      "workspace_needs_review": "Review this workspace’s saved MCP configuration, then retry",
+      "invalid_plugin_settings": "Review the MCP plugin settings, then retry",
+      "plugin_runtime_failed": "The MCP plugin failed to load. Open Plugin Manager and select Repair and retry."
+    },
+    "plugin": {
+      "version": "MCP plugin version: {{version}}",
+      "updateAvailable": "MCP plugin {{version}} is available",
+      "update": "Update plugin",
+      "versionCheckUnavailable": "Plugin version check is unavailable. MCP can continue running.",
+      "frontendRefreshFailed": "The plugin was updated, but its interface could not refresh. Reload the page."
+    }
   },
   "heartbeat": {
     "customInterval": "Custom interval",
@@ -6146,7 +6164,8 @@
       "ambiguous": "A dependency has more than one installation source. Check the application logs for the package name, repair the environment, then retry.",
       "invalidMetadata": "Dependency installation information is incomplete or invalid. Check the application logs, repair the environment, then retry.",
       "failed": "Dependency preparation did not finish. Check the application logs, resolve the dependency issue, then retry."
-    }
+    },
+    "kindProtocol": "Protocol"
   },
   "codingMode": {
     "toolPresentationHelp": "When enabled, the agent uses a single code tool. It searches, processes files, and performs other tool operations by writing and running Python code.",
@@ -7072,5 +7091,11 @@
   "authorBadges": {
     "official": "Platform Official",
     "resourceMaintainer": "Resource Maintainer"
+  },
+  "mcpFeature": {
+    "required": "MCP plugin required",
+    "unavailable": "MCP is not installed or is unavailable. Mail and ACP cannot run. Your settings are retained; install, enable or repair MCP on the official plugins page.",
+    "openOfficial": "Open official plugins",
+    "later": "Later"
   }
 }

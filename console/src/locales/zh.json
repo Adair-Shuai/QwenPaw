@@ -1807,13 +1807,31 @@
       "scopePlaceholder": "openid profile email",
       "authEndpoint": "Authorization Endpoint（手动覆盖）",
       "tokenEndpoint": "Token Endpoint（手动覆盖）",
-      "endpointHint": "留空将自动从 MCP 服务器发现端点，填写后将跳过自动发现"
+      "endpointHint": "留空将自动从 MCP 服务器发现端点，填写后将跳过自动发现",
+      "attemptFailed": "本次授权未完成，原认证配置未更改。你可以重新授权。"
     },
     "local": "本地",
     "remote": "远程",
     "headerAuth": "Token / 密钥认证",
     "headerAuthHint": "连接时自动使用已配置的 Token 或密钥，无需重复 OAuth 授权。此标记不代表凭证有效性已验证。",
-    "invalidJson": "请输入有效的 JSON，且至少包含一个 MCP 服务。"
+    "invalidJson": "请输入有效的 JSON，且至少包含一个 MCP 服务。",
+    "legacyArchived": "部分旧连接未迁移，原配置已备份",
+    "recovery": {
+      "title": "MCP 需要处理",
+      "invalid_upgrade_record": "请检查 MCP 安装记录，然后重试",
+      "orphaned_installation_record": "请检查 MCP 安装记录，然后重试",
+      "offline_upgrade_failed_check_dependencies_and_storage": "请检查离线依赖和存储，然后重试",
+      "workspace_needs_review": "请检查此工作区保存的 MCP 配置，然后重试",
+      "invalid_plugin_settings": "请检查 MCP 插件设置，然后重试",
+      "plugin_runtime_failed": "MCP 插件加载失败，请前往插件管理并选择「修复并重试」。"
+    },
+    "plugin": {
+      "version": "MCP 插件版本：{{version}}",
+      "updateAvailable": "MCP 插件 {{version}} 可更新",
+      "update": "更新插件",
+      "versionCheckUnavailable": "暂时无法检查插件版本，MCP 可继续使用。",
+      "frontendRefreshFailed": "插件已更新，但界面刷新失败，请刷新页面。"
+    }
   },
   "heartbeat": {
     "customInterval": "自定义间隔",
@@ -6161,7 +6179,8 @@
       "ambiguous": "无法确定依赖的唯一来源。请查看应用日志中的依赖名称，修复依赖环境后重试。",
       "invalidMetadata": "依赖安装信息不完整或无效。请查看应用日志，修复依赖环境后重试。",
       "failed": "依赖准备未完成。请查看应用日志，处理依赖问题后重试。"
-    }
+    },
+    "kindProtocol": "协议"
   },
   "codingMode": {
     "toolPresentationHelp": "开启后，智能体只使用一个代码工具。搜索、文件处理等操作，统一通过编写并执行 Python 代码完成。",
@@ -7087,5 +7106,11 @@
   "authorBadges": {
     "official": "平台官方",
     "resourceMaintainer": "资源维护者"
+  },
+  "mcpFeature": {
+    "required": "需要 MCP 插件",
+    "unavailable": "MCP 插件未安装或不可用，Mail 和 ACP 暂不可用。配置已保留，请前往官方插件页面安装、启用或修复。",
+    "openOfficial": "前往官方插件",
+    "later": "稍后"
   }
 }

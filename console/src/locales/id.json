@@ -2813,6 +2813,7 @@
     "agentsPlaceholder": "Pilih ruang kerja agen yang akan dicadangkan"
   },
   "mcp": {
+    "legacyArchived": "Beberapa koneksi lama tidak dimigrasikan. Konfigurasi asli telah dicadangkan.",
     "title": "Klien MCP",
     "qwenpawManaged": "Dikelola QwenPaw",
     "qwenpawManagedHint": "Konfigurasi panel kontrol bersama disuntikkan ke Agent pihak ketiga yang didukung saat runtime.",
@@ -2949,7 +2950,14 @@
     },
     "local": "Lokal",
     "remote": "Jarak jauh",
-    "invalidJson": "Masukkan JSON yang valid dengan setidaknya satu server MCP."
+    "invalidJson": "Masukkan JSON yang valid dengan setidaknya satu server MCP.",
+    "plugin": {
+      "version": "Versi plugin MCP: {{version}}",
+      "updateAvailable": "Plugin MCP {{version}} tersedia",
+      "update": "Perbarui plugin",
+      "versionCheckUnavailable": "Versi plugin tidak dapat diperiksa. MCP tetap dapat digunakan.",
+      "frontendRefreshFailed": "Plugin diperbarui, tetapi antarmuka gagal dimuat ulang. Muat ulang halaman."
+    }
   },
   "preview": {
     "unavailable": "Pratinjau tidak tersedia",
@@ -3049,7 +3057,8 @@
       "ambiguous": "Sumber instalasi dependensi tidak dapat ditentukan secara unik. Periksa nama paket di log aplikasi, perbaiki lingkungan, lalu coba lagi.",
       "invalidMetadata": "Informasi instalasi dependensi tidak lengkap atau tidak valid. Periksa log aplikasi, perbaiki lingkungan, lalu coba lagi.",
       "failed": "Persiapan dependensi belum selesai. Periksa log aplikasi, atasi masalah dependensi, lalu coba lagi."
-    }
+    },
+    "kindProtocol": "Protokol"
   },
   "debug": {
     "title": "Debug",
