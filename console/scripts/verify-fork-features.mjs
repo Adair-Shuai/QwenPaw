@@ -23,12 +23,31 @@ const requireCases = (file, titles) =>
     readFileSync(path.join(root, file), "utf8"),
     titles,
   );
+requireCases("src/plugins/surfaceNetwork.test.tsx", [
+  "inspects linked pipes and reverses flow with the selected operating case",
+  "opens the station compressor in the shared equipment register and filters its symbols",
+  "links sensor tags to measured and modeled values and excludes boundary flows",
+  "reads the WLP link without replacing the active network drawing",
+  "keeps the selected sensor and case across table tabs, drawing focus and reference pages",
+  "opens the saved assembly and locates both objects from a measured face match",
+  "preserves an explicitly selected drawing while the saved worksite is opening",
+  "keeps the same worksite scene and station range across directory and drawing navigation",
+  "keeps distinct owners, pipe endpoints and native bend endpoints in the distant view",
+]);
 requireCases("src/plugins/researchAgenda.test.tsx", [
   "imports material, reviews source evidence, edits the proposal and schedules confirmed work",
   "retains pasted input after model failure and permits retry without creating tasks",
   "discards a late extraction when the selected agent changes",
   "accepts screenshot files and submits their image bytes with the selected identity",
   "reopens saved pending material from the confirmation view",
+]);
+requireCases("src/plugins/brainstorm.test.tsx", [
+  "imports a document excerpt and uses the edited material in the opening question",
+  "can choose %s when the current question has no answer",
+  "starts an open topic, follows the answer and summarizes the current draft",
+  "preserves an answer on model failure and can retry from the same question",
+  "opens a saved discussion with its summary from history",
+  "discards a late model reply after the selected expert changes",
 ]);
 requireCases("scripts/verify-brand-assets.test.mjs", [
   "keeps content verification before every shared plugin release pack step",
@@ -83,7 +102,11 @@ if (!existsSync(teamArtifactsSuite))
   );
 // Keep this inventory separate from Vitest discovery: deleting a feature's
 // tests during a merge must fail verification instead of silently reducing it.
+requireCases("src/pages/Agent/Tools/WebSearchConfigModal.test.tsx", [
+  "loads the separate DeepSeek search credential when selected",
+]);
 const suites = {
+  webSearchSettings: ["src/pages/Agent/Tools/WebSearchConfigModal.test.tsx"],
   upstreamWeek20261109: [
     "src/api/modules/agent.test.ts",
     "src/api/modules/harness.test.ts",
@@ -281,6 +304,8 @@ const suites = {
     "src/layouts/constants.test.ts",
   ],
   workspaceAndPlugins: [
+    "src/plugins/brainstorm.test.tsx",
+    "src/plugins/surfaceNetwork.test.tsx",
     "src/plugins/researchAgenda.test.tsx",
     "src/plugins/pluginRuntimeCleanup.test.ts",
     "src/plugins/pawapp-sdk/sessionRouting.test.ts",
@@ -355,6 +380,7 @@ const suites = {
     "src/pages/Agent/MCP/components/MCPAccessModal.largeCatalog.test.tsx",
     "src/pages/Agent/MCP/components/MCPClientCard.test.tsx",
     "src/plugins/documentForms.test.tsx",
+    "src/plugins/storageLedger.test.tsx",
     "src/plugins/storageCapacity.test.tsx",
     "src/plugins/hostSdk/ugsciWorkflow.test.tsx",
     "src/plugins/hostSdk/ugsciAuthoring.test.tsx",
@@ -703,6 +729,12 @@ for (const [file, titles] of [
     ],
   ],
   [
+    "src/plugins/storageLedger.test.tsx",
+    ["opens a duplicate well day and saves its source row and review reason",
+     "creates a project from the library and records data in its own scope",
+     "links a map well, comparison, casing source and pending day across independent documents"],
+  ],
+  [
     "src/plugins/storageCapacity.test.tsx",
     [
       "runs the mounted page from editable parameters to report and invalidates stale exports",
@@ -960,6 +992,7 @@ requireCases("src/pages/Chat/fileReferenceMarkdown.test.ts", [
   "preserves long non-file tokens while recognizing the following filename",
 ]);
 requireCases("src/pages/Chat/HostBubbles.render.test.tsx", [
+  "shows numbered web citations and unique sources in a %s assistant response",
   "bounds the mounted response card before measuring long markdown content",
   "keeps numeric ranges literal in the mounted assistant response",
   "enlarges scoped images from the actual assistant response without opening the workbench",
@@ -1465,6 +1498,8 @@ requireCases("src/pages/AppCenter/AppCenter.updates.test.tsx", [
   "updates an unavailable app without falsely activating its frontend",
 ]);
 requireCases("src/pages/AppCenter/AppCard.test.tsx", [
+  "inspects the actual dependency source on demand for any app",
+  "keeps duplicate dependency warnings in expandable details for an openable app",
   "keeps %s apps inspectable without opening them",
 ]);
 

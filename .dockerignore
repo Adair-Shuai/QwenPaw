@@ -62,6 +62,9 @@ sessions_mount_dir
 logs
 cookbook
 
+plugins/channel/imessage
+src/qwenpaw/official_channels/imessage-*.zip
+
 # UGSci visualization examples and converted test caches stay local.
 plugins/bundle/ugsci/visualization/data
 src/qwenpaw/plugins_bundle/ugsci/visualization/data

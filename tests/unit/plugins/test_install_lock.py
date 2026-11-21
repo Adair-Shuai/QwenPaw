@@ -45,13 +45,15 @@ def test_long_scoped_reader_blocks_maintenance_until_process_exit(
     monkeypatch.setattr(maintenance, "_STATE_ROOT", state)
     monkeypatch.setattr(maintenance, "_READER_SCOPE", "")
     directory = maintenance.prepare_reader_scope([site], scope)[0]
+    stale = Path(io_path(directory / "1-stale.lease"))
+    stale.write_bytes(b"0")
     script = """
 import importlib.util, os, sys
 from pathlib import Path
 spec = importlib.util.spec_from_file_location('maintenance', sys.argv[1])
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
-m.lease_environment([Path(sys.argv[2])])
+m.lease_environment([Path(sys.argv[2])], parent_pid=os.getppid())
 print(os.getpid(), flush=True)
 sys.stdin.readline()
 """
@@ -73,9 +75,11 @@ sys.stdin.readline()
             assert announced, peer.stderr.read()
             worker_pid = int(announced)
             assert len(str(directory / f"{worker_pid}-{'a' * 32}.lease")) > 260
+            assert stale.exists(), "Child admission must leave stale lease cleanup to the host"
             assert maintenance.live_readers([site]) == [
                 {"pid": worker_pid, "site": str(site)},
             ]
+            assert not stale.exists()
             with pytest.raises(RuntimeError, match="BUSY"):
                 with maintenance.maintenance([site], "long-reader", "token"):
                     pytest.fail("live scoped reader admitted maintenance")

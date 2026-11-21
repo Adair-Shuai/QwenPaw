@@ -1116,6 +1116,14 @@ async def _execute_in_sandbox(
             "PATH",
         )
         sandbox_env[path_key] = env[path_key]
+    # Restore only the desktop task settings removed from the inherited
+    # process environment. Explicit sandbox settings retain precedence.
+    from ...tauri.execution_runtime import task_site_overrides
+
+    configured = {key.upper() for key in sandbox_env}
+    for key, value in task_site_overrides(os.environ).items():
+        if key not in configured:
+            sandbox_env[key] = value
 
     ctx = get_call_context()
     # Under ToolCallContext the coordinator owns kill via cancellable_wait /
@@ -1539,6 +1547,9 @@ async def execute_shell_command(
     # locate user-installed CLIs — see ``_ensure_user_bins_on_path``.
     env = _ensure_user_bins_on_path(officecli_environment())
     env["PATH"] = shell_execution_path(env.get("PATH"))
+    from ...tauri.execution_runtime import task_site_overrides
+
+    env.update(task_site_overrides(env))
 
     if sandbox_config is not None and not isinstance(
         sandbox_config,
@@ -1627,7 +1638,6 @@ async def execute_shell_command(
     _logger.debug(
         "[sandbox] SKIP: sandbox_config is None, executing directly",
     )
-
     try:
         if sys.platform == "win32":
             (

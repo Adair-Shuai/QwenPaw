@@ -72,6 +72,10 @@ def dependency_http_error(exc):
         )
     code = exc.reason_code or "DEPENDENCY_PLAN_UNVERIFIED"
     instructions = {
+        "DEPENDENCY_ENVIRONMENT_AMBIGUOUS": (
+            "Check the candidate versions and module sources in the plugin's "
+            "dependency diagnostics. Align conflicting requirements before retrying."
+        ),
         "DEPENDENCY_UNSATISFIED": (
             "Resolve the missing dependency requirements, then "
             "retry installation."
@@ -1518,7 +1522,9 @@ async def replace_installed_plugin(
                 temp_dir,
             )
         else:
-            source_path = bundled_source
+            # Preservation writes into the candidate after the old instance stops.
+            source_path = temp_dir / "candidate"
+            await run_sync_io(copy_tree, bundled_source, source_path)
 
         from packaging.version import Version
 
@@ -1967,6 +1973,38 @@ async def repair_plugin_dependencies(plugin_id: str, request: Request):
             else f"Plugin '{plugin_id}' still failed."
         ),
     }
+
+
+@router.get("/{plugin_id}/dependency-diagnostics")
+async def get_dependency_diagnostics(plugin_id: str, request: Request):
+    """Read the active consumer's dependency sources without installing."""
+    loader = getattr(request.app.state, "plugin_loader", None)
+    record = loader.get_loaded_plugin(plugin_id) if loader else None
+    if record is None:
+        raise HTTPException(status_code=404, detail="Plugin not loaded")
+    binding = getattr(record, "backend_binding", None)
+    inspect = (
+        getattr(binding.backend, "dependency_diagnostics", None)
+        if binding
+        else None
+    )
+    if inspect is None:
+        return {"consumer": "unavailable", "packages": {}}
+    try:
+        report = await inspect(binding.description)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=getattr(exc, "reason_code", "DEPENDENCY_PLAN_UNVERIFIED"),
+        ) from exc
+    if (
+        loader.get_loaded_plugin(plugin_id) is not record
+        or record.backend_binding is not binding
+    ):
+        raise HTTPException(
+            status_code=409, detail="Plugin generation changed"
+        )
+    return report
 
 
 @router.get(

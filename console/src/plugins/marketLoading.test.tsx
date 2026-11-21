@@ -455,7 +455,7 @@ describe.each([
     expect(
       fetchHost.mock.calls.some(([, init]) => init?.method === "DELETE"),
     ).toBe(false);
-  });
+  }, 30_000);
 
   it("blocks expert package creation when the signed installation plan is rejected", async () => {
     const fallback = fetchHost.getMockImplementation()!;

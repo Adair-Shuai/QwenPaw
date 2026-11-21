@@ -516,7 +516,7 @@ def _lease_environment(sites, parent_pid=None, timeout=5):
                 parent_pid
                 and any(
                     row.get("pid") == parent_pid
-                    for row in live_readers((site,))
+                    for row in live_readers((site,), clean_stale=False)
                 )
             ):
                 yield
@@ -600,7 +600,8 @@ def host_sites():
 
 # Keep the transaction and verification boundary intact.
 # pylint: disable-next=R0912
-def live_readers(sites, ignore_pid=None):
+def live_readers(sites, ignore_pid=None, *, clean_stale=True):
+    """Inspect OS-held leases. A child checking its parent only needs to read."""
     readers = []
     for root in sites:
         directory = Path(_lock_filename(_readers_dir(root)))
@@ -643,7 +644,11 @@ def live_readers(sites, ignore_pid=None):
                         readers.append(value)
             finally:
                 os.close(descriptor)
-            if stale and (not scope or path.parent == directory / scope):
+            if (
+                clean_stale
+                and stale
+                and (not scope or path.parent == directory / scope)
+            ):
                 try:
                     path.unlink(missing_ok=True)
                 except OSError as exc:

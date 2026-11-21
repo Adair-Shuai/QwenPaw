@@ -19,7 +19,7 @@ from types import SimpleNamespace
 import zipfile
 
 from .official_channel_catalog import (
-    official_channel_owners,
+    bundled_channel_owners,
     official_channel_for_plugin,
 )
 from .channel_bootstrap import (
@@ -66,7 +66,7 @@ def _bundled_index(root):
         or not isinstance(index["plugins"], list)
         or any(not isinstance(row, dict) for row in index["plugins"])
         or [row.get("plugin_id") for row in index["plugins"]]
-        != sorted(official_channel_owners().values())
+        != sorted(bundled_channel_owners().values())
     ):
         raise ValueError("Official index identity mismatch")
     for row in index["plugins"]:
@@ -156,7 +156,7 @@ def _extracted_channel_source(plugin_id, row, payload, *, retain=None):
 @contextmanager
 def bundled_channel_source(plugin_id, *, retain=None):
     """Verify installed resource bytes and yield a private extracted source."""
-    if official_channel_for_plugin(plugin_id) is None:
+    if plugin_id not in bundled_channel_owners().values():
         raise ValueError("Unknown official channel")
     root = _resource_root()
     index = _bundled_index(root)
@@ -215,7 +215,7 @@ def bundled_channel_description(plugin_id: str):
     from .architecture import PluginManifest
     from .channel_adapter import describe_channel
 
-    if official_channel_for_plugin(plugin_id) is None:
+    if plugin_id not in bundled_channel_owners().values():
         raise ValueError("Unknown official channel")
     root = _resource_root()
     with get_sync_path_lock(str(root) + "/" + plugin_id):
@@ -287,7 +287,7 @@ async def prepare_channel_upgrade():
                 )
     settings = raw.get("plugins", {})
     removed = raw.get("channel_plugin_state", {}).get("uninstalled", [])
-    owners = official_channel_owners()
+    owners = bundled_channel_owners()
     allowed = set(owners)
     enabled = EnvVarLoader.get_str("QWENPAW_ENABLED_CHANNELS", "").strip()
     disabled = EnvVarLoader.get_str("QWENPAW_DISABLED_CHANNELS", "")
@@ -403,7 +403,7 @@ def initialize_channel_policy():
         # recapture their enabled settings and resurrect removed plugins.
         if state.version == 1:
             captured.update({"feishu", "dingtalk"})
-        owners = official_channel_owners()
+        owners = bundled_channel_owners()
         if failed:
             state.legacy_pending = [
                 item
@@ -457,9 +457,11 @@ async def provision_bundled_channels(loader):
     await run_sync_io(initialize_channel_policy)
     config = await run_sync_io(load_config)
     state = config.channel_plugin_state
-    requested = set(state.legacy_pending)
+    requested = set(state.legacy_pending).intersection(
+        bundled_channel_owners().values(),
+    )
     if state.preset == "channels-full":
-        requested.update(official_channel_owners().values())
+        requested.update(bundled_channel_owners().values())
     errors = {}
     for plugin_id in sorted(requested - set(state.uninstalled)):
         try:

@@ -38,6 +38,7 @@ from .update import detect_target
 from .client import ComponentClient
 from .update import (
     DEFAULT_PRESERVE_PATHS,
+    DIRECTORY_COMPONENT_IDS,
     ComponentUpdateError,
     ComponentUpdatePlan,
     ComponentUpdater,
@@ -64,18 +65,6 @@ _COMPONENT_INSTALL_LOCK_TIMEOUT = 3600.0
 _DEFAULT_COMPONENT_PUBLIC_KEY = _distribution.COMPONENT_PUBLIC_KEY
 _DEFAULT_COMPONENT_BASE_URL = _distribution.COMPONENT_BASE_URL
 _MANAGED_PLUGIN_DENYLIST = frozenset({"cloudpaw", "qwenpaw-pet"})
-DIRECTORY_COMPONENT_IDS = frozenset(
-    {
-        "backend",
-        "python-runtime",
-        "python-packages",
-        "node-runtime",
-        "java-runtime",
-        "officecli",
-        "neqsim",
-        "computer-use-helper",
-    },
-)
 _MANAGED_COMPONENTS_ROOT = WORKING_DIR / "components" / "managed"
 _ADOPTED_COMPONENTS_PATH = WORKING_DIR / "components" / "adopted.json"
 _ADOPTED_LOCK = threading.RLock()

@@ -12,6 +12,9 @@ from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
 
+from qwenpaw.constant import WORKING_DIR
+
+RUNTIME_ENV = WORKING_DIR / "apps" / "qwenpaw-data" / ".venv-qwenpaw-data"
 PLUGIN_DIR = Path(__file__).resolve().parent.parent
 DEV_DIR = PLUGIN_DIR / ".qwenpaw-data-dev"
 
@@ -40,7 +43,7 @@ def context_python() -> Path:
     Resolution order:
     1. ``QWENPAW_DATA_CONTEXT_PYTHON`` environment variable.
     2. The plugin-local ``.venv-qwenpaw-data`` virtual environment
-       (development).
+       (development), then the persistent environment under the app data directory.
     3. The current interpreter, if it already has the qwenpaw-data runtime
        packages installed from PyPI.
     4. Fall back to the expected ``.venv-qwenpaw-data`` path so that a missing
@@ -54,6 +57,8 @@ def context_python() -> Path:
     candidates = (
         PLUGIN_DIR / ".venv-qwenpaw-data" / "bin" / "python",
         PLUGIN_DIR / ".venv-qwenpaw-data" / "Scripts" / "python.exe",
+        RUNTIME_ENV / "bin" / "python",
+        RUNTIME_ENV / "Scripts" / "python.exe",
     )
     for candidate in candidates:
         if candidate.is_file():
@@ -102,6 +107,18 @@ def skills_root() -> Path | None:
     if configured:
         path = Path(configured).expanduser().resolve()
         return path if path.is_dir() else None
+    # Inspect assets without adding the sidecar's packages to the host path.
+    interpreter = context_python()
+    environment = interpreter.parent.parent
+    if interpreter.is_file() and (environment / "pyvenv.cfg").is_file():
+        sites = (
+            environment / "Lib" / "site-packages",
+            *sorted(environment.glob("lib/python*/site-packages")),
+        )
+        for site in sites:
+            skills = site / "qwenpaw_data_skills" / "skills"
+            if skills.is_dir():
+                return skills.resolve()
     installed = _installed_skills_root()
     if installed is not None:
         return installed

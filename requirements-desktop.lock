@@ -765,6 +765,10 @@ darabonba-core==1.0.8 \
 dashscope==1.26.7 \
     --hash=sha256:e7797ff99c5335589ecd0b97391611dd68dc3da6a28681dab5c522759b22922d
     # via agentscope
+defusedxml==0.7.1 \
+    --hash=sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69 \
+    --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
+    # via -r requirements-desktop.in
 deprecation==2.1.0 \
     --hash=sha256:72b3bde64e5d778694b0cf68178aed03d15e15477116add3fb773e581f9518ff \
     --hash=sha256:a10811591210e1fb0e768a8c25517cabeabcba6f0bf96564f8ff45189f90b14a
@@ -3286,6 +3290,7 @@ pypdf==6.16.1 \
     --hash=sha256:63fec31c4092ae50b6729beedcb469055b60d20c834bde1c402df241f371f644 \
     --hash=sha256:c4d1b43ddae921387321cf63936cd16a7743b91d2da92f165c149a195c972ba9
     # via
+    #   -r requirements-desktop.in
     #   agentscope
     #   reme-daily-paper
 pyperclip==1.11.0 \

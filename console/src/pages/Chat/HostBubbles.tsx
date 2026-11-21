@@ -42,6 +42,8 @@ import {
 import { describeExecutionStep } from "./components/executionStepModel";
 import { useTranslation } from "react-i18next";
 import { AssistantMarkdown } from "./AssistantMarkdown";
+import { collectWebSources, WebSourceContext } from "./webSearchSources";
+import { ExternalMarkdownLink } from "../../components/Markdown/externalLinkComponents";
 import { useEffectiveFontSize } from "@/contexts/FontSizeContext";
 import {
   useChatScalarSnapshot,
@@ -244,6 +246,10 @@ function DefaultHostResponseCard({
     getShowThinkingPreference,
     () => true,
   );
+  const sources = useMemo(
+    () => collectWebSources(mergedMessages),
+    [mergedMessages],
+  );
   const messages = useMemo(
     () => filterThinkingMessages(mergedMessages, showThinking),
     [mergedMessages, showThinking],
@@ -312,44 +318,67 @@ function DefaultHostResponseCard({
         </Flex>
       ) : null}
       {contentPrepend}
-      {messageBlocks.map((block, index) => {
-        if (block.kind === "message") {
-          return renderResponseMessage(block.message);
-        }
+      <WebSourceContext.Provider value={sources}>
+        {messageBlocks.map((block, index) => {
+          if (block.kind === "message") {
+            return renderResponseMessage(block.message);
+          }
 
-        const groupStatus = getCollapsedGroupStatus(
-          data.status,
-          index === statusStepBlockIndex,
-        );
-        const presentation = getCollapsedStepPresentation(groupStatus);
-        const firstId = block.messages[0]?.id ?? index;
-        const stepCount = countCollapsedSteps(block.messages);
-        if (stepCount === 0) {
-          return (
-            <React.Fragment key={`messages-${firstId}`}>
-              {block.messages.map(renderResponseMessage)}
-            </React.Fragment>
+          const groupStatus = getCollapsedGroupStatus(
+            data.status,
+            index === statusStepBlockIndex,
           );
-        }
-        return (
-          <LazyAccordion
-            className={styles.collapsedSteps}
-            key={getCollapsedStepRenderKey(
-              firstId,
-              messageDisplayMode,
-              presentation.status,
-            )}
-            status={presentation.status}
-            title={t(presentation.titleKey, {
-              count: stepCount,
-            })}
-            defaultOpen={presentation.defaultOpen}
-            renderChildren={() => (
-              <>{block.messages.map(renderResponseMessage)}</>
-            )}
-          />
-        );
-      })}
+          const presentation = getCollapsedStepPresentation(groupStatus);
+          const firstId = block.messages[0]?.id ?? index;
+          const stepCount = countCollapsedSteps(block.messages);
+          if (stepCount === 0) {
+            return (
+              <React.Fragment key={`messages-${firstId}`}>
+                {block.messages.map(renderResponseMessage)}
+              </React.Fragment>
+            );
+          }
+          return (
+            <LazyAccordion
+              className={styles.collapsedSteps}
+              key={getCollapsedStepRenderKey(
+                firstId,
+                messageDisplayMode,
+                presentation.status,
+              )}
+              status={presentation.status}
+              title={t(presentation.titleKey, {
+                count: stepCount,
+              })}
+              defaultOpen={presentation.defaultOpen}
+              renderChildren={() => (
+                <>{block.messages.map(renderResponseMessage)}</>
+              )}
+            />
+          );
+        })}
+      </WebSourceContext.Provider>
+      {sources.size > 0 && (
+        <details className={styles.webSources} open>
+          <summary>
+            {t("chat.webSearchSources")} ({sources.size})
+          </summary>
+          <ol>
+            {Array.from(sources.values(), (source) => (
+              <li key={source.url}>
+                <ExternalMarkdownLink
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {source.title}
+                </ExternalMarkdownLink>{" "}
+                <small>{source.host}</small>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
       {data.error ? <ResponseError data={data.error} /> : null}
       {!messages.length && data.status === "canceled" ? (
         <Bubble.Interrupted title={t("chat.turnCanceled")} />

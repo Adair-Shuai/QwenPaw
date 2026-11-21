@@ -504,6 +504,60 @@ class PythonBackend:
             )
         return None
 
+    async def dependency_diagnostics(self, description):
+        """Inspect duplicate providers in the process running this plugin."""
+        from ..utils.io_utils import run_sync_io
+        from .dependency_gate import _shared_observation
+        from .execution.dependencies import (
+            _dependency_closure,
+            read_dependency_inventory,
+        )
+
+        prepared = await self.prepare_dependency_targets(description)
+        async with _shared_observation(prepared.targets):
+            prepared.validate()
+            view, _ = await run_sync_io(
+                read_dependency_inventory,
+                description.source_path,
+                _host_paths(os.getcwd()),
+                description.requirements,
+            )
+            prepared.validate()
+        packages = {}
+        for name, requirement in _dependency_closure(
+            description.requirements,
+            view.distributions,
+            view.marker_environment,
+            verify_sources=False,
+        ):
+            choice = view.duplicates.get(name)
+            if choice is None:
+                continue
+            item = packages.setdefault(
+                name,
+                {
+                    **choice.details(),
+                    "recorded_payload": view.payload_checks.get(
+                        name, "unverified"
+                    ),
+                    "requirements": [],
+                    "action": (
+                        "reuse" if choice.observed else "compatible_candidates"
+                    ),
+                },
+            )
+            label = requirement.name if requirement.url else str(requirement)
+            if label not in item["requirements"]:
+                item["requirements"].append(label)
+            if (
+                not choice.compatible(requirement)
+                or not choice.same_requirements
+            ):
+                item["action"] = "review_versions"
+            elif item["recorded_payload"] == "different":
+                item["action"] = "review_files"
+        return {"consumer": "host", "packages": packages}
+
     async def audit_dependencies(
         self,
         description,

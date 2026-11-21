@@ -325,6 +325,10 @@ def _validate_official_resources(site: Path, host_version: str) -> None:
             owners[row["plugin_id"]],
             host_version,
         )
+    if {path.name for path in directory.glob("*.zip")} != {
+        row["filename"] for row in data["plugins"]
+    }:
+        raise ValueError("Unexpected official channel archive")
 
 
 def _validate_official_archive(payload, row, channel_key, host_version):

@@ -152,6 +152,88 @@ beforeEach(() => {
   localStorage.clear();
 });
 
+it.each(["live", "history"])(
+  "shows numbered web citations and unique sources in a %s assistant response",
+  async (mode) => {
+    const text =
+      "[1] Manual\n    URL: https://docs.example.org/manual\n    excerpt\n\n[2] Bad\n    URL: javascript:alert(1)";
+    const output =
+      mode === "live" ? text : JSON.stringify([{ type: "text", text }]);
+    const result = (id: string, name: string, value: string) => ({
+      id,
+      role: "tool",
+      type: "plugin_call_output",
+      status: "completed",
+      content: [
+        {
+          type: "data",
+          data: { call_id: id, name, output: value, state: "success" },
+        },
+      ],
+    });
+    const answer = {
+      id: "answer",
+      role: "assistant",
+      type: "message",
+      status: "completed",
+      content: [
+        {
+          type: "text",
+          text: "See [the manual](https://docs.example.org/manual).",
+          status: "completed",
+        },
+      ],
+    };
+    const view = (output: unknown[]) =>
+      provider(
+        <HostResponseCard
+          id="test"
+          data={{ id: "test", status: "completed", output }}
+          isLast
+        />,
+      );
+    const { rerender } = render(
+      view([
+        result("first", "web_search", output),
+        result("second", "web_search", output),
+        result(
+          "other",
+          "read_file",
+          "[1] File\n    URL: https://other.example",
+        ),
+        answer,
+      ]),
+    );
+    const citation = await screen.findByRole("link", {
+      name: /the manual\s*\[1\]/,
+    });
+    expect(citation).toHaveAttribute("href", "https://docs.example.org/manual");
+    expect(screen.getByRole("link", { name: "Manual" })).toHaveAttribute(
+      "href",
+      citation.getAttribute("href"),
+    );
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    try {
+      fireEvent.click(citation);
+      expect(open).toHaveBeenCalledWith(
+        "https://docs.example.org/manual",
+        "_blank",
+        "noopener,noreferrer",
+      );
+    } finally {
+      open.mockRestore();
+    }
+    rerender(view([answer]));
+    expect(
+      screen.queryByText("chat.webSearchSources", { exact: false }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "the manual" }),
+    ).toBeInTheDocument();
+  },
+);
+
 it("bounds the mounted response card before measuring long markdown content", () => {
   const longToken = "NSHighResolutionCapable".repeat(30);
   const text = [

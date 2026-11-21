@@ -200,6 +200,14 @@
     "installedCount": "{{count}} aplikasi",
     "clearFilters": "Hapus filter",
     "moreActions": "Tindakan lainnya",
+    "duplicatePythonDependencies": "Terdeteksi dependensi Python duplikat",
+    "dependencyAdvice": {
+      "review_files": "Berkas terdaftar berbeda di antara salinan versi ini. Periksa sumber instalasi sebelum memilih salinan.",
+      "reuse": "Dependensi yang dimuat memenuhi persyaratan.",
+      "compatible_candidates": "Versi kandidat memenuhi persyaratan. Sumber yang dimuat belum terkonfirmasi.",
+      "review_versions": "Periksa versi kandidat, persyaratan, dan lokasi modul yang dimuat. Selaraskan persyaratan sebelum memasang atau memperbarui.",
+      "observed": "Sumber yang dimuat"
+    },
     "openApp": "Buka aplikasi",
     "noDescription": "Tidak ada deskripsi",
     "search": "Cari aplikasi...",

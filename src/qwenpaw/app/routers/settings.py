@@ -54,7 +54,7 @@ async def _save(data: dict) -> None:
 async def get_language() -> dict:
     async with get_path_lock(_SETTINGS_FILE):
         settings = await _load()
-    return {"language": settings.get("language", "en")}
+    return {"language": settings.get("language", "zh")}
 
 
 @router.put("/language", summary="Update UI language")

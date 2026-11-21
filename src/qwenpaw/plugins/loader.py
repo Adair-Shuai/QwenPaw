@@ -798,6 +798,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         """
         from .._version_compat import check_plugin_version_compat
 
+        if manifest.id == "imessage" and sys.platform != "darwin":
+            return False, "iMessage requires macOS"
         return check_plugin_version_compat(manifest)
 
     @staticmethod
@@ -945,7 +947,10 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 )
 
         decision = await evaluate(allow_install)
-        if decision.unsupported:
+        if (
+            decision.unsupported
+            or decision.reason_code == "DEPENDENCY_ENVIRONMENT_AMBIGUOUS"
+        ):
             return decision
         if decision.missing:
             from ._sdk_dependencies import loaded_sdk_conflicts
@@ -979,19 +984,26 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
 
             from .dependency_gate import parse_requirements_file
 
-            def bundled_satisfies():
-                context = self._dependency_environment()
+            from .python_backend import _host_paths
+
+            def bundled_satisfies(paths):
                 parsed = parse_requirements_file(requirements_file)
                 view, _ = read_dependency_inventory(
                     source_path,
-                    context.dependency_paths,
+                    paths,
                     tuple(map(str, parsed.requirements)),
                 )
                 return all(
                     name in view.distributions
-                    and requirement.specifier.contains(
-                        view.distributions[name]["version"],
-                        prereleases=True,
+                    and (
+                        view.duplicates[name].compatible(requirement)
+                        and view.duplicates[name].same_requirements
+                        and view.payload_checks.get(name) != "different"
+                        if name in view.duplicates
+                        else requirement.specifier.contains(
+                            view.distributions[name]["version"],
+                            prereleases=True,
+                        )
                     )
                     for name, requirement in _dependency_closure(
                         tuple(map(str, parsed.requirements)),
@@ -1002,7 +1014,11 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 )
 
             try:
-                verified = await run_sync_io(bundled_satisfies)
+                paths = _host_paths(os.getcwd())
+                roots = await run_sync_io(dependency_sites, paths)
+                async with environment_observation(roots):
+                    verified = await run_sync_io(bundled_satisfies, paths)
+                    verified = verified and _host_paths(os.getcwd()) == paths
             except (RuntimeError, ValueError, OSError):
                 verified = False
             if verified:

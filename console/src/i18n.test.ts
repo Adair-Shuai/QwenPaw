@@ -7,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // The write side (LanguageSwitcher → localStorage) is covered by
 // LanguageSwitcher.test.tsx; this covers the READ side at startup.
 //
-// i18n reads `localStorage("language") || navigator.language || "en"` at
-// module load, so each case re-imports the module fresh.
+// i18n reads the saved language at module load, so each case re-imports
+// the module fresh.
 // ---------------------------------------------------------------------------
 
 async function freshI18n() {
@@ -25,35 +25,39 @@ async function freshI18nModule() {
 describe("i18n initial language (#1604)", () => {
   afterEach(() => {
     localStorage.clear();
+    vi.restoreAllMocks();
     vi.resetModules();
   });
 
   it("restores the persisted language from localStorage on startup", async () => {
-    localStorage.setItem("language", "zh");
+    localStorage.setItem("language", "ja");
 
     const i18n = await freshI18n();
     if (!i18n.isInitialized) {
       await new Promise((resolve) => i18n.on("initialized", resolve));
     }
 
-    expect(i18n.language).toBe("zh");
-    expect(i18n.t("common.loading")).toBe("加载中...");
-  });
-
-  it("falls back to navigator.language when nothing is persisted", async () => {
-    const spy = vi.spyOn(navigator, "language", "get").mockReturnValue("ja-JP");
-
-    const i18n = await freshI18n();
-    if (!i18n.isInitialized) {
-      await new Promise((resolve) => i18n.on("initialized", resolve));
-    }
-
-    // ja-JP resolves into the Japanese bundle (nonExplicitSupportedLngs)
-    expect(i18n.language).toBe("ja-JP");
-    expect(i18n.language.startsWith("ja")).toBe(true);
+    expect(i18n.language).toBe("ja");
     expect(i18n.t("common.loading")).toBe("読み込み中...");
-    spy.mockRestore();
+    expect(document.documentElement.lang).toBe("ja");
   });
+
+  it.each(["en-US", "ja-JP", "xx-XX"])(
+    "defaults to Simplified Chinese with system language %s",
+    async (systemLanguage) => {
+      localStorage.removeItem("language");
+      vi.spyOn(navigator, "language", "get").mockReturnValue(systemLanguage);
+
+      const i18n = await freshI18n();
+      if (!i18n.isInitialized) {
+        await new Promise((resolve) => i18n.on("initialized", resolve));
+      }
+
+      expect(i18n.language).toBe("zh");
+      expect(i18n.t("common.loading")).toBe("加载中...");
+      expect(document.documentElement.lang).toBe("zh");
+    },
+  );
 
   it("loads a new locale when the language changes", async () => {
     const i18n = await freshI18n();
@@ -67,6 +71,7 @@ describe("i18n initial language (#1604)", () => {
   });
 
   it("retries a locale after its first load fails", async () => {
+    localStorage.setItem("language", "en");
     const mod = await freshI18nModule();
     const loader = vi
       .spyOn(mod.localeLoaders, "zh")
@@ -81,6 +86,7 @@ describe("i18n initial language (#1604)", () => {
   });
 
   it("logs and falls back to English when a locale fails to load", async () => {
+    localStorage.setItem("language", "en");
     const mod = await freshI18nModule();
     const error = new Error("network error");
     vi.spyOn(mod.localeLoaders, "zh").mockRejectedValueOnce(error);
@@ -116,18 +122,6 @@ describe("i18n initial language (#1604)", () => {
     expect(typeof inbox?.label === "function" ? inbox.label() : null).toBe(
       "收件箱",
     );
-  });
-
-  it("defaults to en when neither localStorage nor navigator gives a language", async () => {
-    const spy = vi.spyOn(navigator, "language", "get").mockReturnValue("xx-XX");
-
-    const i18n = await freshI18n();
-    if (!i18n.isInitialized) {
-      await new Promise((resolve) => i18n.on("initialized", resolve));
-    }
-
-    expect(i18n.language).toBe("en");
-    spy.mockRestore();
   });
 });
 

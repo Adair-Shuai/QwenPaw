@@ -15,6 +15,8 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.hoisted(() => localStorage.setItem("language", "zh"));
 import type { Api } from "../../../src/qwenpaw/plugins_bundle/flowforge/ui/src/model";
 
 // Compile the actual components with production's host React boundary. Running

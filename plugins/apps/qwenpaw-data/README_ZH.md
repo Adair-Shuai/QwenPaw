@@ -76,6 +76,14 @@ PawApp 后端代理服务请求并注入服务 token。托管服务使用动态�
    该脚本安装 `>=0.3.3,<0.4` 范围内的兼容版本，并非精确锁定 0.3.3。
    如果运行时使用独立环境，在启动 QwenPaw 前将 `QWENPAW_DATA_CONTEXT_PYTHON`
    设置为该环境的 Python 可执行文件；QwenPaw 进程必须能够访问它。
+   Windows 现场已验证应用 1.0.6、Python 3.11 和运行时 0.3.4。在默认工作目录下，可用 PowerShell 创建独立环境，插件升级后会继续使用它。自定义工作目录时，将下面的 `.qwenpaw` 路径替换为实际位置。
+
+   ```powershell
+   $dataEnv = Join-Path $env:USERPROFILE ".qwenpaw/apps/qwenpaw-data/.venv-qwenpaw-data"
+   py -3.11 -m venv $dataEnv
+   & "$dataEnv/Scripts/python.exe" -m pip install "qwenpaw-data-context==0.3.4" "qwenpaw-data-host-core[service]==0.3.4" "qwenpaw-data-cli==0.3.4" "qwenpaw-data-skills==0.3.4" "dbt-core==1.11.16"
+   ```
+
 3. 启动或重启 QwenPaw，并启用应用。Python 安装方式可以运行：
 
    ```bash

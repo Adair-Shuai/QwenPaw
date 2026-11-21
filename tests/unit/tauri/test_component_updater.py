@@ -45,6 +45,16 @@ def test_signed_manifest_and_plan(tmp_path):
             "target": "windows-x86_64",
             "core_min_version": "1.0.0",
             "components": {
+                "backend": {
+                    "version": "1.1.0",
+                    "preserve": [],
+                    "full": {
+                        "url": "https://example/backend.zip",
+                        "sha256": "a" * 64,
+                        "size": 10,
+                        "signature": "sig",
+                    },
+                },
                 "demo": {
                     "version": "1.1.0",
                     "full": {
@@ -81,6 +91,9 @@ def test_signed_manifest_and_plan(tmp_path):
         core_version="1.0.0",
     )
     loaded = updater.load_manifest(manifest, signature)
+    assert loaded["components"]["backend"]["preserve"] == []
+    with pytest.raises(ComponentUpdateError, match="not managed"):
+        updater.plan(loaded, "backend", None)
     plan = updater.plan(loaded, "demo", tmp_path / "installed")
     assert plan and plan.artifact_kind == "full"
 

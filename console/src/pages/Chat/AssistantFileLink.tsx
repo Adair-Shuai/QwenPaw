@@ -18,6 +18,8 @@ import {
 import { isDefaultWorkspaceMarkdown } from "../../features/files-workspace/defaultWorkspaceMarkdown";
 import InlineFileImage from "../../features/files-workspace/InlineFileImage";
 import { mimeFromExtension } from "../../utils/mimeForPreview";
+import { sourceUrl, WebSourceContext } from "./webSearchSources";
+import { ExternalMarkdownLink } from "../../components/Markdown/externalLinkComponents";
 
 export const AssistantFileReferenceScope = createContext<FilePreviewScope>({});
 
@@ -27,6 +29,22 @@ export function AssistantFileLink(props: ComponentProps) {
   const { t } = useTranslation();
   const id = useId();
   let href = typeof props.href === "string" ? props.href : "";
+  const sources = useContext(WebSourceContext);
+  const url = sources.size ? sourceUrl(href) : undefined;
+  const source = url && sources.get(url.href);
+  if (source) {
+    return (
+      <ExternalMarkdownLink
+        href={source.url}
+        title={source.title}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {props.children}
+        <sup>[{source.number}]</sup>
+      </ExternalMarkdownLink>
+    );
+  }
   const prefix = [
     FILE_REFERENCE_HREF_PREFIX,
     DIRECTORY_REFERENCE_HREF_PREFIX,

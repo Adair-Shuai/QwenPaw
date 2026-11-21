@@ -7,6 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/common_setup";
+import i18n, { i18nReady } from "@/i18n";
 import SettingsCenter from "@/pages/SettingsCenter";
 import DualSidebarNavigation from "@/layouts/DualSidebarNavigation";
 import { sidebarDensityPreference } from "@/utils/sidebarDensityPreference";
@@ -41,7 +42,9 @@ describe.each([
   const feedback = { error: vi.fn(), success: vi.fn() };
   const originalPath = window.location.pathname;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18nReady;
+    await i18n.changeLanguage("zh");
     menuRegistry.__resetForTests();
     routeRegistry.__resetForTests();
     localStorage.clear();
@@ -112,11 +115,11 @@ describe.each([
       { initialEntries: ["/settings/general"] },
     );
     await userEvent.type(
-      screen.getByRole("textbox", { name: "Search settings" }),
+      screen.getByRole("textbox", { name: "搜索设置" }),
       "GenUI",
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "UGSci settings" }),
+      screen.getByRole("button", { name: "UGSci 设置" }),
     );
     expect(screen.getByRole("heading", { name: "UGSci 设置" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "GenUI" })).toBeVisible();
@@ -172,7 +175,7 @@ describe.each([
       );
     const view = renderSettings();
     const navigation = screen.getByRole("navigation", {
-      name: "Feature navigation",
+      name: "功能导航",
     });
     const account = screen.getByRole("button", {
       name: "Account",
@@ -203,7 +206,7 @@ describe.each([
     renderSettings();
     expect(screen.getByRole("radio", { name: "宽松" })).toBeChecked();
     expect(
-      screen.getByRole("navigation", { name: "Feature navigation" }),
+      screen.getByRole("navigation", { name: "功能导航" }),
     ).toHaveAttribute("data-sidebar-density", "comfortable");
   });
 
@@ -257,7 +260,7 @@ describe.each([
       initialEntries: ["/settings/general"],
     });
     expect(
-      screen.queryByRole("button", { name: "UGSci settings" }),
+      screen.queryByRole("button", { name: "UGSci 设置" }),
     ).not.toBeInTheDocument();
   });
 });

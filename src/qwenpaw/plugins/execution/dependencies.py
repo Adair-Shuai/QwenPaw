@@ -785,12 +785,12 @@ def _read_installed_metadata(
             if embedded_owners is not None:
                 embedded_owners[origin] = owners[0]
         elif len(owners) > 1:
-            invalid[key] = "DEPENDENCY_ENVIRONMENT_AMBIGUOUS"
+            invalid.setdefault(key, "DEPENDENCY_ENVIRONMENT_AMBIGUOUS")
     for origin, (key, row, distribution) in candidates.items():
         if origin in embedded:
             continue
         if key in rows:
-            invalid[key] = "DEPENDENCY_ENVIRONMENT_AMBIGUOUS"
+            invalid.setdefault(key, "DEPENDENCY_ENVIRONMENT_AMBIGUOUS")
             continue
         rows[key] = row
         observed[key] = distribution
@@ -907,9 +907,16 @@ def observe_dependencies(
             packet["code_root"],
             packet["_audit_sites"],
             requirements,
+            report_all_duplicates=True,
         )
         import logging
 
+        for name, choice in view.duplicates.items():
+            logging.getLogger(__name__).info(
+                "Dependency providers for %s in worker: %s",
+                name,
+                choice.details(),
+            )
         for warning in view.warnings:
             logging.getLogger(__name__).warning(
                 "Dependency warning: %s",
@@ -949,8 +956,29 @@ def observe_dependencies(
         rows,
         environment,
     ):
-        if name in invalid and not packet.get("_reuse_ambiguous", False):
-            raise dependency_error(invalid[name])
+        if name in invalid:
+            reason = invalid[name]
+            reuse = packet.get("_reuse_ambiguous", False)
+            if reason != "DEPENDENCY_ENVIRONMENT_AMBIGUOUS" or not reuse:
+                raise dependency_error(reason)
+            # A writer consumes one row per distribution. Only interchangeable
+            # dependency declarations may supply that row during a reuse audit.
+            from .duplicate_providers import (
+                compare_recorded_payloads,
+                duplicate_choice,
+            )
+
+            choice = duplicate_choice(
+                name,
+                metadata.Distribution.discover(name=name, path=sites),
+            )
+            if (
+                choice is None
+                or not choice.uniform_contract
+                or compare_recorded_payloads(choice, include_loaded=True)
+                == "different"
+            ):
+                raise dependency_error(reason)
         if name in rows and name not in scanned:
             tops = set(rows[name]["top_level"])
             for path in observed[name].files or ():
@@ -1001,6 +1029,8 @@ class _ReadInventory:
     distributions: Mapping[str, Mapping[str, Any]]
     invalid: Mapping[str, str]
     embedded_owners: Mapping[str, str]
+    duplicates: Mapping[str, Any]
+    payload_checks: Mapping[str, str]
     warnings: tuple[str, ...] = ()
 
 
@@ -1010,9 +1040,15 @@ def read_dependency_inventory(
     requirements,
     *,
     marker_environment=None,
+    report_all_duplicates=False,
 ):
     """Read package headers for loading; ownership belongs to the writer."""
     from importlib.machinery import PathFinder
+    from .duplicate_providers import (
+        compare_recorded_payloads,
+        consumer_choice,
+        read_providers,
+    )
     from ..dependency_gate import _import_name
     from ..dependency_maintenance import authorized, check_admission
 
@@ -1023,55 +1059,41 @@ def read_dependency_inventory(
             raise dependency_error("DEPENDENCY_REPAIR_REQUIRED")
     environment = dict(marker_environment or default_environment())
     rows, invalid, warnings = {}, {}, []
+    duplicates, payload_checks = {}, {}
 
     class RequiredDistributions(dict):
         def get(self, name, default=None):
             if name in self:
                 return super().get(name, default)
+            candidates = read_providers(
+                name,
+                metadata.Distribution.discover(
+                    name=name,
+                    path=list(sites),
+                ),
+            )
             found = None
-            for distribution in metadata.Distribution.discover(
-                name=name,
-                path=list(sites),
-            ):
-                headers = _HeaderDistribution(distribution._path).metadata
-                version = headers.get("Version")
-                try:
-                    if canonicalize_name(
-                        headers.get("Name", ""),
-                    ) != name or not valid_metadata_headers(
-                        headers,
-                        ("Name", "Version"),
-                    ):
-                        raise ValueError("invalid headers")
-                    Version(version)
-                except (ValueError, TypeError):
-                    invalid[name] = "DEPENDENCY_METADATA_INVALID"
-                    continue
-                origin = str(Path(distribution._path).resolve())
-                if found is not None:
-                    if found["metadata_path"] != origin:
-                        invalid[name] = "DEPENDENCY_ENVIRONMENT_AMBIGUOUS"
-                    continue
+            if candidates:
+                provider = candidates[0]
+                requires = provider.requires
+                choice = consumer_choice(
+                    candidates, include_detached=not report_all_duplicates
+                )
+                if choice is not None:
+                    duplicates[name] = choice
+                    if not report_all_duplicates:
+                        payload_checks[name] = compare_recorded_payloads(
+                            choice
+                        )
+                    invalid[name] = "DEPENDENCY_ENVIRONMENT_AMBIGUOUS"
+                    provider = choice.observed
+                    requires = choice.requirements
                 found = {
-                    "version": version,
-                    "metadata_path": origin,
-                    "requires_dist": tuple(
-                        headers.get_all("Requires-Dist", []),
-                    ),
+                    "version": provider.version if provider else None,
+                    "metadata_path": str(provider.path) if provider else None,
+                    "requires_dist": requires,
                     "top_level": (),
                 }
-            if invalid.get(name) == "DEPENDENCY_METADATA_INVALID":
-                raise dependency_error("DEPENDENCY_METADATA_INVALID")
-            if found is not None:
-                from packaging.requirements import Requirement
-
-                try:
-                    for value in found["requires_dist"]:
-                        Requirement(value)
-                except ValueError:
-                    raise dependency_error(
-                        "DEPENDENCY_METADATA_INVALID",
-                    ) from None
             self[name] = found
             if found is not None:
                 rows[name] = found
@@ -1086,9 +1108,42 @@ def read_dependency_inventory(
         verify_sources=False,
     ):
         relevant.add(name)
-        if name in invalid:
-            warnings.append(f"{name}: {invalid[name]}; attempting load")
         row = required.get(name)
+        choice = duplicates.get(name)
+        if choice is not None:
+            if (
+                report_all_duplicates
+                or (
+                    not choice.observed
+                    and payload_checks.get(name) != "matching"
+                )
+                or not choice.compatible(requirement)
+            ):
+                warnings.append(f"{name}: {invalid[name]}; attempting load")
+            if not choice.same_requirements:
+                warnings.append(
+                    f"{name}: candidate dependency declarations differ; attempting load",
+                )
+            if choice.unresolved_source:
+                warnings.append(
+                    f"{name}: module ownership unverified; attempting load",
+                )
+            elif requirement.url:
+                warnings.append(
+                    f"{name}: installed source unknown; attempting load"
+                )
+            elif not choice.compatible(requirement):
+                versions = ", ".join(
+                    sorted({p.version for p in choice.possible})
+                )
+                label = (
+                    requirement.name if requirement.url else str(requirement)
+                )
+                kind = "observed" if choice.observed else "candidate"
+                warnings.append(
+                    f"{label}: {kind} version(s) {versions}; attempting load",
+                )
+            continue
         if row is None:
             top = _import_name(requirement).split(".", 1)[0]
             if (
@@ -1124,6 +1179,8 @@ def read_dependency_inventory(
             rows,
             invalid,
             {},
+            duplicates,
+            payload_checks,
             tuple(dict.fromkeys(warnings)),
         ),
         relevant,

@@ -103,6 +103,16 @@ runtime **0.3.3**. The app ZIP and the Python runtime are separate installations
    If using a separate runtime environment, set
    `QWENPAW_DATA_CONTEXT_PYTHON` to its Python executable before starting
    QwenPaw. The interpreter must be available to the QwenPaw process.
+   On Windows, app 1.0.6 was verified with Python 3.11 and runtime 0.3.4.
+   Create a persistent environment in PowerShell. Replace the default
+   `.qwenpaw` directory below if your host uses a custom working directory.
+
+   ```powershell
+   $dataEnv = Join-Path $env:USERPROFILE ".qwenpaw/apps/qwenpaw-data/.venv-qwenpaw-data"
+   py -3.11 -m venv $dataEnv
+   & "$dataEnv/Scripts/python.exe" -m pip install "qwenpaw-data-context==0.3.4" "qwenpaw-data-host-core[service]==0.3.4" "qwenpaw-data-cli==0.3.4" "qwenpaw-data-skills==0.3.4" "dbt-core==1.11.16"
+   ```
+
 3. Start or restart QwenPaw and enable the app. For a Python installation:
 
    ```bash

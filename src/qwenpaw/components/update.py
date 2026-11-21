@@ -37,6 +37,19 @@ from ..utils.windows_paths import copy_tree, io_path, remove_tree
 
 logger = logging.getLogger(__name__)
 
+DIRECTORY_COMPONENT_IDS = frozenset(
+    {
+        "backend",
+        "python-runtime",
+        "python-packages",
+        "node-runtime",
+        "java-runtime",
+        "officecli",
+        "neqsim",
+        "computer-use-helper",
+    },
+)
+
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PublicKey,
@@ -1755,17 +1768,21 @@ class ComponentUpdater:
                     f"core version is below {component} minimum",
                     reason="core_below_minimum",
                 )
+            # A plugin-only host still authenticates the complete desktop manifest.
+            directory_entry = self.is_directory_component(component) or (
+                component not in self.managed_components
+                and component in DIRECTORY_COMPONENT_IDS
+            )
             raw_preserve = entry.get("preserve")
             entry["preserve"] = list(
                 (
                     ()
-                    if self.is_directory_component(component)
-                    and raw_preserve == []
+                    if directory_entry and raw_preserve == []
                     else _normalize_preserve_paths(
                         raw_preserve,
                         default=(
                             ()
-                            if self.is_directory_component(component)
+                            if directory_entry
                             else DEFAULT_PRESERVE_PATHS
                         ),
                     )

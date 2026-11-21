@@ -40,6 +40,7 @@ SUITES = (
     "tests/unit/tauri/test_backend_guard.py",
     "tests/unit/app/routers/test_plugins_router.py",
     "tests/unit/plugins/test_download_catalog.py",
+    "tests/unit/plugins/test_official_channel_bundle.py",
     "tests/unit/plugins/test_plugin_config_update.py",
     "tests/unit/plugins/test_plugin_update_transactions.py",
     "tests/unit/plugins/test_manifest_dependencies.py",
@@ -75,6 +76,10 @@ SUITES = (
     "tests/unit/plugins/test_install_lock.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/plugins/test_official_channel_bundle.py": {
+        "test_official_bundle_keeps_current_closed_host_identity",
+        "test_native_imessage_platform_admission",
+    },
     "tests/unit/app/test_expert_repair.py": (
         "test_repair_retains_instance_files_policy_and_recovers_committed_switch",
         "test_repair_failure_or_race_never_replaces_current_environment",

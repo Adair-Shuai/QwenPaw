@@ -7,6 +7,10 @@
 # retain the standalone reader profile used by the bundled app.
 PyMuPDF>=1.24,<2
 
+# The bundled Brainstorm app reads XML and PDF attachments offline.
+defusedxml>=0.7.1
+pypdf>=4
+
 # Offline desktop document/data/petroleum toolchain. These packages live in
 # the independently versioned python-packages component, never in CPython.
 numpy

@@ -22,10 +22,26 @@ BUNDLE = ROOT / "src/qwenpaw/official_channels"
 
 def test_official_bundle_keeps_current_closed_host_identity():
     index = _bundled_index(BUNDLE)
+    assert "imessage" not in {row["plugin_id"] for row in index["plugins"]}
+    assert not list(BUNDLE.glob("imessage-*.zip"))
     assert index["host_version"] == __version__
     assert {row["plugin_id"] for row in index["plugins"]} == {
         row["plugin_id"] for row in OFFICIAL_CHANNELS
     }
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_native_imessage_platform_admission(platform, monkeypatch):
+    from qwenpaw.plugins.architecture import PluginManifest
+    from qwenpaw.plugins.loader import PluginLoader
+
+    source = ROOT / "plugins/channel/imessage/plugin.json"
+    manifest = PluginManifest.from_dict(json.loads(source.read_text("utf-8")))
+    monkeypatch.setattr("sys.platform", platform)
+    allowed, reason = PluginLoader._check_version_compatibility(manifest)
+    assert allowed == (platform == "darwin")
+    if not allowed:
+        assert "macOS" in reason
 
 
 @pytest.mark.parametrize(

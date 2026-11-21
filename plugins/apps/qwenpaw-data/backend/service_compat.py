@@ -13,6 +13,9 @@ from .config import APP_DATA_DIR
 _PROCESS_ENV = (
     "PATH",
     "HOME",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
     "USER",
     "LOGNAME",
     "TMPDIR",

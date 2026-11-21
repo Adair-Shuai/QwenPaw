@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { AppCard, type AppCardData } from "./AppCard";
 
+const duplicateLxml = "lxml: DEPENDENCY_ENVIRONMENT_AMBIGUOUS; attempting load";
+
 vi.mock("react-i18next", () => ({
   initReactI18next: { type: "3rdParty", init: vi.fn() },
   useTranslation: () => ({
@@ -28,6 +30,59 @@ function makeApp(overrides: Partial<AppCardData> = {}): AppCardData {
 }
 
 describe("AppCard", () => {
+  it("inspects the actual dependency source on demand for any app", async () => {
+    const endpoint = "/plugins/another-app/dependency-diagnostics";
+    const fetchReport = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) =>
+        String(url).includes(endpoint)
+          ? new Response(
+              JSON.stringify({
+                consumer: "host",
+                packages: {
+                  lxml: {
+                    candidates: [
+                      { version: "2", metadata_path: "/first/metadata" },
+                      { version: "1", metadata_path: "/loaded/metadata" },
+                    ],
+                    observed_metadata_path: "/loaded/metadata",
+                    requirements: ["lxml>=2"],
+                    loaded_modules: { lxml: "/loaded/lxml/__init__.py" },
+                    action: "review_versions",
+                  },
+                },
+              }),
+            )
+          : new Response(null, { status: 404 }),
+      );
+    const requests = () =>
+      fetchReport.mock.calls.filter(([url]) => String(url).includes(endpoint));
+    try {
+      render(
+        <AppCard
+          app={makeApp({ id: "another-app", diagnostics: [duplicateLxml] })}
+          onClick={vi.fn()}
+        />,
+      );
+      expect(requests()).toHaveLength(0);
+      fireEvent.click(
+        screen.getByText("appCenter.duplicatePythonDependencies"),
+      );
+      expect(
+        await screen.findByText("appCenter.dependencyAdvice.review_versions"),
+      ).toBeVisible();
+      expect(screen.getByText("lxml → /loaded/lxml/__init__.py")).toBeVisible();
+      expect(
+        screen.getByText("appCenter.dependencyAdvice.observed", {
+          exact: false,
+        }),
+      ).toHaveTextContent("/loaded/metadata");
+      expect(requests()).toHaveLength(1);
+    } finally {
+      fetchReport.mockRestore();
+    }
+  });
+
   it.each([
     "storage-capacity",
     "wellbore-pressure",
@@ -140,6 +195,35 @@ describe("AppCard", () => {
       screen.getByRole("button", { name: "appCenter.openApp" }),
     ).toBeInTheDocument();
   });
+
+  it("keeps duplicate dependency warnings in expandable details for an openable app", () => {
+    const onClick = vi.fn();
+    const duplicateDocx =
+      "python-docx: DEPENDENCY_ENVIRONMENT_AMBIGUOUS; attempting load";
+    render(
+      <AppCard
+        app={makeApp({
+          id: "storage-capacity",
+          loaded: true,
+          diagnostics: [duplicateDocx, duplicateLxml, "Other diagnostic"],
+        })}
+        onClick={onClick}
+      />,
+    );
+
+    expect(screen.getByText("Other diagnostic")).toBeVisible();
+    expect(screen.getByText(duplicateDocx)).not.toBeVisible();
+    expect(screen.getByText(duplicateLxml)).not.toBeVisible();
+    fireEvent.click(screen.getByText("appCenter.duplicatePythonDependencies"));
+    expect(screen.getByText(duplicateDocx)).toBeVisible();
+    expect(screen.getByText(duplicateLxml)).toBeVisible();
+    expect(onClick).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "appCenter.openApp" }));
+    expect(onClick).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "storage-capacity" }),
+    );
+  });
+
   it.each(["failed", "disabled", "pending"])(
     "keeps %s apps inspectable without opening them",
     async (status) => {
@@ -151,7 +235,7 @@ describe("AppCard", () => {
             status,
             loaded: false,
             enabled: status !== "disabled",
-            diagnostics: ["App is unavailable"],
+            diagnostics: ["App is unavailable", duplicateLxml],
           })}
           onClick={onClick}
           onUninstall={onUninstall}
@@ -164,7 +248,12 @@ describe("AppCard", () => {
       expect(
         screen.getByRole("button", { name: "appCenter.openApp" }),
       ).toBeDisabled();
-      expect(screen.getByText("App is unavailable")).toBeVisible();
+      expect(
+        screen.getByText(`App is unavailable; ${duplicateLxml}`),
+      ).toBeVisible();
+      expect(
+        screen.queryByText("appCenter.duplicatePythonDependencies"),
+      ).not.toBeInTheDocument();
       fireEvent.click(
         screen.getByRole("button", { name: "appCenter.moreActions" }),
       );
