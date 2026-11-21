@@ -248,7 +248,13 @@ def test_dmg_is_published_and_selected_after_updater_metadata():
     )
     assert "dist/UGSci-Tauri-*-macOS.dmg.sha256" in build
     assert '"UGSci-Tauri-${VERSION}-macOS.dmg"' in publish
-    assert '"UGSci-Tauri-latest-macOS.dmg"' in promote
+    assert "promote_desktop_aliases.py" in promote
+    alias_script = (
+        ROOT / "scripts/pack/promote_desktop_aliases.py"
+    ).read_text(
+        encoding="utf-8",
+    )
+    assert '("mac-tauri", "macOS.dmg")' in alias_script
     builder = (
         ROOT / "scripts/pack-tauri/build_macos_pyinstaller.sh"
     ).read_text(

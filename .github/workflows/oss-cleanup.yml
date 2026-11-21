@@ -23,6 +23,9 @@ permissions:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    concurrency:
+      group: oss-production-metadata
+      cancel-in-progress: false
     env:
       OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
     steps:
@@ -71,6 +74,15 @@ jobs:
             -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
             -L CH
 
+      - name: Protect current desktop download targets
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          python -m pip install 'oss2==2.19.1'
+          python scripts/pack/promote_desktop_aliases.py protected-targets > "$RUNNER_TEMP/desktop-protected-targets.txt"
+
       - name: List all desktop files before cleanup
         if: steps.version.outputs.mode == 'cleanup-old'
         run: |
@@ -90,12 +102,16 @@ jobs:
         run: |
           python3 - << 'PYEOF'
           import os, subprocess
+          from pathlib import Path
 
           bucket = os.environ['OSS_BUCKET']
           version = os.environ['VERSION']
           # Keep files matching current version, "latest", or essential
           # non-versioned files like index.json and the updater manifest.
           keep_patterns = [version, 'latest', 'index.json', 'qwenpaw-tauri-latest.json']
+
+          protected_file = Path(os.environ["RUNNER_TEMP"]) / "desktop-protected-targets.txt"
+          protected = set(protected_file.read_text().splitlines())
 
           dirs_to_clean = [
               f"oss://{bucket}/files/apps/desktop/win/",
@@ -121,7 +137,8 @@ jobs:
                   if not line.startswith('oss://'):
                       continue
                   filename = line.rsplit('/', 1)[-1]
-                  if any(p in filename for p in keep_patterns):
+                  key = line.removeprefix(f'oss://{bucket}/')
+                  if key in protected or any(p in filename for p in keep_patterns):
                       print(f"  KEEP: {line}")
                       kept += 1
                       continue
@@ -167,6 +184,13 @@ jobs:
             "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.zip.json"
             "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz.json"
           )
+          for key in "${keys[@]}"; do
+            if grep -Fxq "$key" "$RUNNER_TEMP/desktop-protected-targets.txt"; then
+              echo "::error::Refusing to purge active desktop target: $key"
+              exit 1
+            fi
+          done
+
           for key in "${keys[@]}"; do
             uri="oss://${OSS_BUCKET}/${key}"
             if ossutil stat "$uri" >/dev/null 2>&1; then

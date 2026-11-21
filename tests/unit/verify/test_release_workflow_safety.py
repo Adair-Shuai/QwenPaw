@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 from importlib.util import module_from_spec, spec_from_file_location
+from io import BytesIO
 import json
 from pathlib import Path
 import subprocess
+import sys
+from types import SimpleNamespace
 import hashlib
 import zipfile
 
@@ -1056,11 +1059,8 @@ def test_macos_updater_metadata_latest_and_prerelease_hardening() -> None:
     assert "generate_oss_metadata.py" in publish
 
     # macOS updater archive gets a latest pointer and participates in rollback.
-    assert "UGSci-Tauri-latest-macOS.app.tar.gz" in promote
-    assert (
-        "metadata/apps/desktop/mac-tauri/"
-        "UGSci-Tauri-latest-macOS.app.tar.gz.json"
-    ) in promote
+    assert "promote_desktop_aliases.py" in promote
+    assert 'restore "$RUNNER_TEMP/desktop-pointer-backup"' in promote
     assert '"tauri-updater-meta-macos"' in promote
     assert (
         '"mac-tauri-updater-metadata.json"' in promote
@@ -1073,6 +1073,122 @@ def test_macos_updater_metadata_latest_and_prerelease_hardening() -> None:
     assert "download_desktop_artifacts.sh" in promote
     assert "--brand ugsci" in promote
     assert "--include-updater-metadata" in promote
+
+
+def test_desktop_latest_aliases_reuse_versioned_objects_and_restore(
+    monkeypatch, tmp_path
+):
+    class Missing(OSError):
+        pass
+
+    objects = {}
+    links = {}
+
+    def head(key):
+        if key in links:
+            return SimpleNamespace(headers={"x-oss-object-type": "Symlink"})
+        if key not in objects:
+            raise Missing(key)
+        return SimpleNamespace(
+            headers={},
+            content_length=len(objects[key]),
+            etag=key,
+        )
+
+    def link(target, key, headers):
+        assert headers["x-oss-object-acl"] == "public-read"
+        assert target in objects
+        objects.pop(key, None)
+        links[key] = target
+
+    def delete(key):
+        links.pop(key, None)
+        objects.pop(key, None)
+
+    def put(key, data, headers):
+        assert headers["x-oss-object-acl"] == "public-read"
+        links.pop(key, None)
+        objects[key] = data
+
+    bucket = SimpleNamespace(
+        head_object=head,
+        get_symlink=lambda key: SimpleNamespace(target_key=links[key]),
+        put_symlink=link,
+        delete_object=delete,
+        get_object=lambda key: BytesIO(objects[key]),
+        get_object_to_file=lambda key, path: Path(path).write_bytes(
+            objects[key]
+        ),
+        put_object=put,
+    )
+    fake_sdk = SimpleNamespace(
+        exceptions=SimpleNamespace(
+            NoSuchKey=Missing, NotFound=Missing, OssError=OSError
+        ),
+        resumable_upload=lambda _, key, path, headers: put(
+            key, Path(path).read_bytes(), headers
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "oss2", fake_sdk)
+    spec = spec_from_file_location(
+        "desktop_oss_aliases",
+        REPO_ROOT / "scripts/pack/promote_desktop_aliases.py",
+    )
+    assert spec is not None and spec.loader is not None
+    aliases = module_from_spec(spec)
+    spec.loader.exec_module(aliases)
+
+    version = "2.3.1b2"
+    latest = aliases.artifact_keys("latest")
+    versioned = aliases.artifact_keys(version)
+    assert latest[-1].endswith("/UGSci-Tauri-latest-macOS.app.tar.gz")
+    assert aliases.metadata_key(latest[-1]).endswith(
+        "/UGSci-Tauri-latest-macOS.app.tar.gz.json"
+    )
+    assert any(key.endswith("/UGSci-Tauri-latest-macOS.dmg") for key in latest)
+    for key in versioned:
+        objects[key] = b"versioned artifact"
+        objects[aliases.metadata_key(key)] = json.dumps(
+            {
+                "version": version,
+                "url": "/" + key,
+                "filename": key.rsplit("/", 1)[-1],
+                "size_bytes": len(objects[key]),
+                "sha256": hashlib.sha256(objects[key]).hexdigest(),
+            },
+        ).encode()
+
+    previous = versioned[0].replace(version, "2.3.1b1")
+    objects[previous] = b"previous versioned artifact"
+    links[latest[0]] = previous
+    objects[latest[1]] = b"legacy duplicate"
+    objects[aliases.INDEX_KEYS[0]] = b"previous updater manifest"
+    aliases.snapshot(bucket, tmp_path)
+    public = []
+    monkeypatch.setattr(
+        aliases, "verify_public_link", lambda *args: public.append(args)
+    )
+    aliases.promote(bucket, version, "https://oss.example/files/apps/desktop")
+
+    assert links == dict(zip(latest, versioned))
+    assert not set(latest) & objects.keys()
+    assert aliases.protected_targets(bucket) == set(versioned) | {
+        aliases.metadata_key(key) for key in versioned
+    }
+    assert public == [
+        ("https://oss.example/" + key, target, len(objects[target]))
+        for key, target in zip(latest, versioned)
+    ]
+    for key, target in zip(latest, versioned):
+        assert (
+            json.loads(objects[aliases.metadata_key(key)])["url"]
+            == "/" + target
+        )
+    assert objects[aliases.INDEX_KEYS[0]] == b"previous updater manifest"
+    aliases.restore(bucket, tmp_path)
+    assert links == {latest[0]: previous}
+    assert objects[latest[1]] == b"legacy duplicate"
+    assert all(aliases.metadata_key(key) not in objects for key in latest)
 
     # Prerelease detection covers PEP 440 short tags and the dead no-op block
     # is gone.

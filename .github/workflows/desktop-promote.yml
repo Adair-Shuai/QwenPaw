@@ -1,7 +1,7 @@
 # Reusable "promote" step of the desktop release — runs ONLY after the release
 # has been flipped to published (called by release.yml's post-finalize job).
 #
-# It promotes the already-uploaded versioned OSS files to `latest`, generates
+# It links legacy `latest` OSS URLs to the uploaded versioned files, generates
 # and uploads the Tauri auto-update manifest (qwenpaw-tauri-latest.json), and
 # refreshes the desktop + main index. Splitting this out of desktop-publish.yml
 # ensures existing users' auto-updater is never pointed at a version whose
@@ -109,7 +109,7 @@ jobs:
           python -m pip install --upgrade "certifi>=2026.10.19"
 
       - name: Install packaging helper dependencies
-        run: python -m pip install packaging
+        run: python -m pip install packaging 'oss2==2.19.1'
 
       - name: Get version
         id: version
@@ -253,116 +253,25 @@ jobs:
           fi
 
       - name: Snapshot mutable desktop pointers
+        id: snapshot
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
         run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/desktop-pointer-backup"
-          : > "$RUNNER_TEMP/desktop-pointer-existing.txt"
-          cat > "$RUNNER_TEMP/desktop-pointer-paths.txt" <<'EOF'
-          files/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-updater.exe
-          files/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-portable.zip
-          files/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.dmg
-          files/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.zip
-          metadata/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-updater.exe.json
-          metadata/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-portable.zip.json
-          metadata/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.dmg.json
-          metadata/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.zip.json
-          files/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.app.tar.gz
-          metadata/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.app.tar.gz.json
-          metadata/qwenpaw-tauri-latest.json
-          metadata/apps/desktop/index.json
-          metadata/index.json
-          EOF
-          while IFS= read -r object; do
-            backup="$RUNNER_TEMP/desktop-pointer-backup/$object"
-            mkdir -p "$(dirname "$backup")"
-            if ossutil cp "oss://${OSS_BUCKET}/${object}" "$backup" >/dev/null 2>&1; then
-              echo "$object" >> "$RUNNER_TEMP/desktop-pointer-existing.txt"
-            fi
-          done < "$RUNNER_TEMP/desktop-pointer-paths.txt"
+          python "$RELEASE_INFRA/scripts/pack/promote_desktop_aliases.py" \
+            snapshot "$RUNNER_TEMP/desktop-pointer-backup"
 
-      - name: Promote versioned files to latest
-        if: hashFiles('UGSci-Desktop-Tauri-*/*') != ''
+      - name: Link latest OSS URLs to immutable artifacts
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          python "$RELEASE_INFRA/scripts/pack/promote_desktop_aliases.py" \
+            promote "$VERSION" "$OSS_PUBLIC_BASE_URL"
 
-          promote_latest() {
-            local dirs="$1"
-            local pattern="$2"
-            local platform="$3"
-            local versioned_name="$4"
-            local latest_name="$5"
-
-            local artifact
-            artifact=$(find ${dirs} -name "${pattern}" 2>/dev/null | head -1 || true)
-            if [ -z "${artifact}" ]; then
-              echo "No ${platform} artifact; skipping latest promotion"
-              return 0
-            fi
-
-            echo "Promoting ${platform} ${versioned_name} -> ${latest_name}"
-            tmp_suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-            latest_uri="oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${latest_name}"
-            latest_tmp="${latest_uri}.staging-${tmp_suffix}"
-            metadata_uri="oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${latest_name}.json"
-            metadata_tmp="${metadata_uri}.staging-${tmp_suffix}"
-            # The versioned metadata points at the immutable versioned object.
-            # Rewrite the alias metadata so consumers following `url` download
-            # the same latest object that was just promoted.
-            versioned_metadata="${RUNNER_TEMP}/${platform}-versioned-metadata.json"
-            latest_metadata="${RUNNER_TEMP}/${platform}-latest-metadata.json"
-            ossutil cp \
-              "oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json" \
-              "$versioned_metadata"
-            python -c 'import json,sys; from pathlib import Path; source,destination,latest_name,platform=sys.argv[1:]; doc=json.loads(Path(source).read_text(encoding="utf-8")); doc["filename"]=latest_name; doc["url"]=f"/files/apps/desktop/{platform}/{latest_name}"; Path(destination).write_text(json.dumps(doc, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")' \
-              "$versioned_metadata" "$latest_metadata" "$latest_name" "$platform"
-            ossutil cp \
-              "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}" \
-              "$latest_tmp" \
-              --acl public-read
-            ossutil cp "$latest_metadata" "$metadata_tmp" --acl public-read
-            ossutil ls "$latest_tmp" >/dev/null
-            ossutil ls "$metadata_tmp" >/dev/null
-            ossutil cp "$latest_tmp" "$latest_uri" --acl public-read --force
-            ossutil cp "$metadata_tmp" "$metadata_uri" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
-            ossutil rm "$latest_tmp" --force || true
-            ossutil rm "$metadata_tmp" --force || true
-          }
-
-          promote_latest \
-            "UGSci-Desktop-Tauri-Windows-*" \
-            "UGSci-Tauri-*-Windows-updater.exe" \
-            "win-tauri" \
-            "UGSci-Tauri-${VERSION}-Windows-updater.exe" \
-            "UGSci-Tauri-latest-Windows-updater.exe"
-
-          promote_latest \
-            "UGSci-Desktop-Tauri-Windows-*" \
-            "UGSci-Tauri-*-Windows-portable.zip" \
-            "win-tauri" \
-            "UGSci-Tauri-${VERSION}-Windows-portable.zip" \
-            "UGSci-Tauri-latest-Windows-portable.zip"
-
-          promote_latest \
-            "UGSci-Desktop-Tauri-macOS-*" \
-            "UGSci-Tauri-*-macOS.zip" \
-            "mac-tauri" \
-            "UGSci-Tauri-${VERSION}-macOS.zip" \
-            "UGSci-Tauri-latest-macOS.zip"
-
-          promote_latest \
-            "UGSci-Desktop-Tauri-macOS-*" \
-            "UGSci-Tauri-*-macOS.dmg" \
-            "mac-tauri" \
-            "UGSci-Tauri-${VERSION}-macOS.dmg" \
-            "UGSci-Tauri-latest-macOS.dmg"
-
-
-          promote_latest \
-            "tauri-updater-meta-macos" \
-            "UGSci-Tauri-*-macOS.app.tar.gz" \
-            "mac-tauri" \
-            "UGSci-Tauri-${VERSION}-macOS.app.tar.gz" \
-            "UGSci-Tauri-latest-macOS.app.tar.gz"
       - name: Link artifacts into updater-meta dirs for manifest generation
         if: hashFiles('tauri-updater-meta-*/tauri-*-updater.json') != ''
         run: |
@@ -561,17 +470,11 @@ jobs:
           echo "Main index updated"
 
       - name: Roll back mutable desktop pointers on failure
-        if: ${{ failure() }}
+        if: ${{ failure() && steps.snapshot.outcome == 'success' }}
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
         run: |
-          set +e
-          while IFS= read -r object; do
-            backup="$RUNNER_TEMP/desktop-pointer-backup/$object"
-            uri="oss://${OSS_BUCKET}/${object}"
-            if grep -Fxq "$object" "$RUNNER_TEMP/desktop-pointer-existing.txt"; then
-              ossutil cp "$backup" "$uri" --acl public-read --force \
-                --meta "Cache-Control:public, max-age=0, must-revalidate"
-            else
-              ossutil rm "$uri" --force >/dev/null 2>&1 || true
-            fi
-          done < "$RUNNER_TEMP/desktop-pointer-paths.txt"
-          echo "Mutable desktop pointers restored after promotion failure"
+          python "$RELEASE_INFRA/scripts/pack/promote_desktop_aliases.py" \
+            restore "$RUNNER_TEMP/desktop-pointer-backup"
