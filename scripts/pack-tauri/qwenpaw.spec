@@ -91,9 +91,8 @@ datas = [
 datas.append((str(REPO_ROOT / "plugins/hub"), "qwenpaw/plugins/bundled/hub"))
 # Keep the offline, opt-in MCP payload identical to wheel package data. Do not
 # copy the whole author tree (which may contain node_modules or build caches).
-_packaging = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())[
-    "tool"
-]["setuptools"]
+with (REPO_ROOT / "pyproject.toml").open("rb") as _pyproject:
+    _packaging = tomllib.load(_pyproject)["tool"]["setuptools"]
 _optional_package = "qwenpaw.plugins.bundled.optional.mcp"
 _optional_source = REPO_ROOT / _packaging["package-dir"][_optional_package]
 for _pattern in _packaging["package-data"][_optional_package]:
