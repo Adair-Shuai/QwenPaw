@@ -6,6 +6,8 @@
 
 桌面客户端先从 `metadata/qwenpaw-tauri-latest.json` 读版本和签名，再按平台拉取带版本号的文件。Windows x64 拉取 `Windows-updater.exe`，macOS Apple Silicon 拉取 `macOS.app.tar.gz`。官网桌面目录使用版本化 Windows portable ZIP 和 macOS DMG。应用市场继续按独立应用版本、SHA-256 和目录里的 URL 下载。
 
+OSS Cleanup 的 `deduplicate-current` 模式只处理现行发布的重复副本。先核对线上更新清单的下载路径，并逐个核对旧别名与版本化包的 ETag 和文件大小。迁移保留更新清单与网站目录，成功后回读匿名下载地址，失败时恢复原别名。
+
 ## 专家包首装
 
 同版本专家环境修复必须保留实例和用户工作区：重新验签并校验原方法包后，在独立环境安装离线依赖并执行真实 MCP 自检；只有专家已停止且方法配置未被并发修改时，才原子切换解释器路径。旧环境保持可恢复，提交中取消必须等待原子写入结束后才释放维护锁。修复不自动启用专家，不把环境自检等同于宿主启动就绪。`tests/unit/app/test_expert_repair.py` 纳入固定清单，覆盖保留文件/策略、失败/取消、启动竞态、配置冲突、包篡改及中断恢复。

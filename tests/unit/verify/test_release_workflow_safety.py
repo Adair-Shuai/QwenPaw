@@ -1091,7 +1091,12 @@ def test_desktop_latest_aliases_reuse_versioned_objects_and_restore(
 
     def head(key):
         if key in links:
-            return SimpleNamespace(headers={"x-oss-object-type": "Symlink"})
+            target = links[key]
+            return SimpleNamespace(
+                headers={"x-oss-object-type": "Symlink"},
+                content_length=len(objects[target]),
+                etag=target,
+            )
         if key not in objects:
             raise Missing(key)
         return SimpleNamespace(
@@ -1190,10 +1195,33 @@ def test_desktop_latest_aliases_reuse_versioned_objects_and_restore(
             == "/" + target
         )
     assert objects[aliases.INDEX_KEYS[0]] == b"previous updater manifest"
+    public_base = "https://oss.example/files/apps/desktop"
+    objects[aliases.INDEX_KEYS[0]] = json.dumps(
+        {
+            "version": "2.3.1-beta.2",
+            "platforms": {
+                platform: {
+                    "url": f"https://oss.example/{key}",
+                    "signature": "test",
+                }
+                for platform, key in (
+                    ("windows-x86_64", versioned[0]),
+                    ("darwin-aarch64", versioned[-1]),
+                )
+            },
+        },
+    ).encode()
+    assert aliases.current_alias_version(bucket, public_base) == (version, 0)
+    links[latest[-1]] = previous
+    with pytest.raises(
+        ValueError, match="does not match the immutable package"
+    ):
+        aliases.current_alias_version(bucket, public_base)
     aliases.restore(bucket, tmp_path)
     assert links == {latest[0]: previous}
     assert objects[latest[1]] == b"legacy duplicate"
     assert all(aliases.metadata_key(key) not in objects for key in latest)
+
 
 def test_workflow_bash_blocks_have_no_dangling_merge_residue() -> None:
     """Guard: no bash keyword may be followed by a bare token on same line.

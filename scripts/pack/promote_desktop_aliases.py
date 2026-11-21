@@ -11,6 +11,7 @@ import re
 from urllib.request import Request, urlopen
 
 import oss2
+from packaging.version import Version
 
 DESKTOP_PREFIX = "files/apps/desktop/"
 ARTIFACTS = (
@@ -178,6 +179,52 @@ def protected_targets(bucket) -> set[str]:
     return targets
 
 
+def current_alias_version(bucket, public_base: str) -> tuple[str, int]:
+    manifest = json.loads(bucket.get_object(INDEX_KEYS[0]).read())
+    version = str(Version(manifest["version"]))
+    targets = artifact_keys(version)
+    for platform, key in (
+        ("windows-x86_64", targets[0]),
+        ("darwin-aarch64", targets[-1]),
+    ):
+        signed = manifest["platforms"][platform]
+        url = f"{public_base.rstrip('/')}/{key.removeprefix(DESKTOP_PREFIX)}"
+        if signed["url"] != url or not signed["signature"]:
+            raise ValueError(
+                f"Current updater manifest target mismatch for {platform}"
+            )
+
+    duplicate_bytes = 0
+    for alias, target in zip(artifact_keys("latest"), targets):
+        legacy = bucket.head_object(alias)
+        versioned = bucket.head_object(target)
+        if (
+            not legacy.etag
+            or legacy.etag != versioned.etag
+            or legacy.content_length != versioned.content_length
+        ):
+            raise ValueError(
+                f"Current alias does not match the immutable package: {alias}"
+            )
+        if symlink_target(bucket, alias, legacy) is None:
+            duplicate_bytes += legacy.content_length
+    return version, duplicate_bytes
+
+
+def migrate_current(bucket, public_base: str, backup: Path) -> None:
+    version, duplicate_bytes = current_alias_version(bucket, public_base)
+    snapshot(bucket, backup)
+    try:
+        promote(bucket, version, public_base)
+    except Exception:
+        restore(bucket, backup)
+        raise
+    print(
+        f"Replaced {duplicate_bytes} bytes of duplicate desktop alias objects",
+        flush=True,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -186,6 +233,9 @@ def main() -> None:
     publish = commands.add_parser("promote")
     publish.add_argument("version")
     publish.add_argument("public_base")
+    migrate = commands.add_parser("migrate-current")
+    migrate.add_argument("public_base")
+    migrate.add_argument("backup", type=Path)
     commands.add_parser("protected-targets")
     args = parser.parse_args()
     bucket = oss2.Bucket(
@@ -202,6 +252,8 @@ def main() -> None:
         restore(bucket, args.backup)
     elif args.command == "promote":
         promote(bucket, args.version, args.public_base)
+    elif args.command == "migrate-current":
+        migrate_current(bucket, args.public_base, args.backup)
     else:
         print("\n".join(sorted(protected_targets(bucket))))
 
