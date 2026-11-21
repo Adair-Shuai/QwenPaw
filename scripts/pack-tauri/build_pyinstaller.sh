@@ -187,6 +187,8 @@ echo "== Pruning build-only files from backend bundle =="
 "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/prune_desktop_bundle.py" \
     "${BACKEND_DIR}" \
     --max-size-mb "${QWENPAW_MAX_BACKEND_MB:-1800}"
+"$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/verify_optional_audio.py" \
+    "${BACKEND_DIR}"
 
 echo "Backend bundle created: ${BACKEND_DIR}"
 

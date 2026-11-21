@@ -1848,13 +1848,31 @@
       "scopePlaceholder": "openid profile email",
       "authEndpoint": "Authorization Endpoint（手动覆盖）",
       "tokenEndpoint": "Token Endpoint（手动覆盖）",
-      "endpointHint": "留空将自动从 MCP 服务器发现端点，填写后将跳过自动发现"
+      "endpointHint": "留空将自动从 MCP 服务器发现端点，填写后将跳过自动发现",
+      "attemptFailed": "本次授权未完成，原认证配置未更改。你可以重新授权。"
     },
     "local": "本地",
     "remote": "远程",
     "headerAuth": "Token / 密钥认证",
     "headerAuthHint": "连接时自动使用已配置的 Token 或密钥，无需重复 OAuth 授权。此标记不代表凭证有效性已验证。",
-    "invalidJson": "请输入有效的 JSON，且至少包含一个 MCP 服务。"
+    "invalidJson": "请输入有效的 JSON，且至少包含一个 MCP 服务。",
+    "legacyArchived": "部分旧连接未迁移，原配置已备份",
+    "recovery": {
+      "title": "MCP 需要处理",
+      "invalid_upgrade_record": "请检查 MCP 安装记录，然后重试",
+      "orphaned_installation_record": "请检查 MCP 安装记录，然后重试",
+      "offline_upgrade_failed_check_dependencies_and_storage": "请检查离线依赖和存储，然后重试",
+      "workspace_needs_review": "请检查此工作区保存的 MCP 配置，然后重试",
+      "invalid_plugin_settings": "请检查 MCP 插件设置，然后重试",
+      "plugin_runtime_failed": "MCP 插件加载失败，请前往插件管理并选择「修复并重试」。"
+    },
+    "plugin": {
+      "version": "MCP 插件版本：{{version}}",
+      "updateAvailable": "MCP 插件 {{version}} 可更新",
+      "update": "更新插件",
+      "versionCheckUnavailable": "暂时无法检查插件版本，MCP 可继续使用。",
+      "frontendRefreshFailed": "插件已更新，但界面刷新失败，请刷新页面。"
+    }
   },
   "heartbeat": {
     "customInterval": "自定义间隔",
@@ -2136,6 +2154,10 @@
     "selectAtLeastOneDay": "请选择至少一天。"
   },
   "channels": {
+    "update": {
+      "action": "更新",
+      "available": "发现新版本：{{version}}"
+    },
     "runtime": {
       "missing_code": "插件未安装"
     },
@@ -2186,6 +2208,7 @@
     "streamingEnabled": "流式输出",
     "streamingEnabledDingtalkHint": "仅在消息类型为 Card 时生效",
     "streamingEnabledFeishuHint": "需要在飞书开放平台权限管理界面开通 cardkit:card:write 权限",
+    "streamingEnabledQQHint": "仅 QQ 单聊（C2C）支持流式输出；群聊和频道仍发送完整消息",
     "autoCollapseThinking": "折叠思考内容",
     "autoCollapseThinkingTooltip": "思考内容流式输出结束后自动折叠，仍可手动展开。",
     "ackMessage": "即时确认消息",
@@ -3465,6 +3488,8 @@
     "download": "下载",
     "downloadFailed": "文件下载失败",
     "resize": "调整文件抽屉宽度",
+    "enterFullscreen": "全屏预览",
+    "exitFullscreen": "退出全屏预览",
     "loadFailed": "文件加载失败。请确认文件仍在当前智能体工作区的主工作目录中。",
     "previewUnavailable": "暂不支持预览，仍可查看元数据并下载。",
     "mentionInChat": "在聊天中引用",
@@ -4897,7 +4922,8 @@
       "delegate": "直接指派",
       "collaborate": "共同协作"
     },
-    "quoteFollowUp": "引用并追问"
+    "quoteFollowUp": "引用并追问",
+    "outputTruncated": "模型已达到输出上限，当前回答不完整。请让模型继续回答，或提高输出上限。"
   },
   "security": {
     "parent": "设置",
@@ -5872,10 +5898,36 @@
     "noProvidersWarning": "未找到支持转写的提供商。请配置一个 OpenAI 提供商以启用语音转写。",
     "transcriptionInfoTitle": "转写工作原理",
     "transcriptionInfoDesc": "Whisper API 转写使用 OpenAI 兼容的 /v1/audio/transcriptions 端点。需要配置一个支持 Whisper 端点的提供商（如 OpenAI）。请在上方选择具体的提供商以启用转写。",
-    "transcriptionInfoDescLocal": "本地 Whisper 转写直接在您的设备上运行 openai-whisper 库。需要同时安装 ffmpeg（用于音频解码）和 openai-whisper Python 包。无需 API Key 或网络连接。安装命令：uv pip install 'qwenpaw[whisper]'。",
+    "transcriptionInfoDescLocal": "本地 Whisper 在此设备上运行。点击“安装插件”准备插件和 Python 依赖；已禁用时点击“启用插件”。ffmpeg 需单独安装。首次转写时按需下载 base 模型，后续复用缓存。无需 API Key。",
     "modelLabel": "转写模型",
     "modelDescription": "发送给 Whisper API 接口的模型名。请填写你所选服务商支持的模型 ID，例如 SiliconFlow 的 \"FunAudioLLM/SenseVoiceSmall\"。留空则使用默认值 \"whisper-1\"。",
-    "modelPlaceholder": "例如 whisper-1"
+    "modelPlaceholder": "例如 whisper-1",
+    "localWhisperInstall": "安装插件",
+    "localWhisperReview": "查看依赖变更",
+    "localWhisperState_needs_confirmation": "本地 Whisper · 等待确认依赖变更",
+    "localWhisperEnable": "启用插件",
+    "localWhisperManage": "管理插件",
+    "localWhisperPlugin": "插件",
+    "localWhisperFfmpegHelp": "查看 ffmpeg 安装说明",
+    "localWhisperModelHint": "模型将在首次转写时加载。",
+    "localWhisperDependenciesKept": "Python 依赖已保留，安装插件后即可使用本地转写。",
+    "localWhisperInstallFailed": "本地 Whisper 安装未完成",
+    "localWhisperState_missing": "本地 Whisper · 未安装",
+    "localWhisperState_disabled": "本地 Whisper · 已禁用",
+    "localWhisperState_installing": "正在准备本地 Whisper，首次安装可能需要下载较大的 Python 依赖。",
+    "localWhisperState_ready": "本地 Whisper · 插件和依赖已准备",
+    "localWhisperImportFailed": "本地 Whisper · 上次依赖加载失败",
+    "localWhisperState_inactive": "本地 Whisper · 未激活",
+    "localWhisperState_missing_dependencies": "本地 Whisper · 缺少依赖",
+    "localWhisperState_failed": "本地 Whisper · 暂不可用",
+    "localWhisperPlugin_missing": "未安装",
+    "localWhisperPlugin_disabled": "已禁用",
+    "localWhisperPlugin_active": "已启用",
+    "localWhisperPlugin_registered": "正在加载",
+    "localWhisperPlugin_inactive": "未激活",
+    "localWhisperPlugin_failed": "加载失败",
+    "localWhisperDependency_installed": "已安装",
+    "localWhisperDependency_missing": "未找到"
   },
   "backup": {
     "title": "备份",
@@ -6168,7 +6220,13 @@
     "enableSuccess": "插件已激活。",
     "enableFailed": "插件激活失败。请检查依赖与应用日志后重试。",
     "disableSuccess": "插件已停用",
-    "disableFailed": "无法完成插件停用，请查看诊断信息"
+    "disableFailed": "无法完成插件停用，请查看诊断信息",
+    "dependencyErrors": {
+      "ambiguous": "无法确定依赖的唯一来源。请查看应用日志中的依赖名称，修复依赖环境后重试。",
+      "invalidMetadata": "依赖安装信息不完整或无效。请查看应用日志，修复依赖环境后重试。",
+      "failed": "依赖准备未完成。请查看应用日志，处理依赖问题后重试。"
+    },
+    "kindProtocol": "协议"
   },
   "codingMode": {
     "toolPresentationHelp": "开启后，智能体只使用一个代码工具。搜索、文件处理等操作，统一通过编写并执行 Python 代码完成。",
@@ -6882,6 +6940,7 @@
     "emojiRecent": "最近使用",
     "emojiAll": "默认",
     "emojiCustom": "雪豹",
+    "emojiAnimated": "可爱雪豹",
     "addCommentImage": "上传图片",
     "removeCommentImage": "移除图片",
     "commentImageMax": "评论最多添加 {{count}} 张图片",
@@ -6898,6 +6957,7 @@
     "video": "帖子视频",
     "imagePreview": "图片预览",
     "editPost": "编辑",
+    "fromGithub": "源自GitHub",
     "deletePost": "删除",
     "editHelp": "在 Platform 编辑，保留图片、视频和原有格式",
     "deleteTitle": "删除这篇帖子？",
@@ -6918,6 +6978,9 @@
     "login": "登录 Platform",
     "account": "发布账号：{{name}}",
     "postTitle": "标题",
+    "githubLinkLabel": "GitHub 仓库",
+    "githubLinkPlaceholder": "https://github.com/owner/repo",
+    "githubLinkInvalid": "请输入一个有效的github仓库地址",
     "body": "正文",
     "confirm": "我已检查标题与正文，确认公开发布这些内容。",
     "publish": "确认发布",
@@ -7089,5 +7152,11 @@
   "authorBadges": {
     "official": "平台官方",
     "resourceMaintainer": "资源维护者"
+  },
+  "mcpFeature": {
+    "required": "需要 MCP 插件",
+    "unavailable": "MCP 插件未安装或不可用，Mail 和 ACP 暂不可用。配置已保留，请前往官方插件页面安装、启用或修复。",
+    "openOfficial": "前往官方插件",
+    "later": "稍后"
   }
 }

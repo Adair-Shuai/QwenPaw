@@ -120,7 +120,14 @@
       "tests/unit/routers/test_workspace_office.py",
       "tests/unit/tauri/test_stage_officecli.py"
     ],
+    "optionalPluginUpgrade": [
+      "tests/unit/plugins/test_optional_plugins_profile_upgrade.py"
+    ],
+    "localWhisper": [
+      "tests/unit/plugins/test_local_whisper.py"
+    ],
     "mcp": [
+      "tests/unit/plugins/test_sdk_driver_replacement.py",
       "tests/unit/drivers/adapters/test_mcp_url_credentials.py",
       "tests/unit/app/routers/test_mcp_oauth_flows.py",
       "tests/unit/plugins/test_oss_cache.py"
@@ -260,6 +267,7 @@
       "tests/unit/tauri/test_windows_webview_install.py",
       "tests/unit/tauri/test_desktop_scientific_pruning.py",
       "tests/unit/tauri/test_stage_python_runtime.py",
+      "tests/unit/verify/test_release_workflow_safety.py",
       "tests/unit/tauri/test_desktop_workflows.py"
     ],
     "toolDiscovery": [
@@ -712,6 +720,18 @@
       "test_stale_market_returns_before_network_and_refreshes_share_one_download",
       "test_cold_market_requests_share_one_download",
       "test_invalid_upstream_manifest_does_not_replace_offline_catalog"
+    ],
+    "tests/unit/plugins/test_sdk_driver_replacement.py": [
+      "test_watcher_shares_identical_pending_reload"
+    ],
+    "tests/unit/plugins/test_optional_plugins_profile_upgrade.py": [
+      "test_offline_upgrade_restarts_with_both_plugins"
+    ],
+    "tests/unit/plugins/test_local_whisper.py": [
+      "test_uninstall_stays_missing_with_dependencies_present",
+      "test_status_never_imports_whisper_or_torch",
+      "test_dependency_confirmation_survives_restart",
+      "test_existing_desktop_whisper_migrates_offline"
     ],
     "tests/unit/app/routers/test_mcp_oauth_flows.py": [
       "test_session_status_does_not_mistake_old_tokens_for_new_authorization",

@@ -183,6 +183,7 @@ test_inspector.py
 docs-site/
 
 # Local review notes
+docs/
 .local-review/
 docs/reviews/
 # Local QwenPaw runtime state. Runtime data belongs under ~/.qwenpaw and

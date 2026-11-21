@@ -286,6 +286,42 @@ def _build_distribution(project, output, method):
     )
 
 
+def _sdist_names(sdist):
+    if sdist.suffix == ".zip":
+        with zipfile.ZipFile(sdist) as archive:
+            return archive.namelist()
+    with tarfile.open(sdist) as archive:
+        return archive.getnames()
+
+
+def _stage_optional_plugins(project):
+    resources = {
+        "plugins/protocol/mcp": (
+            "qwenpaw/plugins/bundled/optional/mcp",
+            ("plugin.json", "plugin.py", "frontend/dist/index.js"),
+        ),
+        "plugins/transcription/local-whisper": (
+            "qwenpaw/plugins/bundled/transcription/local-whisper",
+            ("plugin.json", "plugin.py"),
+        ),
+    }
+    for source in resources:
+        shutil.copytree(
+            ROOT / source,
+            project / source,
+            ignore=shutil.ignore_patterns("node_modules", "__pycache__"),
+        )
+    return resources
+
+
+def _verify_optional_plugin_payloads(archive, resources):
+    for source, (destination, entries) in resources.items():
+        for entry in entries:
+            payload = (ROOT / source / entry).read_bytes()
+            assert payload
+            assert archive.read(f"{destination}/{entry}") == payload
+
+
 def _python_package_project(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
@@ -308,6 +344,7 @@ def _python_package_project(tmp_path):
         project / "plugins/channel",
         ignore=shutil.ignore_patterns("__pycache__", "node_modules"),
     )
+    resources = _stage_optional_plugins(project)
     _write(project, "README.md", b"Test release\n")
     _write(project, "src/qwenpaw/__init__.py", b"")
     _write(project, "src/qwenpaw/__version__.py", b'__version__ = "0.0.1"\n')
@@ -349,11 +386,11 @@ def _python_package_project(tmp_path):
         "plugins/apps/application/private-source.py",
         b"VALUE = 1\n",
     )
-    return project, runtime, prompt
+    return project, runtime, prompt, resources
 
 
 def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
-    project, runtime, prompt = _python_package_project(tmp_path)
+    project, runtime, prompt, resources = _python_package_project(tmp_path)
     pet = _write(
         project,
         "src/qwenpaw/plugins_bundle/qwenpaw-pet/plugin.json",
@@ -370,20 +407,19 @@ def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
         assert any(p.endswith("ugsci/ui/dist/index.js") for p in names)
         assert not any("ugsci/visualization/data/" in p for p in names)
         prefix = "qwenpaw/plugins_bundle/qwenpaw-openui/"
+        _verify_optional_plugin_payloads(archive, resources)
         assert archive.read(prefix + "dist/index.js") == runtime
         assert archive.read(prefix + "dist/system-prompt.txt") == prompt
         assert not any("qwenpaw-openui/frontend/" in p for p in names)
         assert not any("plugins/apps/" in p for p in names)
         assert not any("qwenpaw-pet/" in p for p in names)
     sdist = next(path for path in output.iterdir() if path.suffix != ".whl")
-    if sdist.suffix == ".zip":
-        with zipfile.ZipFile(sdist) as archive:
-            names = archive.namelist()
-    else:
-        with tarfile.open(sdist) as archive:
-            names = archive.getnames()
+    names = _sdist_names(sdist)
     assert not any("ugsci/visualization/data/" in p for p in names)
     assert any(p.endswith("qwenpaw-openui/dist/index.js") for p in names)
+    for source, (_, entries) in resources.items():
+        for entry in entries:
+            assert any(p.endswith(f"/{source}/{entry}") for p in names)
     assert any(
         p.endswith("qwenpaw-openui/dist/system-prompt.txt") for p in names
     )
@@ -396,7 +432,7 @@ def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
 
 
 def test_python_distributions_reject_embedded_application_payloads(tmp_path):
-    project, _, _ = _python_package_project(tmp_path)
+    project, _, _, _ = _python_package_project(tmp_path)
     output = tmp_path / "rejected-artifacts"
     _write(
         project,
@@ -423,6 +459,23 @@ def test_docker_context_excludes_both_visualization_fixture_trees():
     )
     assert "plugins/bundle/ugsci/visualization/data" in patterns
     assert "src/qwenpaw/plugins_bundle/ugsci/visualization/data" in patterns
+
+
+def test_docker_carries_console_brand_and_offline_mcp_assets():
+    dockerfile = (ROOT / "deploy/Dockerfile").read_text(encoding="utf-8")
+    assert "COPY console /app/console" in dockerfile
+    assert (
+        "COPY --from=console-builder /app/console/dist/ ./src/qwenpaw/console/"
+        in dockerfile
+    )
+    assert "COPY plugins/protocol/mcp ./plugins/protocol/mcp" in dockerfile
+    patterns = (
+        (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    )
+    frontend = "plugins/protocol/mcp/frontend/dist"
+    assert patterns.index("**/dist") < patterns.index("!" + frontend)
+    assert patterns.index("**/dist") < patterns.index(f"!{frontend}/index.js")
+    assert (ROOT / frontend / "index.js").stat().st_size > 0
 
 
 def test_packaged_visualization_imports_user_data_without_shipped_examples(
@@ -518,9 +571,14 @@ def test_updates_preserve_user_imports_without_shipping_visualization_data(
 
     installed = tmp_path / "installed/ugsci"
     _plugin(installed)
+    from qwenpaw.utils.windows_paths import io_path
+
+    relative = "visualization/data/user-import/unique-grid.bin"
+    if route == "signed_full":
+        relative = "visualization/data/" + "layer-" * 21 + "/unique-grid.bin"
     user_file = _write(
-        installed,
-        "visualization/data/user-import/unique-grid.bin",
+        Path(io_path(installed)),
+        relative,
         b"user-owned grid",
     )
     source = tmp_path / "repo/plugins/bundle/ugsci"

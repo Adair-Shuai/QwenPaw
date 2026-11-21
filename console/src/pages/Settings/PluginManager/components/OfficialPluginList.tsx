@@ -2,11 +2,12 @@ import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert, Button, Input, Select, Spin, Tag, Typography } from "antd";
-import { Check, Download, Package, RefreshCw } from "lucide-react";
+import { Check, Download, Package, RefreshCw, Trash2 } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import type {
   InstallPluginResult,
   OfficialPluginCatalogEntry,
+  PluginInfo,
 } from "@/api/modules/plugin";
 import { useOfficialPlugins } from "../hooks/useOfficialPlugins";
 import {
@@ -51,11 +52,17 @@ function kindLabelKey(kind: string): string {
 interface OfficialPluginListProps {
   initialSearch?: string;
   onInstalled: (result: InstallPluginResult) => void | Promise<void>;
+  installedPlugins?: PluginInfo[];
+  uninstallingId?: string | null;
+  onUninstall?: (plugin: PluginInfo) => void;
 }
 
 export function OfficialPluginList({
   initialSearch = "",
   onInstalled,
+  installedPlugins = [],
+  uninstallingId = null,
+  onUninstall,
 }: OfficialPluginListProps) {
   const { t, i18n } = useTranslation();
   const [nameFilter, setNameFilter] = useState(initialSearch);
@@ -149,7 +156,10 @@ export function OfficialPluginList({
         loading={
           installingId === catalogEntry.id ? UGSCI_BUTTON_LOADING : false
         }
-        disabled={installingId !== null && installingId !== catalogEntry.id}
+        disabled={
+          (installingId !== null && installingId !== catalogEntry.id) ||
+          (catalogEntry.kind === "channel" && uninstallingId !== null)
+        }
         onClick={() => requestInstall(selection)}
       >
         {t(
@@ -157,6 +167,26 @@ export function OfficialPluginList({
             ? "pluginManager.update"
             : "pluginManager.catalogInstall",
         )}
+      </Button>
+    );
+  };
+
+  const renderUninstallButton = (selection: OfficialPluginSelection) => {
+    if (selection.displayEntry.kind !== "channel" || !onUninstall) return null;
+    const plugin = installedPlugins.find(
+      (item) => item.id === selection.displayEntry.plugin_id,
+    );
+    if (!plugin) return null;
+
+    return (
+      <Button
+        danger
+        icon={<Trash2 size={14} />}
+        loading={uninstallingId === plugin.id}
+        disabled={installingId !== null || uninstallingId !== null}
+        onClick={() => onUninstall(plugin)}
+      >
+        {t("pluginManager.uninstall")}
       </Button>
     );
   };
@@ -302,6 +332,7 @@ export function OfficialPluginList({
                 <div className={cardStyles.cardActions}>
                   {renderVersionSelect(group, selection)}
                   {renderInstallButton(selection)}
+                  {renderUninstallButton(selection)}
                 </div>
               </article>
             ))}
@@ -331,6 +362,7 @@ export function OfficialPluginList({
                 <div className={styles.catalogActions}>
                   {renderVersionSelect(group, selection)}
                   {renderInstallButton(selection)}
+                  {renderUninstallButton(selection)}
                 </div>
               </div>
             ))}

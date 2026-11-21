@@ -106,6 +106,7 @@ const suites = {
     "src/pages/Agent/Skills/useSkills.test.ts",
     "src/pages/AppCenter/index.test.tsx",
     "src/pages/Chat/ChatPage.coverage.test.tsx",
+    "src/pages/Chat/completionNotice.test.ts",
     "src/pages/Chat/HostBubbles.render.test.tsx",
     "src/pages/Chat/QuoteSelection.integration.test.tsx",
     "src/pages/Chat/components/ApprovalToggle.test.tsx",
@@ -140,6 +141,7 @@ const suites = {
     "src/pages/Settings/VoiceTranscription/useVoiceTranscription.test.ts",
     "src/plugins/pawapp-sdk/sessionRouting.test.ts",
     "src/plugins/usePluginLoader.test.ts",
+    "src/plugins/hostUiDependencies.test.ts",
     "src/stores/sessionAttentionStore.test.ts",
     "src/stores/sessionListStore.test.ts",
     "src/styles/uiFontSizeCoverage.test.ts",
@@ -1976,6 +1978,9 @@ requireCases("src/pages/Chat/QuoteSelection.integration.test.tsx", [
 ]);
 requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
   "UGSci fork feature: mounted answer quote shortcut preserves code and reaches normal admission",
+  "attaches an externally started run without remounting the chat",
+  "keeps the new session guard after an old reconnect fails",
+  "keeps a run that starts while external-run history is loading",
 ]);
 requireCases("src/pages/Chat/components/AnswerQuoteComposer.test.tsx", [
   "keeps keyboard quoting bound to the active scope and focused action",

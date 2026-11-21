@@ -41,6 +41,8 @@ import {
 } from "@/components/UgsciAssistantVisual";
 import { describeExecutionStep } from "./components/executionStepModel";
 import { useTranslation } from "react-i18next";
+import { AlertTriangle } from "lucide-react";
+import { hasTruncatedModelOutput } from "./completionNotice";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import { useEffectiveFontSize } from "@/contexts/FontSizeContext";
 import {
@@ -350,6 +352,12 @@ function DefaultHostResponseCard({
           />
         );
       })}
+      {hasTruncatedModelOutput(data) ? (
+        <div role="status" className={styles.completionWarning}>
+          <AlertTriangle size={16} aria-hidden="true" />
+          <span>{t("chat.outputTruncated")}</span>
+        </div>
+      ) : null}
       {data.error ? <ResponseError data={data.error} /> : null}
       {!messages.length && data.status === "canceled" ? (
         <Bubble.Interrupted title={t("chat.turnCanceled")} />

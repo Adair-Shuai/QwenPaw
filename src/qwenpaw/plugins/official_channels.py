@@ -31,6 +31,7 @@ __all__ = [
     "provision_bundled_channels",
     "bundled_channel_source",
     "bundled_channel_description",
+    "bundled_channel_versions",
     "prepare_channel_upgrade",
 ]
 
@@ -95,6 +96,14 @@ def _bundled_index(root):
             ):
                 raise ValueError("Official archive digest invalid")
     return index
+
+
+def bundled_channel_versions() -> dict[str, str]:
+    """Read release versions without extracting or preparing any plugin."""
+    return {
+        row["plugin_id"]: row["version"]
+        for row in _bundled_index(_resource_root())["plugins"]
+    }
 
 
 def _bundled_archive(root, row):
@@ -449,6 +458,21 @@ def initialize_channel_policy():
     mutate_config(apply)
 
 
+def _recover_channel_tombstone(root: Path, plugin_id: str) -> None:
+    """Finish config cleanup after an explicit reinstall has committed."""
+    from .install_receipts import has_install_commit, finish_channel_cleanup
+    from .settings import clear_channel_tombstone, read_plugin_intent
+
+    target = root / plugin_id
+    if (
+        target.resolve() == root.resolve() / plugin_id
+        and read_plugin_intent(plugin_id, plugins_dir=root) is None
+        and has_install_commit(target, plugin_id, channel_cleanup_pending=True)
+    ):
+        clear_channel_tombstone(plugin_id)
+        finish_channel_cleanup(target)
+
+
 async def provision_bundled_channels(loader):
     """Seed absent sources, retaining finite migration retry intent."""
     from ..config.utils import load_config, mutate_config
@@ -461,7 +485,18 @@ async def provision_bundled_channels(loader):
     if state.preset == "channels-full":
         requested.update(official_channel_owners().values())
     errors = {}
-    for plugin_id in sorted(requested - set(state.uninstalled)):
+    removed = set(state.uninstalled)
+    for plugin_id in sorted(removed & set(official_channel_owners().values())):
+        try:
+            async with loader.plugin_lifecycle(plugin_id):
+                await run_sync_io(
+                    _recover_channel_tombstone,
+                    Path(loader.plugin_dirs[0]),
+                    plugin_id,
+                )
+        except (OSError, ValueError) as exc:
+            errors[plugin_id] = str(exc)
+    for plugin_id in sorted(requested - removed):
         try:
             if loader.find_installed_plugin_dir(plugin_id) is None:
                 async with async_bundled_channel_source(plugin_id) as source:

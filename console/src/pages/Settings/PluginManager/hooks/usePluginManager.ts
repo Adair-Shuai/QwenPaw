@@ -4,6 +4,7 @@ import { Modal } from "antd";
 import { useRequest } from "ahooks";
 import { useAppMessage } from "@/hooks/useAppMessage";
 import { subscribeToPluginChanges } from "@/utils/pluginChangeEvents";
+import { pluginErrorMessage } from "@/utils/pluginError";
 import {
   fetchPluginCatalog,
   fetchPlugins,
@@ -249,7 +250,7 @@ export function usePluginManager() {
         });
       } catch (err) {
         message.error(
-          err instanceof Error ? err.message : t("pluginManager.updateFailed"),
+          pluginErrorMessage(err, t("pluginManager.updateFailed"), t),
         );
       } finally {
         await refresh();
@@ -300,7 +301,7 @@ export function usePluginManager() {
         } catch (error) {
           failedPluginNames.push(
             error instanceof Error && error.message
-              ? `${plugin.name}: ${error.message}`
+              ? `${plugin.name}: ${pluginErrorMessage(error, "", t)}`
               : plugin.name,
           );
         }
@@ -392,7 +393,7 @@ export function usePluginManager() {
           ),
         );
       } catch (err) {
-        message.error(err instanceof Error ? err.message : t(failureKey));
+        message.error(pluginErrorMessage(err, t(failureKey), t));
       } finally {
         try {
           await refreshHarnessCatalog().catch(() => {});
@@ -429,11 +430,9 @@ export function usePluginManager() {
             message.success(t("pluginManager.uninstallSuccess"));
             await refresh();
           } catch (err) {
-            const msg =
-              err instanceof Error
-                ? err.message
-                : t("pluginManager.uninstallFailed");
-            message.error(msg);
+            message.error(
+              pluginErrorMessage(err, t("pluginManager.uninstallFailed"), t),
+            );
           } finally {
             setUninstallingId(null);
           }

@@ -20,10 +20,11 @@ import i18n from "../i18n";
 import { sidebarDensityPreference } from "../utils/sidebarDensityPreference";
 import ReactDOM from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
-import * as antd from "antd";
-import * as antdIcons from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type * as antd from "antd";
+import type * as antdIcons from "@ant-design/icons";
+import { getHostUiDependencies } from "./hostUiDependencies";
 import { getApiUrl, getApiToken, getApiBaseUrl } from "../api/config";
 import { useAgentStore } from "../stores/agentStore";
 import {
@@ -369,8 +370,12 @@ export function installHostExternals(): void {
     window.QwenPaw.host = {
       React,
       ReactDOM,
-      antd,
-      antdIcons,
+      get antd() {
+        return getHostUiDependencies().antd;
+      },
+      get antdIcons() {
+        return getHostUiDependencies().antdIcons;
+      },
       get apiBaseUrl() {
         return getApiBaseUrl();
       },

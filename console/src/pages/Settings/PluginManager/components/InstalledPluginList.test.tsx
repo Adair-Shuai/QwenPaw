@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { PluginInfo } from "@/api/modules/plugin";
 import { InstalledPluginList } from "./InstalledPluginList";
 
-vi.mock("react-i18next", () => ({
-  initReactI18next: { type: "3rdParty", init: vi.fn() },
+vi.mock("react-i18next", async (original) => ({
+  ...(await original<typeof import("react-i18next")>()),
   useTranslation: () => ({
     t: (key: string) =>
       (

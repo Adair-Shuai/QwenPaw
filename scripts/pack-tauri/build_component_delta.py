@@ -11,6 +11,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from copy_windows_tree import filesystem_path
 from component_common import (
     DEFAULT_PRESERVE_PATHS,
     canonical_json,
@@ -67,6 +68,9 @@ def write_delta(
     output: Path,
     preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS,
 ) -> dict:
+    base = Path(filesystem_path(base))
+    target = Path(filesystem_path(target))
+    output = Path(filesystem_path(output))
     delta = build_delta(base, target, preserve_paths)
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(

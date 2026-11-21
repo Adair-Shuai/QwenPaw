@@ -102,6 +102,10 @@ async def test_interrupted_additions_require_verified_recovery(
         (package / "__init__.py").write_text(
             f"__path__ = {[str(original_package)]!r}\n",
         )
+        directory_alias(
+            original_package.parent / "utils",
+            package.parent / "utils",
+        )
         context["support_root"] = str(support)
 
     async def audit():

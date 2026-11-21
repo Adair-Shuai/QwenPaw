@@ -404,6 +404,7 @@ REQUIRED_CASES = {
     },
     "tests/unit/tauri/test_update_release_contract.py": {
         "test_publication_gate_verifies_full_fallback_and_all_deltas",
+        "test_builds_and_verifies_signed_deltas_in_deep_release_tree",
         "test_publication_gate_blocks_broken_but_present_artifacts",
         "test_current_updater_preserves_data_across_future_release_routes",
         "test_update_release_gates_cannot_be_bypassed_by_publication",
@@ -416,6 +417,7 @@ REQUIRED_CASES = {
     "tests/unit/tauri/test_ugsci_release_data.py": {
         "test_release_staging_and_market_zip_exclude_local_visualization_data",
         "test_python_wheel_and_sdist_exclude_visualization_test_data",
+        "test_docker_carries_console_brand_and_offline_mcp_assets",
         "test_signed_component_gate_rejects_visualization_test_payload",
         "test_packaged_visualization_imports_user_data_without_shipped_examples",
         "test_updates_preserve_user_imports_without_shipping_visualization_data",

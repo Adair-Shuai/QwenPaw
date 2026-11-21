@@ -273,6 +273,8 @@ def generate(icons):
     png("console/public/qwenpaw.png", 256)
     brand = ROOT / "console/public/ugsci-mono/brand"
     copy(icons / "icon.ico", "console/public/ugsci-mono/brand/web/favicon.ico")
+    copy(icons / "icon.ico", "console/public/favicon.ico")
+    png("console/public/apple-touch-icon.png", 180)
     copy(brand / "lockup-white.svg", "console/public/logo-dark.svg")
     copy(brand / "lockup-black.svg", "console/public/logo-light.svg")
     copy(brand / "web/favicon.svg", "console/public/online.svg")

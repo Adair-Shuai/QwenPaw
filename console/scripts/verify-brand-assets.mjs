@@ -65,14 +65,20 @@ export function verifyBrandAssets({
             path.join(root, "console/tauri.html"),
           ]
         : [path.join(root, "website/index.html")];
-      const favicon =
+      const favicons =
         template === "console"
-          ? "/ugsci-mono/brand/web/favicon.svg"
-          : "/qwenpaw-symbol.svg";
+          ? [
+              "/favicon.ico",
+              "/ugsci-mono/brand/web/favicon.svg",
+              "/apple-touch-icon.png",
+            ]
+          : ["/qwenpaw-symbol.svg"];
       for (const page of pages) {
         const html = readFileSync(page, "utf8");
-        if (!html.includes(`href="${favicon}"`)) {
-          errors.push(`Stale favicon reference ${page}`);
+        for (const favicon of favicons) {
+          if (!html.includes(`href="${favicon}"`)) {
+            errors.push(`Stale favicon reference ${page}: ${favicon}`);
+          }
         }
       }
     }

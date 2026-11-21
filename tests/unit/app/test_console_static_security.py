@@ -73,7 +73,16 @@ def test_console_brand_assets_revalidate_after_upgrade(tmp_path):
     console = tmp_path / "console"
     console.mkdir()
     (console / "index.html").write_text("console index")
-    (console / "favicon.svg").write_text("old icon")
+    icons = (
+        "favicon.svg",
+        "ugsci-mono/brand/web/favicon.svg",
+        "favicon.ico",
+        "apple-touch-icon.png",
+    )
+    for icon in icons:
+        target = console / icon
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"old icon")
     result = subprocess.run(
         [
             sys.executable,
@@ -85,19 +94,25 @@ def test_console_brand_assets_revalidate_after_upgrade(tmp_path):
                 from qwenpaw.app import _app
 
                 client = TestClient(_app.app)
-                first = client.get('/favicon.svg')
-                assert first.status_code == 200, first.text
-                assert first.headers['cache-control'] == 'no-cache'
-                assert first.text == 'old icon'
-                Path(_app._CONSOLE_STATIC_DIR, 'favicon.svg').write_text(
-                    'new upgraded brand icon'
-                )
-                updated = client.get('/favicon.svg', headers={
-                    'If-None-Match': first.headers['etag']
-                })
-                assert updated.status_code == 200
-                assert updated.text == 'new upgraded brand icon'
-                assert updated.headers['cache-control'] == 'no-cache'
+                for name in (
+                    'favicon.svg',
+                    'ugsci-mono/brand/web/favicon.svg',
+                    'favicon.ico',
+                    'apple-touch-icon.png',
+                ):
+                    first = client.get('/' + name)
+                    assert first.status_code == 200, first.text
+                    assert first.headers['cache-control'] == 'no-cache'
+                    assert first.content == b'old icon'
+                    Path(_app._CONSOLE_STATIC_DIR, name).write_bytes(
+                        b'new upgraded brand icon'
+                    )
+                    updated = client.get('/' + name, headers={
+                        'If-None-Match': first.headers['etag']
+                    })
+                    assert updated.status_code == 200
+                    assert updated.content == b'new upgraded brand icon'
+                    assert updated.headers['cache-control'] == 'no-cache'
                 """,
             ),
         ],

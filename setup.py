@@ -143,4 +143,9 @@ packages += [
         exclude=("*.__pycache__",),
     )
 ]
+packages += [
+    "qwenpaw.plugins.bundled.transcription",
+    "qwenpaw.plugins.bundled.transcription.local-whisper",
+]
+packages += ["qwenpaw.plugins.bundled.optional.mcp"]
 setup(packages=packages, cmdclass={"build_py": BuildPy, "sdist": SDist})

@@ -14,6 +14,7 @@ import { Button, Form, Modal, Select } from "@agentscope-ai/design";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/PageHeader";
+import { MCPFeatureStatus } from "@/components/MCPFeatureStatus";
 import api from "../../../api";
 import { useAppMessage } from "../../../hooks/useAppMessage";
 import {
@@ -649,6 +650,7 @@ function ACPPage({ embedded = false }: ACPPageProps = {}) {
         embedded ? stylesACP.embeddedPage : ""
       }`}
     >
+      <MCPFeatureStatus agentId={selectedAgent} refreshKey={loadedConfig} />
       {embedded ? (
         <div className={stylesACP.embeddedHeader}>
           <div className={stylesACP.embeddedHeading}>

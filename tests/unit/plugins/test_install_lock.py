@@ -27,6 +27,35 @@ _POSIX_FLOCK = pytest.mark.skipif(
 )
 
 
+def test_pytest_process_and_child_share_an_isolated_dependency_root():
+    import subprocess
+    import sys
+    import tempfile
+
+    from qwenpaw.constant import SECRET_DIR, WORKING_DIR
+    from qwenpaw.plugins.dependency_maintenance import state_root
+
+    root = state_root()
+    assert root.is_relative_to(Path(tempfile.gettempdir()).resolve())
+    assert root.parent == WORKING_DIR.parent == SECRET_DIR.parent
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from pathlib import Path; "
+            "from qwenpaw.plugins.dependency_maintenance import state_root; "
+            "from qwenpaw.constant import WORKING_DIR, SECRET_DIR; "
+            "assert (state_root(), WORKING_DIR, SECRET_DIR) == "
+            "tuple(map(Path, sys.argv[1:]))",
+            str(root),
+            str(WORKING_DIR),
+            str(SECRET_DIR),
+        ],
+        check=True,
+        timeout=60,
+    )
+
+
 def test_long_scoped_reader_blocks_maintenance_until_process_exit(
     tmp_path,
     monkeypatch,

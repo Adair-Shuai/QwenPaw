@@ -995,6 +995,7 @@
     "custom": "пользовательский"
   },
   "mcp": {
+    "legacyArchived": "Часть старых подключений не перенесена. Резервная копия исходной конфигурации сохранена.",
     "title": "MCP-клиенты",
     "qwenpawManaged": "Под управлением QwenPaw",
     "qwenpawManagedHint": "Общая конфигурация панели управления внедряется в поддерживаемые сторонние агенты во время выполнения.",
@@ -1131,7 +1132,14 @@
     },
     "local": "Локальный",
     "remote": "Удалённый",
-    "invalidJson": "Введите корректный JSON хотя бы с одним сервером MCP."
+    "invalidJson": "Введите корректный JSON хотя бы с одним сервером MCP.",
+    "plugin": {
+      "version": "Версия плагина MCP: {{version}}",
+      "updateAvailable": "Доступен плагин MCP {{version}}",
+      "update": "Обновить плагин",
+      "versionCheckUnavailable": "Не удалось проверить версию. MCP может продолжать работу.",
+      "frontendRefreshFailed": "Плагин обновлён, но интерфейс не обновился. Перезагрузите страницу."
+    }
   },
   "heartbeat": {
     "title": "Пульс",
@@ -1413,6 +1421,10 @@
     "selectAtLeastOneDay": "Выберите хотя бы один день."
   },
   "channels": {
+    "update": {
+      "action": "Обновить",
+      "available": "Доступна новая версия: {{version}}"
+    },
     "qrcodeInstallRequired": "Установите плагин для сканирования QR-кода",
     "runtime": {
       "missing_code": "Плагин не установлен"
@@ -1459,6 +1471,7 @@
     "streamingEnabled": "Потоковый вывод",
     "streamingEnabledDingtalkHint": "Действует только при типе сообщения Card",
     "streamingEnabledFeishuHint": "Необходимо включить разрешение cardkit:card:write на странице управления разрешениями открытой платформы Feishu",
+    "streamingEnabledQQHint": "Потоковый вывод поддерживается только в личных чатах QQ (C2C); сообщения в группах и каналах по-прежнему отправляются целиком",
     "autoCollapseThinking": "Сворачивать рассуждения",
     "autoCollapseThinkingTooltip": "Автоматически сворачивать панель рассуждений после завершения потока. Панель можно раскрыть вручную.",
     "ackMessage": "Сообщение подтверждения",
@@ -3602,7 +3615,8 @@
       "attach": "Прикрепить файлы",
       "send": "Отправить сообщение",
       "stop": "Остановить генерацию"
-    }
+    },
+    "outputTruncated": "Модель достигла лимита вывода. Ответ неполный. Попросите модель продолжить или увеличьте лимит вывода."
   },
   "security": {
     "parent": "Настройки",
@@ -4498,10 +4512,36 @@
     "noProvidersWarning": "Не найдено провайдеров для транскрипции. Настройте провайдер OpenAI для включения голосовой транскрипции.",
     "transcriptionInfoTitle": "Как работает транскрипция",
     "transcriptionInfoDesc": "Whisper API транскрипция использует OpenAI-совместимый эндпоинт /v1/audio/transcriptions. Необходим провайдер с поддержкой Whisper (например, OpenAI). Выберите конкретного провайдера выше для включения транскрипции.",
-    "transcriptionInfoDescLocal": "Локальная Whisper транскрипция запускает библиотеку openai-whisper непосредственно на вашем устройстве. Требуются ffmpeg (для декодирования аудио) и пакет openai-whisper. API-ключ и подключение к интернету не нужны. Установка: uv pip install 'qwenpaw[whisper]'.",
+    "transcriptionInfoDescLocal": "Локальный Whisper работает на этом устройстве. Нажмите «Установить плагин», чтобы подготовить плагин и зависимости Python. Если он отключён, нажмите «Включить плагин». Установите ffmpeg отдельно. При первой транскрипции модель base загружается, если её нет в кэше. Последующие вызовы используют кэш. Ключ API не требуется.",
     "modelLabel": "Модель транскрипции",
     "modelDescription": "Имя модели, отправляемое в endpoint Whisper API. Укажите идентификатор модели, поддерживаемый вашим провайдером, например \"FunAudioLLM/SenseVoiceSmall\" для SiliconFlow. Оставьте пустым, чтобы использовать значение по умолчанию \"whisper-1\".",
-    "modelPlaceholder": "напр. whisper-1"
+    "modelPlaceholder": "напр. whisper-1",
+    "localWhisperInstall": "Установить плагин",
+    "localWhisperReview": "Проверить изменения зависимостей",
+    "localWhisperState_needs_confirmation": "Local Whisper · Ожидание подтверждения изменений зависимостей",
+    "localWhisperEnable": "Включить плагин",
+    "localWhisperManage": "Управление плагином",
+    "localWhisperPlugin": "Плагин",
+    "localWhisperFfmpegHelp": "Инструкция по установке ffmpeg",
+    "localWhisperModelHint": "Модель загружается при первой транскрипции.",
+    "localWhisperDependenciesKept": "Зависимости Python сохранены. Для локальной транскрипции установите плагин.",
+    "localWhisperInstallFailed": "Установка локального Whisper не завершена",
+    "localWhisperState_missing": "Локальный Whisper · Не установлен",
+    "localWhisperState_disabled": "Локальный Whisper · Отключён",
+    "localWhisperState_installing": "Подготовка локального Whisper. При первой установке может потребоваться загрузка больших зависимостей Python.",
+    "localWhisperState_ready": "Локальный Whisper · Плагин и зависимости готовы",
+    "localWhisperImportFailed": "Локальный Whisper · Последняя загрузка зависимостей не удалась",
+    "localWhisperState_inactive": "Локальный Whisper · Не активен",
+    "localWhisperState_missing_dependencies": "Локальный Whisper · Не хватает зависимостей",
+    "localWhisperState_failed": "Локальный Whisper · Недоступен",
+    "localWhisperPlugin_missing": "Не установлен",
+    "localWhisperPlugin_disabled": "Отключён",
+    "localWhisperPlugin_active": "Включён",
+    "localWhisperPlugin_registered": "Загрузка",
+    "localWhisperPlugin_inactive": "Не активен",
+    "localWhisperPlugin_failed": "Ошибка загрузки",
+    "localWhisperDependency_installed": "Установлен",
+    "localWhisperDependency_missing": "Не найден"
   },
   "acp": {
     "title": "Подключения ACP",
@@ -4816,7 +4856,13 @@
         "confirm": "Interrupt and disable",
         "cancel": "Keep enabled"
       }
-    }
+    },
+    "dependencyErrors": {
+      "ambiguous": "Не удалось однозначно определить источник зависимости. Найдите имя пакета в журнале приложения, исправьте окружение и повторите попытку.",
+      "invalidMetadata": "Сведения об установке зависимостей неполны или недействительны. Проверьте журнал приложения, исправьте окружение и повторите попытку.",
+      "failed": "Подготовка зависимостей не завершена. Проверьте журнал приложения, устраните проблему и повторите попытку."
+    },
+    "kindProtocol": "Протокол"
   },
   "approvalNotifications": {
     "settingTitle": "Уведомления о подтверждениях на компьютере",
@@ -5425,6 +5471,7 @@
     "emojiRecent": "Недавние",
     "emojiAll": "По умолчанию",
     "emojiCustom": "Снежный барс",
+    "emojiAnimated": "Милый снежный барс",
     "addCommentImage": "Загрузить изображение",
     "removeCommentImage": "Удалить изображение",
     "commentImageMax": "Можно добавить не более {{count}} изображений",
@@ -5441,6 +5488,7 @@
     "video": "Видео поста",
     "imagePreview": "Предпросмотр изображения",
     "editPost": "Изменить",
+    "fromGithub": "Из GitHub",
     "deletePost": "Удалить",
     "editHelp": "Редактируйте на Platform, чтобы сохранить изображения, видео и форматирование",
     "deleteTitle": "Удалить этот пост?",
@@ -5461,6 +5509,9 @@
     "login": "Войти в Platform",
     "account": "Публикует {{name}}",
     "postTitle": "Заголовок",
+    "githubLinkLabel": "Репозиторий GitHub",
+    "githubLinkPlaceholder": "https://github.com/owner/repo",
+    "githubLinkInvalid": "Введите корректный адрес репозитория GitHub",
     "body": "Текст",
     "confirm": "Я проверил заголовок и текст и согласен опубликовать это содержимое публично.",
     "publish": "Опубликовать",

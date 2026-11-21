@@ -323,10 +323,10 @@ def _bundled_catalog_manifests() -> list[Path]:
     from ..market.builtin import get_builtin_hub_plugins_dir
 
     bundled_dir = Path(__file__).resolve().parent / "bundled"
-    manifests = (
+    manifests = list(
         bundled_dir.glob("*/*/plugin.json")
         if bundled_dir.is_dir()
-        else get_builtin_hub_plugins_dir().glob("*/plugin.json")
+        else get_builtin_hub_plugins_dir().glob("*/plugin.json"),
     )
     return sorted(manifests)
 
@@ -368,10 +368,35 @@ def build_plugin_catalog() -> dict[str, Any]:
         for entry in result["plugins"]
     }
     installed = _installed_plugin_ids()
-    for path in _bundled_catalog_manifests():
-        manifest = PluginManifest.from_dict(
-            json.loads(path.read_text(encoding="utf-8")),
-        )
+    from .optional_mcp import (
+        PLUGIN_ID,
+        BUNDLED_SOURCE,
+        get_optional_mcp_plugin_dir,
+        read_mcp_manifest,
+    )
+    from .sdk_version import validate_sdk
+    from .errors import SDKCompatibilityError
+
+    manifests = _bundled_catalog_manifests()
+    mcp_manifest = get_optional_mcp_plugin_dir() / "plugin.json"
+    if mcp_manifest.is_file():
+        manifests.append(mcp_manifest)
+    for path in sorted(set(manifests)):
+        if path == mcp_manifest:
+            try:
+                manifest = read_mcp_manifest(path.parent)
+                validate_sdk(manifest.sdk, PLUGIN_ID)
+            except (OSError, ValueError, TypeError, SDKCompatibilityError):
+                logger.warning("Optional MCP catalog metadata is unavailable")
+                continue
+        else:
+            manifest = PluginManifest.from_dict(
+                json.loads(path.read_text(encoding="utf-8")),
+            )
+            # MCP uses the validated optional payload entry above.
+            # Local Whisper uses the published ZIP in the official catalog.
+            if manifest.id in {PLUGIN_ID, "local-whisper"}:
+                continue
         compatible, _ = check_plugin_version_compat(manifest)
         if not compatible:
             continue
@@ -384,10 +409,14 @@ def build_plugin_catalog() -> dict[str, Any]:
             "description_i18n": manifest.description_i18n,
             "version": manifest.version,
             "author": manifest.author,
-            "kind": manifest.plugin_type.value,
+            "kind": "protocol"
+            if manifest.id == PLUGIN_ID
+            else manifest.plugin_type.value,
             "size": "",
             "sha256": "",
-            "install_url": str(path.parent.resolve()),
+            "install_url": BUNDLED_SOURCE
+            if manifest.id == PLUGIN_ID
+            else str(path.parent.resolve()),
             "installed": manifest.id in installed,
             "installed_version": installed_version,
             "upgrade_available": _is_upgrade_available(

@@ -353,6 +353,7 @@ def _inventory(
     root: Path,
     preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS,
 ) -> dict[str, dict[str, Any]]:
+    root = Path(io_path(root))
     result: dict[str, dict[str, Any]] = {}
     for path in root.rglob("*"):
         if _is_link_like(path):
@@ -1065,6 +1066,7 @@ class ComponentUpdater:
     ) -> _BackupSnapshot | None:
         """Persist and verify data before component activation."""
         # pylint: disable=too-many-branches,too-many-statements
+        # Descendants can exceed MAX_PATH even when the root itself is short.
         source = Path(io_path(source))
         if not plan.preserve_paths or not source.is_dir():
             return None
@@ -2034,7 +2036,7 @@ class ComponentUpdater:
         )
         with tempfile.TemporaryDirectory(
             prefix=f".{plan.component}.staging-",
-            dir=str(destination.parent),
+            dir=io_path(destination.parent),
         ) as temp:
             staged = Path(temp) / "component"
             base_inventory = _inventory(base, plan.preserve_paths)
@@ -2374,7 +2376,7 @@ class ComponentUpdater:
         destination.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix=f".{plan.component}.staging-",
-            dir=str(destination.parent),
+            dir=io_path(destination.parent),
         ) as temp:
             staged = Path(temp) / "component"
             self.prepare_full(

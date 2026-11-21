@@ -94,6 +94,35 @@ test("rejects missing mobile and extension icons", (t) => {
   assert.ok(verifyBrandAssets({ root, scope: "console" }) > 0);
 });
 
+test("shipping icons include native Retina and Apple touch resolutions", () => {
+  const icon = readFileSync(
+    path.join(repository, "scripts/pack/assets/icon.icns"),
+  );
+  assert.equal(icon.toString("ascii", 0, 4), "icns");
+  const dimensions = new Map();
+  for (let offset = 8; offset < icon.length; ) {
+    const chunk = icon.toString("ascii", offset, offset + 4);
+    const length = icon.readUInt32BE(offset + 4);
+    assert.ok(length >= 8 && offset + length <= icon.length);
+    if (chunk === "ic09" || chunk === "ic10") {
+      dimensions.set(chunk, [
+        icon.readUInt32BE(offset + 24),
+        icon.readUInt32BE(offset + 28),
+      ]);
+    }
+    offset += length;
+  }
+  assert.deepEqual(dimensions.get("ic09"), [512, 512]);
+  assert.deepEqual(dimensions.get("ic10"), [1024, 1024]);
+  const touch = readFileSync(
+    path.join(repository, "console/public/apple-touch-icon.png"),
+  );
+  assert.deepEqual(
+    [touch.readUInt32BE(16), touch.readUInt32BE(20)],
+    [180, 180],
+  );
+});
+
 test("checks built public assets and catches the desktop favicon regression", (t) => {
   const root = fixture(t);
   const dist = "built";

@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlsplit
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from packaging.version import Version
 
+from copy_windows_tree import filesystem_path
 from component_common import decode_base64, safe_relative_path, sha256_file
 from component_manifest import validate_manifest
 from verify_component_artifacts import _archive_limits, _is_preserved
@@ -258,12 +259,16 @@ def verify_release(
     public_key: str,
     independent_application: str | None = None,
 ) -> dict:
+    root = Path(filesystem_path(root))
+    manifest_path = Path(filesystem_path(manifest_path))
     key = Ed25519PublicKey.from_public_bytes(
         decode_base64(public_key, label="public key"),
     )
     _verify_signature(
         manifest_path,
-        manifest_path.with_suffix(".json.sig").read_text().strip(),
+        manifest_path.with_suffix(".json.sig")
+        .read_text(encoding="ascii")
+        .strip(),
         key,
     )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -317,7 +322,9 @@ def main() -> int:
         .with_name("component_compatibility.json")
         .read_text(encoding="utf-8"),
     )
-    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    manifest = json.loads(
+        Path(filesystem_path(args.manifest)).read_text(encoding="utf-8"),
+    )
     if manifest.get("protocol_version") != policy[
         "protocol_version"
     ] or Version(manifest["core_min_version"]) < Version(

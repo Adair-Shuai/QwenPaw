@@ -39,6 +39,20 @@ def _req(app_server, method, path, **kw):
         return _TimeoutStub()
 
 
+def _assert_mcp_contract(resp, app_server):
+    if resp.status_code == 503:
+        assert resp.json()["detail"]["code"] == "mcp_plugin_unavailable"
+        return
+    assert resp.status_code in (
+        200,
+        400,
+        404,
+        409,
+        415,
+        422,
+    ), app_server.logs_tail()
+
+
 @pytest.mark.integration
 @pytest.mark.p1
 def test_get_api_access_control_1(app_server) -> None:
@@ -623,26 +637,14 @@ def test_post_api_mail_access_control_remark_26(app_server) -> None:
 @pytest.mark.integration
 @pytest.mark.p1
 def test_post_api_console_chat_27(app_server) -> None:
-    """Contract: POST /api/console/chat with empty body is rejected or safely
-    handled."""
-    # Chat may return an open SSE stream. Check the response headers without
-    # waiting for the body to finish, which can emit heartbeats indefinitely.
-    with app_server.client.stream(
+    """An empty chat request is rejected before starting a model run."""
+    resp = app_server.api_request(
         "POST",
-        f"{app_server.base_url}/api/console/chat",
+        "/api/console/chat",
         json={},
         timeout=_T,
-    ) as resp:
-        assert resp.status_code in (
-            200,
-            400,
-            403,
-            404,
-            409,
-            422,
-            500,
-            503,
-        ), app_server.logs_tail()
+    )
+    assert resp.status_code == 400, app_server.logs_tail()
 
 
 @pytest.mark.integration
@@ -1269,14 +1271,7 @@ def test_get_api_mcp_tools_client_key_path_60(app_server) -> None:
     """Contract: GET /api/mcp/tools/{client_key:path} with unknown id yields
     client/server-safe status."""
     resp = _req(app_server, "GET", "/api/mcp/tools/integ-unknown-xyz")
-    assert resp.status_code in (
-        200,
-        400,
-        404,
-        409,
-        415,
-        422,
-    ), app_server.logs_tail()
+    _assert_mcp_contract(resp, app_server)
 
 
 @pytest.mark.integration
@@ -1523,14 +1518,7 @@ def test_get_api_mcp_oauth_status_client_key_path_73(app_server) -> None:
     yields
     client/server-safe status."""
     resp = _req(app_server, "GET", "/api/mcp/oauth/status/integ-unknown-xyz")
-    assert resp.status_code in (
-        200,
-        400,
-        404,
-        409,
-        415,
-        422,
-    ), app_server.logs_tail()
+    _assert_mcp_contract(resp, app_server)
 
 
 @pytest.mark.integration
@@ -1539,14 +1527,7 @@ def test_delete_api_mcp_oauth_client_key_path_74(app_server) -> None:
     """Contract: DELETE /api/mcp/oauth/{client_key:path} with unknown id is
     rejected or no-op."""
     resp = _req(app_server, "DELETE", "/api/mcp/oauth/integ-unknown-xyz")
-    assert resp.status_code in (
-        200,
-        400,
-        404,
-        409,
-        415,
-        422,
-    ), app_server.logs_tail()
+    _assert_mcp_contract(resp, app_server)
 
 
 @pytest.mark.integration

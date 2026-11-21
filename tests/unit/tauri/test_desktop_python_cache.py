@@ -8,6 +8,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from qwenpaw.utils.windows_paths import io_path
+
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "pack-tauri"))
 builder = importlib.import_module("build_component_delta")
@@ -29,7 +31,8 @@ def test_real_import_cache_keeps_delta_baseline_valid(tmp_path):
     archive = tmp_path / "delta.zip"
     builder.write_delta(base, target, archive)
     before = verifier.file_inventory(base)
-    cache = tmp_path / "user-cache"
+    # The desktop host passes a canonical, extended-length Windows path.
+    cache = Path(io_path(tmp_path / "user-cache"))
     environment = {
         **os.environ,
         "PYTHONPATH": str(base),

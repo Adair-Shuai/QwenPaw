@@ -223,12 +223,8 @@ fn applications_in_apartment(extension: &str) -> Result<DeliveryApplications, St
         default_executable.is_some() || association(extension, ASSOCSTR_PROGID).is_some();
     let mut applications: Vec<DeliveryApplication> = vec![];
     for handler in handlers(extension)? {
-        let id = match unsafe { handler.GetName() }
-            .map_err(|err| err.to_string())
-            .and_then(owned_shell_string)
-        {
-            Ok(value) if !value.is_empty() => value,
-            _ => continue,
+        let Some(id) = handler_id(&handler) else {
+            continue;
         };
         if applications
             .iter()
@@ -311,6 +307,13 @@ pub(super) fn open(
     on_shell_thread(move || open_in_apartment(&path, &extension, application_id.as_deref()))
 }
 
+fn handler_id(handler: &IAssocHandler) -> Option<String> {
+    unsafe { handler.GetName() }
+        .ok()
+        .and_then(|name| owned_shell_string(name).ok())
+        .filter(|name| !name.is_empty())
+}
+
 fn open_in_apartment(
     path: &Path,
     extension: &str,
@@ -320,17 +323,7 @@ fn open_in_apartment(
         // Re-enumerate before invocation: arbitrary paths/commands supplied by
         // a webview cannot be used as application ids, and uninstall races fail.
         for handler in handlers(extension)? {
-            let name = match unsafe { handler.GetName() }
-                .map_err(|err| err.to_string())
-                .and_then(owned_shell_string)
-            {
-                Ok(value) if !value.is_empty() => value,
-                // Discovery omits broken registrations too. They must not
-                // prevent matching another installed application or rejecting
-                // an unknown id without ever invoking a Shell handler.
-                _ => continue,
-            };
-            if name == application_id {
+            if handler_id(&handler).as_deref() == Some(application_id) {
                 let item: IShellItem =
                     unsafe { SHCreateItemFromParsingName(&HSTRING::from(path.as_os_str()), None) }
                         .map_err(|err| {

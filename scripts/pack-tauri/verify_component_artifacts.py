@@ -11,6 +11,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from copy_windows_tree import filesystem_path
 from component_common import (
     DEFAULT_PRESERVE_PATHS,
     file_inventory,
@@ -57,8 +58,9 @@ def apply_delta(
     preserve_paths: tuple[str, ...] | None = None,
 ) -> dict:
     # pylint: disable=too-many-branches,too-many-statements
-    base = base.resolve()
-    output = output.resolve()
+    base = Path(filesystem_path(base)).resolve()
+    output = Path(filesystem_path(output)).resolve()
+    archive_path = Path(filesystem_path(archive_path))
     if output == base or base in output.parents:
         raise ValueError(
             "output must not replace or reside inside base component",

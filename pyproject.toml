@@ -41,6 +41,8 @@ dependencies = [
     "wcmatch>=10.0",
     "json-repair>=0.30.0",
     "jsonschema>=4.20.0",
+    "jsonschema-specifications>=2023.03.6",
+    "referencing>=0.28.4",
     "segno>=1.6.6",
     "modelscope>=1.35.0",
     "huggingface_hub>=0.20.0",
@@ -84,9 +86,13 @@ include-package-data = true
 "qwenpaw" = "src/qwenpaw"
 "qwenpawmail_mcp" = "packages/qwenpawmail-mcp/src/qwenpawmail_mcp"
 "qwenpaw.plugins.bundled.hub" = "plugins/hub"
+"qwenpaw.plugins.bundled.transcription" = "plugins/transcription"
+"qwenpaw.plugins.bundled.optional.mcp" = "plugins/protocol/mcp"
 
 [tool.setuptools.package-data]
 "qwenpaw.plugins.bundled.hub" = ["*/plugin.json"]
+"qwenpaw.plugins.bundled.transcription" = ["*/plugin.json", "*/README.md"]
+"qwenpaw.plugins.bundled.optional.mcp" = ["*.py", "*.md", "plugin.json", "requirements.txt", "frontend/*.tsx", "frontend/*.mjs", "frontend/dist/*.js"]
 # Dockerfile copies console build output to src/qwenpaw/console/ (no dist subdir).
 "qwenpaw" = [
     "local_models/runtime-release.json",
@@ -248,7 +254,7 @@ channels = [
 ]
 full = [
     "qwenpaw[channels]",
-    "qwenpaw[qwenpaw-data,hub,local,ml,whisper]",
+    "qwenpaw[qwenpaw-data,hub,local,ml]",
 ]
 sip = [
     "pyVoIP>=1.6.0",

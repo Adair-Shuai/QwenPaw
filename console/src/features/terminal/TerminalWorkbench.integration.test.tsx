@@ -121,6 +121,7 @@ describe("terminal inside the real workspace", () => {
   it("opens a scoped terminal from the mounted new tab and restores its process after closing only the view", async () => {
     renderWithProviders(
       <FilesDrawer state={state} dispatch={vi.fn()} scope={scope} />,
+      { authEnabled: true },
     );
     await openFromNewTab();
     expect(screen.getAllByRole("tab")).toHaveLength(1);
@@ -169,6 +170,7 @@ describe("terminal inside the real workspace", () => {
     useTerminalSurfaceStore.getState().setSessionOpen(scopeKey, true);
     renderWithProviders(
       <FilesDrawer state={state} dispatch={vi.fn()} scope={scope} />,
+      { authEnabled: true },
     );
     await openFromNewTab();
     const view = await screen.findByTestId(
@@ -215,6 +217,7 @@ describe("terminal inside the real workspace", () => {
   it("keeps terminal ownership separate when the mounted workspace changes experts", async () => {
     const { rerender } = renderWithProviders(
       <FilesDrawer state={state} dispatch={vi.fn()} scope={scope} />,
+      { authEnabled: true },
     );
     await openFromNewTab();
     const first = await screen.findByTestId(

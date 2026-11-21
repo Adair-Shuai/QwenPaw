@@ -72,6 +72,7 @@ class _RunState:
     stream_done: asyncio.Event = field(default_factory=asyncio.Event)
     run_id: str = field(default_factory=lambda: uuid4().hex)
     steering: Any = None
+    channel_handoff_safe: bool = False
 
 
 async def _broadcast_stream(
@@ -209,8 +210,13 @@ class TaskTracker:
         self,
         owner: object | None = None,
         channel_id: str | None = None,
+        *,
+        channel_handoff: bool = False,
     ) -> dict[str, asyncio.Future]:
-        """Return the currently active tasks without tracking later runs."""
+        """Snapshot active tasks; handoff omits only dynamically routed runs.
+
+        The omission affects this drain snapshot, never tracking or stopping.
+        """
         async with self._lock:
             return {
                 run_key: state.task
@@ -218,6 +224,7 @@ class TaskTracker:
                 if not state.task.done()
                 and (owner is None or state.owner is owner)
                 and (channel_id is None or state.channel_id == channel_id)
+                and not (channel_handoff and state.channel_handoff_safe)
             }
 
     async def wait_channel_streams_done(
@@ -226,6 +233,7 @@ class TaskTracker:
         owner: object,
         channel_id: str,
         timeout: float,
+        channel_handoff: bool = False,
     ) -> bool:
         """Drain channel resources while host persistence finishes.
 
@@ -238,6 +246,7 @@ class TaskTracker:
                 if state.owner is owner
                 and state.channel_id == channel_id
                 and not state.stream_done.is_set()
+                and not (channel_handoff and state.channel_handoff_safe)
             ]
         if not streams:
             return True
@@ -372,6 +381,8 @@ class TaskTracker:
         channel_id: str | None = None,
         steering: Any = None,
         on_succeeded: Callable[[str, datetime], Awaitable[Any]] | None = None,
+        *,
+        channel_handoff_safe: bool = False,
     ) -> tuple[asyncio.Queue, bool]:
         # Keep producer ownership, admission and cancellation cleanup in one
         # lifecycle.
@@ -398,6 +409,7 @@ class TaskTracker:
                 owner=owner,
                 channel_id=channel_id,
                 steering=steering,
+                channel_handoff_safe=channel_handoff_safe,
             )
             if steering is not None:
                 run.run_id = steering.run_id

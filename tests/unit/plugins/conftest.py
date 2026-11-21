@@ -31,6 +31,28 @@ def bounded_dependency_environment(tmp_path, monkeypatch):
     return site
 
 
+@pytest.fixture
+def whisper_dependency_inventory(request):
+    """Model installed Whisper metadata without downloading inference packages.
+
+    Lifecycle tests still run main's real dependency admission. Recognition is
+    tested separately with a small model double, not an installed Torch stack.
+    """
+    target = request.getfixturevalue("bounded_dependency_environment")
+    for name, version in (("openai-whisper", "20231117"), ("torch", "2.0")):
+        metadata = target / (f"{name.replace('-', '_')}-{version}.dist-info")
+        metadata.mkdir()
+        (metadata / "METADATA").write_text(
+            f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n",
+            encoding="utf-8",
+        )
+        (metadata / "RECORD").write_text(
+            f"{metadata.name}/METADATA,,\n{metadata.name}/RECORD,,\n",
+            encoding="utf-8",
+        )
+    return target
+
+
 @pytest.fixture()
 def fresh_registry():
     """Reset the singleton and restore it even if a test fails."""
