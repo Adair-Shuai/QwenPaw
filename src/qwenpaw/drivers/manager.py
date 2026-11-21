@@ -76,6 +76,10 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         self._cleanup_handler_ids: set[int] = set()
         self._lock = asyncio.Lock()
         self._catalog_semaphore = asyncio.Semaphore(8)
+        self._persistent_replacements: dict[
+            tuple[str, int],
+            asyncio.Future[Exception | None],
+        ] = {}
         self._revisions: dict[str, int] = {}
         self._active_revisions: dict[str, int] = {}
         self._preparing_revisions: set[tuple[str, int]] = set()
@@ -237,6 +241,25 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         await self._replace_persistent(card, revision)
 
     async def _replace_persistent(self, card, revision):
+        # Disk watchers can observe the same saved card while its API
+        # replacement is still opening. Publish one outcome to those readers.
+        key = (card.name, revision)
+        done = asyncio.get_running_loop().create_future()
+        self._persistent_replacements[key] = done
+        try:
+            await self._publish_persistent(card, revision)
+        except asyncio.CancelledError:
+            done.set_result(RuntimeError("Driver replacement cancelled"))
+            raise
+        except Exception as exc:
+            done.set_result(exc)
+            raise
+        else:
+            done.set_result(None)
+        finally:
+            self._persistent_replacements.pop(key, None)
+
+    async def _publish_persistent(self, card, revision):
         handler = None
         if card.enabled:
             handler = await self._build_and_init_handler(
@@ -280,23 +303,33 @@ class DriverManager:  # pylint: disable=too-many-public-methods
 
     async def refresh_driver(self, name: str) -> DriverRuntimeInfo | None:
         """Apply an on-disk card change with the lightest safe action."""
-        path = await self._card_store.stored_path(name)
-        if path is None:
-            raise DriverNotFoundError(name)
-        card = await self._card_store.load_path(path)
-        card = self._validate_card_for_registered_protocol(card)
-
         async with self._lock:
-            handler = self._handlers.get(name)
-            if handler is not None and not self._requires_reconnect(
-                handler.card,
-                card,
-            ):
-                handler.sync_runtime_metadata(card)
-                self._accepted_sources[name] = deepcopy(card)
-                return self._runtime_info_from_card(card)
-
-        return await self.reload_driver(name)
+            path = await self._card_store.stored_path(name)
+            if path is None:
+                raise DriverNotFoundError(name)
+            card = await self._card_store.load_path(path)
+            card = self._validate_card_for_registered_protocol(card)
+            revision = self._revisions.get(name, 0)
+            pending = self._persistent_replacements.get((name, revision))
+            if self._accepted_sources.get(name) != card:
+                pending = None
+            if pending is None:
+                handler = self._handlers.get(name)
+                if handler is not None and not self._requires_reconnect(
+                    handler.card,
+                    card,
+                ):
+                    handler.sync_runtime_metadata(card)
+                    self._accepted_sources[name] = deepcopy(card)
+                    return self._runtime_info_from_card(card)
+                revision = self._reserve(name, card)
+        if pending is not None:
+            error = await asyncio.shield(pending)
+            if error is not None:
+                raise error
+        else:
+            await self._replace_persistent(card, revision)
+        return self._runtime_info_from_card(card)
 
     async def sync_driver_policy(
         self,

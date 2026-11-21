@@ -414,3 +414,38 @@ async def test_old_call_rechecks_disk_sample_after_new_candidate_reserved(
         await host.close_driver("same")
         assert len(events(context, "closed")) == 3
         assert len(events(context, "resource-close")) == 3
+
+
+async def test_watcher_shares_identical_pending_reload(tmp_path, monkeypatch):
+    root = tmp_path / "host"
+    async with PluginTestHost(root) as host:
+        context = await host.load(
+            driver_plugin(tmp_path),
+            config={"directory": str(tmp_path)},
+        )
+        await host.open_driver(card(config={"label": "old"}))
+        candidate = card(config={"label": "new", "wait_open": True})
+        reload = asyncio.create_task(replace(host, root, candidate, "reload"))
+        try:
+            await wait_until(lambda: len(events(context, "open")) == 2)
+            manager = manager_for(host)
+            read = asyncio.Event()
+            load_path = manager.card_store.load_path
+
+            async def observe(path):
+                value = await load_path(path)
+                if asyncio.current_task() is observed:
+                    read.set()
+                return value
+
+            monkeypatch.setattr(manager.card_store, "load_path", observe)
+            observed = asyncio.create_task(manager.refresh_driver("same"))
+            await asyncio.wait_for(read.wait(), 5)
+            assert not observed.done()
+            (tmp_path / "release-open").touch()
+            await asyncio.gather(reload, observed)
+            assert await label(host) == "new"
+            assert len(events(context, "open")) == 2
+        finally:
+            (tmp_path / "release-open").touch()
+            await asyncio.gather(reload, return_exceptions=True)
