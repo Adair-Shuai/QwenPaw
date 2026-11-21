@@ -409,6 +409,55 @@ async def test_replace_reports_post_commit_cleanup_restart(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "scenario",
+    ["recover", "new_uninstall", "new_config"],
+)
+async def test_channel_tombstone_cleanup_recovers_on_restart(
+    tmp_path,
+    monkeypatch,
+    update_environment,
+    scenario,
+):
+    from qwenpaw.config.utils import load_config, mutate_config
+    from qwenpaw.plugins.official_channels import provision_bundled_channels
+    from qwenpaw.plugins.settings import record_plugin_uninstall
+
+    plugin_id = "telegram"
+    monkeypatch.setattr(__name__ + ".PLUGIN_ID", plugin_id)
+    loader, _, plugins = update_environment
+    source = _source(tmp_path / "source", "1.0.0")
+
+    def remove_channel(cfg):
+        cfg.channel_plugin_state.uninstalled.append(plugin_id)
+
+    def fail_cleanup(_plugin_id):
+        raise OSError("channel cleanup interrupted")
+
+    mutate_config(remove_channel)
+    with monkeypatch.context() as failure:
+        if scenario != "new_config":
+            failure.setattr(
+                "qwenpaw.plugins.settings.clear_channel_tombstone",
+                fail_cleanup,
+            )
+        record = await loader.load_plugin_from_path(
+            source,
+            install_dir=plugins,
+        )
+    assert record.update_needs_restart == (scenario != "new_config")
+    if scenario == "new_config":
+        assert plugin_id not in load_config().channel_plugin_state.uninstalled
+        mutate_config(remove_channel)
+    if scenario == "new_uninstall":
+        record_plugin_uninstall(plugin_id, plugins_dir=plugins)
+    assert plugin_id in load_config().channel_plugin_state.uninstalled
+    await provision_bundled_channels(PluginLoader([plugins]))
+    removed = plugin_id in load_config().channel_plugin_state.uninstalled
+    assert removed == (scenario != "recover")
+
+
+@pytest.mark.asyncio
 async def test_stale_concurrent_update_does_not_downgrade_newer_version(
     tmp_path,
     monkeypatch,

@@ -3993,25 +3993,38 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
     async def _commit_explicit_install(self, record: PluginRecord) -> None:
         """Publish explicit intent only after the installed record commits."""
         from ..utils.io_utils import run_sync_io
+        from .install_receipts import finish_channel_cleanup
+        from .official_channel_catalog import official_channel_for_plugin
         from .settings import clear_plugin_intent, clear_channel_tombstone
 
+        plugin_id = record.manifest.id
+        channel = official_channel_for_plugin(plugin_id) is not None
+
         def commit():
-            if any(
-                same_location(
-                    record.source_path,
-                    Path(base) / record.manifest.id,
-                )
+            local = any(
+                same_location(record.source_path, Path(base) / plugin_id)
                 for base in self.plugin_dirs
-            ):
-                write_install_commit(record.source_path, record.manifest.id)
-            clear_plugin_intent(
-                record.manifest.id,
-                plugins_dir=self.plugin_dirs[0],
             )
+            if local:
+                write_install_commit(
+                    record.source_path,
+                    plugin_id,
+                    channel_cleanup_pending=channel,
+                )
+            clear_plugin_intent(plugin_id, plugins_dir=self.plugin_dirs[0])
+            return local
 
-            clear_channel_tombstone(record.manifest.id)
+        local = await run_sync_io(commit)
 
-        await run_sync_io(commit)
+        def finish_channel_tombstone_cleanup():
+            clear_channel_tombstone(plugin_id)
+            if channel and local:
+                finish_channel_cleanup(record.source_path)
+
+        await self._run_committed_cleanup(
+            record,
+            finish_channel_tombstone_cleanup,
+        )
         self.startup_blocked_plugins.discard(record.manifest.id)
 
     @staticmethod
