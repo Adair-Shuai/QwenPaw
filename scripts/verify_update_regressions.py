@@ -33,6 +33,7 @@ SUITES = (
     "tests/unit/tauri/test_stage_desktop_components.py",
     "tests/unit/tauri/test_plugin_payload_completeness.py",
     "tests/unit/app/test_desktop_update_manifest.py",
+    "tests/unit/verify/test_prepare_core_release.py",
     "tests/unit/verify/test_release_workflow_safety.py",
     "tests/unit/tauri/test_stage_officecli.py",
     "tests/unit/tauri/test_ugsci_release_data.py",
@@ -372,6 +373,9 @@ REQUIRED_CASES = {
     },
     "tests/unit/tauri/test_component_updater.py": {
         "test_directory_candidate_snapshot_is_isolated",
+    },
+    "tests/unit/verify/test_prepare_core_release.py": {
+        "test_core_release_resumes_from_the_origin_repository",
     },
     "tests/unit/verify/test_release_workflow_safety.py": {
         "test_clean_release_and_frontend_checks_build_openui_runtime",

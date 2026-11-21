@@ -48,7 +48,9 @@ def release_tag(version: str) -> str:
 
 
 def command(*arguments: str) -> str:
-    return subprocess.check_output(arguments, text=True, encoding="utf-8").strip()
+    return subprocess.check_output(
+        arguments, text=True, encoding="utf-8"
+    ).strip()
 
 
 def main() -> None:
@@ -67,6 +69,7 @@ def main() -> None:
         "gh",
         "repo",
         "view",
+        command("git", "remote", "get-url", "origin"),
         "--json",
         "nameWithOwner",
         "--jq",
@@ -150,6 +153,8 @@ def main() -> None:
             "workflow",
             "run",
             "release-resume.yml",
+            "--repo",
+            repository,
             "--ref",
             branch,
             "-f",

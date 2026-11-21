@@ -176,6 +176,7 @@
     ],
     "inventory": [
       "tests/unit/verify/test_fork_regression_inventory.py",
+      "tests/unit/verify/test_prepare_core_release.py",
       "tests/unit/verify/test_release_workflow_safety.py",
       "tests/unit/verify/test_pylint_namespace.py",
       "tests/unit/scripts/test_check_plugin_sdk_artifacts.py"
@@ -1544,6 +1545,9 @@
     ],
     "tests/unit/services/test_terminal_availability.py": [
       "test_app_starts_without_winpty"
+    ],
+    "tests/unit/verify/test_prepare_core_release.py": [
+      "test_core_release_resumes_from_the_origin_repository"
     ],
     "tests/unit/verify/test_release_workflow_safety.py": [
       "test_plugin_preflight_reads_actual_objects_without_uploading",
