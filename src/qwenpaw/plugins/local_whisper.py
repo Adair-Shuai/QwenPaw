@@ -37,6 +37,18 @@ if not SOURCE.is_dir() and _PLUGIN_DIR.parents[1].name == "src":
 _service = None
 
 
+async def _read_migration_state(path: Path) -> dict:
+    state = await read_json_async(path)
+    if not isinstance(state, dict):
+        raise ValueError("Local Whisper migration state must be a JSON object")
+    operation_id = state.get("dependency_operation_id")
+    if operation_id is not None and (
+        not isinstance(operation_id, str) or not operation_id
+    ):
+        raise ValueError("Invalid Local Whisper dependency operation ID")
+    return state
+
+
 def dependency_status() -> dict:
     """Inspect dependencies without importing Torch or loading a model."""
     installed = all(
@@ -188,7 +200,7 @@ class LocalWhisperInstallService:
         global _service
         _service = self
         try:
-            state = await read_json_async(self.state_path)
+            state = await _read_migration_state(self.state_path)
             with self._operation_lock:
                 self.operation_id = state.get("dependency_operation_id")
         except FileNotFoundError:
@@ -265,7 +277,12 @@ class LocalWhisperInstallService:
                 self.operation_id = operation_id
                 self.error = ""
             try:
-                state = await read_json_async(self.state_path)
+                try:
+                    state = await _read_migration_state(self.state_path)
+                except (FileNotFoundError, ValueError):
+                    # An explicit install can recover a missing or corrupt
+                    # marker and still resume its confirmation after restart.
+                    state = {"framework_migration": "attempted"}
                 state["dependency_operation_id"] = operation_id
                 await write_json_atomic_async(self.state_path, state)
             except (OSError, ValueError) as error:

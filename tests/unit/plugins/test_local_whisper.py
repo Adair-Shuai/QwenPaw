@@ -293,15 +293,21 @@ async def test_uninstall_waits_for_real_transcription_worker(
     assert local.get_status()["state"] == "missing"
 
 
-async def test_invalid_migration_marker_never_reinstalls(setup):
+@pytest.mark.parametrize(
+    "marker",
+    ["broken-json", "null", "[]", '{"dependency_operation_id": []}'],
+)
+async def test_invalid_migration_marker_never_reinstalls(setup, marker):
     _, service, gate = setup
     select()
     service.state_path.parent.mkdir(parents=True, exist_ok=True)
-    service.state_path.write_text("broken-json")
+    service.state_path.write_text(marker, encoding="utf-8")
     await service.start()
     assert service.task is None
     gate.assert_not_called()
     assert local.get_status()["state"] == "missing"
+    assert local.get_status()["error"]
+    assert service.state_path.read_text(encoding="utf-8") == marker
 
 
 async def test_existing_framework_install_never_repairs_on_boot(setup):
@@ -317,15 +323,22 @@ async def test_existing_framework_install_never_repairs_on_boot(setup):
     assert local.get_status()["available"] is True
 
 
-@pytest.mark.parametrize("repair", [False, True])
+@pytest.mark.parametrize(
+    ("repair", "marker"),
+    [(False, None), (True, None), (False, "[]"), (False, "broken-json")],
+)
 async def test_dependency_confirmation_survives_restart(
     setup,
     monkeypatch,
     repair,
+    marker,
 ):
     from qwenpaw.plugins import dependency_upgrade as upgrades
 
     host, service, gate = setup
+    if marker is not None:
+        service.state_path.parent.mkdir(parents=True, exist_ok=True)
+        service.state_path.write_text(marker, encoding="utf-8")
     await service.start()
     if repair:
         await install(service)
