@@ -17,26 +17,23 @@ written to disk.
 # pylint: disable=protected-access,redefined-outer-name,unused-argument
 from __future__ import annotations
 
-from plugins.protocol.mcp import oauth as plugin_oauth, oauth_helpers
-import logging
 import json
+import logging
 import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from fastapi import FastAPI, HTTPException
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
+from plugins.protocol.mcp import oauth as plugin_oauth, oauth_helpers
 from qwenpaw.app.driver_config_service import DriverConfigService
-from qwenpaw.app.routers import mcp_oauth as mo
 from qwenpaw.app.routers.mcp_oauth import router as oauth_router
 from qwenpaw.drivers.adapters.mcp_console import (
     OAUTH_CREDENTIAL_ALIAS,
-    attach_mcp_oauth_credential,
     mcp_oauth_credential_ref,
 )
 from qwenpaw.drivers.constants import PROTOCOL_MCP
@@ -44,7 +41,7 @@ from qwenpaw.drivers.contracts import DriverCard
 from qwenpaw.drivers.credentials.store import AsyncCredentialStore
 from qwenpaw.drivers.credentials.types import CredentialRecord
 from qwenpaw.drivers.errors import CredentialNotFoundError
-from qwenpaw.drivers.storage import dump_card, load_card
+from qwenpaw.drivers.storage import dump_card
 
 MCP_URL = "https://mcp.example.com/coop/mcp"
 AS_URL = "https://as.example.com"
@@ -86,12 +83,7 @@ def _patch_httpx(
     monkeypatch: pytest.MonkeyPatch,
     handler: Callable[[httpx.Request], httpx.Response],
 ) -> None:
-    """Point only the router module at a transport-stubbed AsyncClient.
-
-    The helpers build their own clients, so the class has to be swapped;
-    swapping ``mo.httpx`` (not the real ``httpx`` module) keeps the blast
-    radius inside the module under test.
-    """
+    """Stub the plugin HTTP clients without changing the host transport."""
     monkeypatch.setattr(
         plugin_oauth,
         "httpx",
@@ -168,36 +160,6 @@ def _seed_credential(
     store.put_sync(record)
 
 
-@pytest.fixture
-def app(workspace: WorkspaceStub) -> FastAPI:
-    application = FastAPI()
-    manager = MagicMock(name="ManagerStub")
-    manager.get_agent = AsyncMock(return_value=workspace)
-    application.state.multi_agent_manager = manager
-    application.include_router(oauth_router, prefix="/api")
-    return application
-
-
-@pytest.fixture
-def client(app: FastAPI) -> TestClient:
-    return TestClient(app)
-
-
-@pytest.fixture
-def patch_agent(workspace: WorkspaceStub) -> Any:
-    """Stub the agent lookup the endpoints import from agent_context."""
-    with patch(
-        "qwenpaw.app.agent_context.get_agent_for_request",
-        new=AsyncMock(return_value=workspace),
-    ) as patched:
-        yield patched
-
-
-# ---------------------------------------------------------------------------
-# _mcp_card_path / _fetch_json
-# ---------------------------------------------------------------------------
-
-
 def test_mcp_card_path_points_at_protocol_scoped_yaml(
     workspace: WorkspaceStub,
 ) -> None:
@@ -214,7 +176,9 @@ class TestFetchJson:
             transport=httpx.MockTransport(handler),
         ) as http_client:
             assert await oauth_helpers._fetch_json(
-                http_client, MCP_URL, logger=logging.getLogger(__name__)
+                http_client,
+                MCP_URL,
+                logger=logging.getLogger(__name__),
             ) == {"a": 1}
 
     async def test_returns_none_on_error_status(self) -> None:
@@ -226,7 +190,9 @@ class TestFetchJson:
         ) as http_client:
             assert (
                 await oauth_helpers._fetch_json(
-                    http_client, MCP_URL, logger=logging.getLogger(__name__)
+                    http_client,
+                    MCP_URL,
+                    logger=logging.getLogger(__name__),
                 )
                 is None
             )
@@ -240,7 +206,9 @@ class TestFetchJson:
         ) as http_client:
             assert (
                 await oauth_helpers._fetch_json(
-                    http_client, MCP_URL, logger=logging.getLogger(__name__)
+                    http_client,
+                    MCP_URL,
+                    logger=logging.getLogger(__name__),
                 )
                 is None
             )
@@ -264,7 +232,9 @@ class TestProbeResourceMetadata:
         ) as http_client:
             assert (
                 await oauth_helpers._probe_resource_metadata_url(
-                    http_client, MCP_URL, logger=logging.getLogger(__name__)
+                    http_client,
+                    MCP_URL,
+                    logger=logging.getLogger(__name__),
                 )
                 is None
             )
@@ -286,7 +256,9 @@ class TestProbeResourceMetadata:
         ) as http_client:
             assert (
                 await oauth_helpers._probe_resource_metadata_url(
-                    http_client, MCP_URL, logger=logging.getLogger(__name__)
+                    http_client,
+                    MCP_URL,
+                    logger=logging.getLogger(__name__),
                 )
                 == "https://prm.example.com/meta"
             )
@@ -300,7 +272,9 @@ class TestProbeResourceMetadata:
         ) as http_client:
             assert (
                 await oauth_helpers._probe_resource_metadata_url(
-                    http_client, MCP_URL, logger=logging.getLogger(__name__)
+                    http_client,
+                    MCP_URL,
+                    logger=logging.getLogger(__name__),
                 )
                 is None
             )
@@ -314,7 +288,9 @@ class TestProbeResourceMetadata:
         ) as http_client:
             assert (
                 await oauth_helpers._probe_resource_metadata_url(
-                    http_client, MCP_URL, logger=logging.getLogger(__name__)
+                    http_client,
+                    MCP_URL,
+                    logger=logging.getLogger(__name__),
                 )
                 is None
             )
@@ -351,7 +327,9 @@ class TestResolveAuthServerUrl:
         ) as http_client:
             assert (
                 await oauth_helpers._resolve_auth_server_url(
-                    http_client, MCP_URL, logger=logging.getLogger(__name__)
+                    http_client,
+                    MCP_URL,
+                    logger=logging.getLogger(__name__),
                 )
                 == AS_URL
             )
@@ -372,7 +350,9 @@ class TestResolveAuthServerUrl:
         ) as http_client:
             assert (
                 await oauth_helpers._resolve_auth_server_url(
-                    http_client, MCP_URL, logger=logging.getLogger(__name__)
+                    http_client,
+                    MCP_URL,
+                    logger=logging.getLogger(__name__),
                 )
                 == AS_URL
             )
@@ -417,7 +397,9 @@ class TestResolveAuthServerUrl:
         ) as http_client:
             assert (
                 await oauth_helpers._resolve_auth_server_url(
-                    http_client, MCP_URL, logger=logging.getLogger(__name__)
+                    http_client,
+                    MCP_URL,
+                    logger=logging.getLogger(__name__),
                 )
                 is None
             )
@@ -447,7 +429,9 @@ class TestFetchAsMetadata:
             transport=httpx.MockTransport(handler),
         ) as http_client:
             meta = await oauth_helpers._fetch_as_metadata(
-                http_client, AS_URL, logger=logging.getLogger(__name__)
+                http_client,
+                AS_URL,
+                logger=logging.getLogger(__name__),
             )
 
         assert meta is not None
@@ -471,7 +455,9 @@ class TestFetchAsMetadata:
             transport=httpx.MockTransport(handler),
         ) as http_client:
             meta = await oauth_helpers._fetch_as_metadata(
-                http_client, scoped, logger=logging.getLogger(__name__)
+                http_client,
+                scoped,
+                logger=logging.getLogger(__name__),
             )
 
         assert meta == {"authorization_endpoint": "https://a"}
@@ -492,7 +478,9 @@ class TestFetchAsMetadata:
         ) as http_client:
             assert (
                 await oauth_helpers._fetch_as_metadata(
-                    http_client, AS_URL, logger=logging.getLogger(__name__)
+                    http_client,
+                    AS_URL,
+                    logger=logging.getLogger(__name__),
                 )
                 is None
             )
@@ -539,7 +527,8 @@ class TestDiscoverOauthMetadata:
         _patch_httpx(monkeypatch, handler)
 
         assert await oauth_helpers._discover_oauth_metadata(
-            MCP_URL, logger=logging.getLogger(__name__)
+            MCP_URL,
+            logger=logging.getLogger(__name__),
         ) == (
             f"{AS_URL}/authorize",
             f"{AS_URL}/token",
@@ -568,7 +557,8 @@ class TestDiscoverOauthMetadata:
         _patch_httpx(monkeypatch, handler)
 
         auth_ep, token_ep, reg = await oauth_helpers._discover_oauth_metadata(
-            MCP_URL, logger=logging.getLogger(__name__)
+            MCP_URL,
+            logger=logging.getLogger(__name__),
         )
         assert (auth_ep, token_ep, reg) == (
             f"{AS_URL}/authorize",
@@ -587,7 +577,8 @@ class TestDiscoverOauthMetadata:
 
         with pytest.raises(oauth_helpers.OAuthError) as excinfo:
             await oauth_helpers._discover_oauth_metadata(
-                MCP_URL, logger=logging.getLogger(__name__)
+                MCP_URL,
+                logger=logging.getLogger(__name__),
             )
         assert excinfo.value.status == 400
         assert "RFC 9728" in str(str(excinfo.value))
@@ -615,7 +606,8 @@ class TestDiscoverOauthMetadata:
 
         with pytest.raises(oauth_helpers.OAuthError) as excinfo:
             await oauth_helpers._discover_oauth_metadata(
-                MCP_URL, logger=logging.getLogger(__name__)
+                MCP_URL,
+                logger=logging.getLogger(__name__),
             )
         assert excinfo.value.status == 400
         assert AS_URL in str(str(excinfo.value))
@@ -645,7 +637,8 @@ class TestDiscoverOauthMetadata:
 
         with pytest.raises(oauth_helpers.OAuthError) as excinfo:
             await oauth_helpers._discover_oauth_metadata(
-                MCP_URL, logger=logging.getLogger(__name__)
+                MCP_URL,
+                logger=logging.getLogger(__name__),
             )
         assert excinfo.value.status == 400
         assert "token_endpoint" in str(str(excinfo.value))
@@ -745,7 +738,8 @@ class TestExchangeCodeForTokens:
         _patch_httpx(monkeypatch, handler)
 
         tokens = await plugin_oauth._exchange_code_for_tokens(
-            _session(), "code-1"
+            _session(),
+            "code-1",
         )
 
         assert tokens["access_token"] == "AT"
@@ -768,7 +762,8 @@ class TestExchangeCodeForTokens:
         _patch_httpx(monkeypatch, handler)
 
         await plugin_oauth._exchange_code_for_tokens(
-            _session(client_id=""), "code-1"
+            _session(client_id=""),
+            "code-1",
         )
         assert "client_id" not in seen["form"]
 
@@ -859,7 +854,9 @@ async def provider():
             return web.Response(
                 status=401,
                 headers={
-                    "WWW-Authenticate": f'Bearer resource_metadata="{base}/metadata"',
+                    "WWW-Authenticate": (
+                        f'Bearer resource_metadata="{base}/metadata"'
+                    ),
                 },
             )
         if request.path == "/metadata":
@@ -1233,7 +1230,7 @@ async def marketplace(tmp_path, monkeypatch):
             return web.json_response({"error": "invalid_grant"}, status=400)
         evidence.write_text("exchanged", encoding="utf-8")
         return web.json_response(
-            {"access_token": "market-test-token", "scope": "read"}
+            {"access_token": "market-test-token", "scope": "read"},
         )
 
     peer = web.Application()
@@ -1300,7 +1297,9 @@ async def marketplace(tmp_path, monkeypatch):
 
             async def status(state, **kwargs):
                 return await api(
-                    "GET", f"/oauth/status/k1?session_id={state}", **kwargs
+                    "GET",
+                    f"/oauth/status/k1?session_id={state}",
+                    **kwargs,
                 )
 
             async def complete(state, expected=200):
@@ -1325,8 +1324,109 @@ async def marketplace(tmp_path, monkeypatch):
 
 
 class TestMarketplaceOAuthSessions:
-    async def test_session_status_does_not_mistake_old_tokens_for_new_authorization(
-        self, marketplace
+    async def test_cancel_waits_for_credential_publication(
+        self,
+        marketplace,
+        monkeypatch,
+    ):
+        import asyncio
+        import threading
+        from contextlib import asynccontextmanager
+        from qwenpaw.app.mcp import oauth_bridge
+        from qwenpaw.drivers import credential_commit
+
+        state = await marketplace.start()
+        writing = threading.Event()
+        release = threading.Event()
+        cancel_waiting = asyncio.Event()
+        original_write = credential_commit.dump_card
+        original_lock = oauth_bridge._workspace_commit_lock
+
+        def gated_write(*args, **kwargs):
+            writing.set()
+            assert release.wait(timeout=15)
+            return original_write(*args, **kwargs)
+
+        @asynccontextmanager
+        async def observed_lock(manager):
+            if writing.is_set():
+                cancel_waiting.set()
+            async with original_lock(manager):
+                yield
+
+        monkeypatch.setattr(credential_commit, "dump_card", gated_write)
+        monkeypatch.setattr(
+            oauth_bridge,
+            "_workspace_commit_lock",
+            observed_lock,
+        )
+        callback = asyncio.create_task(marketplace.complete(state))
+        try:
+            assert await asyncio.to_thread(writing.wait, 15)
+            cancel = asyncio.create_task(
+                marketplace.api(
+                    "DELETE",
+                    f"/oauth/session/k1?session_id={state}",
+                ),
+            )
+            await asyncio.wait_for(cancel_waiting.wait(), 10)
+            assert not cancel.done()
+        finally:
+            release.set()
+        await asyncio.gather(callback, cancel)
+        assert (await marketplace.status(state)).json()[
+            "phase"
+        ] == "authorized"
+        assert (await marketplace.api("GET", "/oauth/status/k1")).json()[
+            "authorized"
+        ]
+
+    @pytest.mark.parametrize("action", ["cancel", "retry"])
+    async def test_cancel_during_exchange_prevents_publication(
+        self,
+        marketplace,
+        monkeypatch,
+        action,
+    ):
+        import asyncio
+        from qwenpaw.app.mcp import oauth_bridge
+
+        state = await marketplace.start()
+        exchanged, release = asyncio.Event(), asyncio.Event()
+        call = oauth_bridge._call
+
+        async def gating_call(dispatcher, identity, method, path, **kwargs):
+            result = await call(dispatcher, identity, method, path, **kwargs)
+            if path == "/oauth/callback":
+                exchanged.set()
+                await release.wait()
+            return result
+
+        monkeypatch.setattr(oauth_bridge, "_call", gating_call)
+        callback = asyncio.create_task(marketplace.complete(state, 400))
+        try:
+            await asyncio.wait_for(exchanged.wait(), 15)
+            if action == "cancel":
+                await marketplace.api(
+                    "DELETE",
+                    f"/oauth/session/k1?session_id={state}",
+                )
+            else:
+                new_state = await marketplace.start()
+                assert (await marketplace.status(new_state)).json()[
+                    "phase"
+                ] == "pending"
+        finally:
+            release.set()
+        await callback
+        assert (await marketplace.status(state)).json()["phase"] == "cancelled"
+        assert not (await marketplace.api("GET", "/oauth/status/k1")).json()[
+            "authorized"
+        ]
+
+    async def test_session_status_does_not_mistake_old_tokens_for_new_authorization(  # noqa: E501
+        self,
+        marketplace,
     ):
         await marketplace.complete(await marketplace.start())
         state = await marketplace.start()
@@ -1338,13 +1438,15 @@ class TestMarketplaceOAuthSessions:
             "authorized"
         ]
 
-    async def test_denied_authorization_is_reported_without_provider_error_secrets(
-        self, marketplace
+    async def test_denied_authorization_is_reported_without_provider_error_secrets(  # noqa: E501
+        self,
+        marketplace,
     ):
         state = await marketplace.start()
         await marketplace.api(
             "GET",
-            f"/oauth/callback?state={state}&error=access_denied&error_description=provider-sensitive-details",
+            f"/oauth/callback?state={state}&error=access_denied"
+            "&error_description=provider-sensitive-details",
             400,
         )
         result = await marketplace.status(state)
@@ -1352,14 +1454,16 @@ class TestMarketplaceOAuthSessions:
         assert result.json()["authorized"] is False
         assert "provider-sensitive-details" not in result.text
 
-    async def test_cancelling_session_blocks_late_callback_without_revoking_account(
-        self, marketplace
+    async def test_cancelling_session_blocks_late_callback_without_revoking_account(  # noqa: E501
+        self,
+        marketplace,
     ):
         await marketplace.complete(await marketplace.start())
         state = await marketplace.start()
         marketplace.evidence.unlink()
         await marketplace.api(
-            "DELETE", f"/oauth/session/k1?session_id={state}"
+            "DELETE",
+            f"/oauth/session/k1?session_id={state}",
         )
         await marketplace.complete(state, 400)
         assert not marketplace.evidence.exists()
@@ -1369,7 +1473,8 @@ class TestMarketplaceOAuthSessions:
         ]
 
     async def test_retry_supersedes_previous_session_and_enforces_agent_scope(
-        self, marketplace
+        self,
+        marketplace,
     ):
         first = await marketplace.start()
         second = await marketplace.start()
@@ -1380,12 +1485,16 @@ class TestMarketplaceOAuthSessions:
         await marketplace.create("another")
         await marketplace.status(second, expected=404, agent="another")
         await marketplace.api(
-            "DELETE", f"/oauth/session/k1?session_id={second}", 404, "another"
+            "DELETE",
+            f"/oauth/session/k1?session_id={second}",
+            404,
+            "another",
         )
         assert (await marketplace.status(second)).json()["phase"] == "pending"
 
-    async def test_success_reports_current_session_and_keeps_disabled_until_connect(
-        self, marketplace
+    async def test_success_reports_current_session_and_keeps_disabled_until_connect(  # noqa: E501
+        self,
+        marketplace,
     ):
         state = await marketplace.start()
         await marketplace.complete(state)
