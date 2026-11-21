@@ -63,9 +63,8 @@ async def test_app_registration_and_http_listing_preserve_per_app_constraints(
                 "        import demo_module\n        assert demo_module.VERSION == 1\n"
                 "plugin = Plugin()\n"
             )
-            assert (
-                await loader.load_plugin(manifest, path, {})
-            ).status == "active"
+            record = await loader.load_plugin(manifest, path, {})
+            assert record.status == "active", record.diagnostics
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
             base_url="http://test",
