@@ -139,11 +139,17 @@ def promote(bucket, version: str, public_base: str) -> None:
         metadata = bucket.get_object(metadata_key(target)).read()
         doc = json.loads(metadata)
         head = bucket.head_object(target)
+        expected_metadata = {
+            "version": version,
+            "url": f"/{target}",
+            "filename": target.rsplit("/", 1)[-1],
+            "size_bytes": head.content_length,
+        }
         if (
-            doc.get("version") != version
-            or doc.get("url") != f"/{target}"
-            or doc.get("filename") != target.rsplit("/", 1)[-1]
-            or doc.get("size_bytes") != head.content_length
+            any(
+                doc.get(field) != value
+                for field, value in expected_metadata.items()
+            )
             or head.headers.get("x-oss-object-type") == "Symlink"
             or not re.fullmatch(r"[a-f0-9]{64}", doc.get("sha256", ""))
         ):
@@ -194,9 +200,9 @@ def protected_targets(bucket) -> set[str]:
         if platform.get("latest")
     )
     for url in active_downloads:
-        target = urlsplit(url).path.lstrip("/")
-        if target.startswith(DESKTOP_PREFIX):
-            targets.add(target)
+        key = urlsplit(url).path.lstrip("/")
+        if key.startswith(DESKTOP_PREFIX):
+            targets.add(key)
     return targets | {metadata_key(target) for target in targets}
 
 
