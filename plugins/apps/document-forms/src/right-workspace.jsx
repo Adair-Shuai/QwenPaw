@@ -4,31 +4,6 @@ const Q = window.QwenPaw,
   React = Q.host.React;
 const { useState, useEffect, useRef } = React;
 
-export function generatedSelection(form, generation, file) {
-  return {
-    artifact: {
-      id: generation.id + file.name,
-      title: file.name,
-      source: "generated",
-      extension: file.name.endsWith(".xlsx") ? "xlsx" : "docx",
-      mimeType: file.name.endsWith(".xlsx")
-        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      binaryUrl: file.preview_url,
-      printUrl: `/document-forms/cases/${form.case_id}/print/${
-        generation.id
-      }/${encodeURIComponent(file.name)}`,
-      agentId: Q.host.getSelectedAgentId?.(),
-      createdAt: Date.parse(generation.created_at),
-    },
-    reference: {
-      case_id: form.case_id,
-      generation_id: generation.id,
-      name: file.name,
-    },
-  };
-}
-
 function ProjectChat({ project, stageId, selection, services }) {
   const { request, json, time } = services;
   const [messages, setMessages] = useState([]),
@@ -217,16 +192,6 @@ export default function RightWorkspace({
       active = false;
     };
   }, [mode, selection, attachment, Preview]);
-  const files = project.forms.flatMap((f) =>
-    f.generations.flatMap((g) =>
-      stageId &&
-      stageId !== "overview" &&
-      stageId !== "profile" &&
-      (g.stage_id || f.original_stage_id || f.stage_id) !== stageId
-        ? []
-        : [{ form: f, generation: g }],
-    ),
-  );
   return (
     <aside
       className={
@@ -344,95 +309,13 @@ export default function RightWorkspace({
           />
         )}
       </div>
-      <div className="df-right-body df-dock-files" hidden={mode !== "preview"}>
+      <div
+        className="df-right-body df-right-preview"
+        hidden={mode !== "preview"}
+      >
         {dirty && (
           <p className="df-alert">
             中间表单有未保存的修改，预览文件保留生成时的内容。
-          </p>
-        )}
-        <details open={!selection && !attachment} className="df-dock-file-list">
-          <summary>
-            本阶段文件 ·{" "}
-            {files.reduce((n, item) => n + item.generation.files.length, 0)} 份
-          </summary>
-          {files.map(({ form, generation }) => (
-            <section className="df-generation" key={generation.id}>
-              <div className="df-generation-heading">
-                <h3>
-                  {services.time(generation.created_at)} · 修订{" "}
-                  {generation.revision}
-                  {generation.date_style !== "zh-CN" && " · 原日期格式"}
-                  {generation.naming_style !== "formal" && " · 原文件名"}
-                </h3>
-                <button
-                  onClick={() =>
-                    safeDownload(
-                      `/cases/${form.case_id}/outputs/${generation.id}/全部文书.zip`,
-                      generation.bundle_name || project.name + "_文书.zip",
-                    )
-                  }
-                >
-                  打包下载
-                </button>
-              </div>
-              {generation.files.map((file) => (
-                <div className="df-dock-file-row" key={file.name}>
-                  <button
-                    className="df-dock-file"
-                    aria-label={file.name}
-                    onClick={() =>
-                      onSelect(generatedSelection(form, generation, file))
-                    }
-                  >
-                    {file.name}
-                    <small>
-                      {file.recipient} · {(file.size / 1024).toFixed(0)} KB
-                      {file.print_copies > 1 &&
-                        ` · 建议打印 ${file.print_copies} 份`}
-                    </small>
-                  </button>
-                  <button
-                    aria-label={"下载" + file.name}
-                    onClick={() =>
-                      safeDownload(
-                        `/cases/${form.case_id}/outputs/${
-                          generation.id
-                        }/${encodeURIComponent(file.name)}`,
-                        file.name,
-                      )
-                    }
-                  >
-                    ↓
-                  </button>
-                </div>
-              ))}
-            </section>
-          ))}
-          {!files.length && (
-            <p className="df-muted">
-              生成文书或从中间的材料清单选择文件后，在这里预览。
-            </p>
-          )}
-          {project.forms
-            .filter((f) => f.case_id !== project.form_id)
-            .map((f) => (
-              <button
-                className="df-dock-file"
-                key={f.case_id}
-                onClick={() =>
-                  safeDownload(
-                    `/cases/${f.case_id}/excel`,
-                    f.name + "_历史底稿.xlsx",
-                  )
-                }
-              >
-                历史底稿：{f.name} ↓
-              </button>
-            ))}
-        </details>
-        {files.length > 0 && (
-          <p className="df-muted">
-            文件保留各批次生成时的内容，修改表单后请重新核对生成。
           </p>
         )}
         {attachment ? (
@@ -446,7 +329,7 @@ export default function RightWorkspace({
           />
         ) : selection ? (
           <section className="df-dock-preview" aria-label="文件预览">
-            <h3>{selection.artifact.title}</h3>
+            <h3 title={selection.artifact.title}>{selection.artifact.title}</h3>
             {Preview && selection.artifact.extension === "xlsx" ? (
               <div className="df-dock-office">
                 <Preview artifact={selection.artifact} readOnly hostControls />
@@ -461,26 +344,10 @@ export default function RightWorkspace({
             ) : (
               <p role="status">正在打开预览…</p>
             )}
-            <button className="df-dock-ask" onClick={() => onMode("assistant")}>
-              就此文件提问 →
-            </button>
-            <button
-              className="df-dock-ask"
-              onClick={() =>
-                safeDownload(
-                  `/cases/${selection.reference.case_id}/outputs/${
-                    selection.reference.generation_id
-                  }/${encodeURIComponent(selection.reference.name)}`,
-                  selection.artifact.title,
-                )
-              }
-            >
-              下载当前文件
-            </button>
           </section>
         ) : (
           <p className="df-dock-empty">
-            选择一份文件，填写与预览可以同时进行。
+            从「文件生成」、审批资料或其他附件中选择文件预览。
           </p>
         )}
       </div>

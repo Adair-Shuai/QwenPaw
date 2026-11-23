@@ -325,6 +325,68 @@ def _join_pdf_parts(parts):
     return "".join(text.strip() for _, _, text in parts if text.strip())
 
 
+def selection_approval_from_pdf(content):
+    """Recognize the two completed sign-offs in a non-tender approval form."""
+    evidence = {"kind": "selection", "parser_version": 1}
+    try:
+        pages = PdfReader(io.BytesIO(content)).pages
+        # The approval form comes before any supporting documents.
+        lines = [
+            line.strip()
+            for page in pages[:2]
+            for line in (page.extract_text() or "").splitlines()
+            if line.strip()
+        ]
+    except Exception:  # pylint: disable=broad-exception-caught
+        return dict(
+            evidence,
+            status="unreadable",
+            message="审批 PDF 无法读取，请人工核对。",
+        )
+    heading = re.compile(
+        r"非招标项目论证意见审批表(?:[（(]额度(?:以下|以上)[）)])?",
+    )
+    if not any(
+        heading.fullmatch(re.sub(r"\s+", "", line)) for line in lines[:4]
+    ):
+        return dict(evidence, status="unmatched")
+    signoffs = (
+        r"项目实施单位意见",
+        r"招标管理部门意见",
+    )
+    text = "\n".join(lines)
+    sections = re.split(r"(?m)^(?:" + "|".join(signoffs) + r")[：:]\s*", text)
+    dates = []
+    if len(sections) == 3 and re.search(
+        r"(?m)^项目实施单位意见[：:][\s\S]*^招标管理部门意见[：:]",
+        text,
+    ):
+        for section in sections[1:]:
+            signed = re.match(
+                r"同意[。.]?\n签[名字][：:][^\n]*(?:\n\s*)?"
+                r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日",
+                section,
+            )
+            if not signed:
+                break
+            try:
+                dates.append(date(*(int(value) for value in signed.groups())))
+            except ValueError:
+                break
+    if len(dates) == len(signoffs):
+        return dict(
+            evidence,
+            status="ready",
+            approved_at=max(dates).isoformat(),
+            fields=[],
+        )
+    return dict(
+        evidence,
+        status="unsupported",
+        message="未识别到双方同意及完整签批日期，请人工核对审批结果。",
+    )
+
+
 def approval_from_pdf(content):
     """Read the institute's plan approval table without model inference."""
     try:
@@ -469,7 +531,7 @@ class _ProjectStorage:
             for f in self.host.builtin.additional_shared_fields()
             if f["key"] not in existing
         )
-        if migrated:
+        if self.upgrade_selection_approvals(root, project) or migrated:
             self.save(root, project, update_time=False)
         return project
 
@@ -1557,12 +1619,15 @@ class ProjectStore(_ProjectForms, _ProjectArchive):
                 for file in material["files"]:
                     approval = file.get("approval")
                     if approval:
-                        file["approval_review"] = self.approval_review(
-                            root,
-                            project,
-                            approval,
-                        )
                         file.pop("approval", None)
+                        if approval.get("kind") != "selection" or approval[
+                            "status"
+                        ] in {"ready", "unsupported"}:
+                            file["approval_review"] = self.approval_review(
+                                root,
+                                project,
+                                approval,
+                            )
                     source = (
                         self.path(root, project["id"])
                         / "files"
@@ -1577,7 +1642,10 @@ class ProjectStore(_ProjectForms, _ProjectArchive):
 
     def approval_review(self, root, project, approval):
         review = copy.deepcopy(approval)
-        if review.get("status") != "ready":
+        if (
+            review.get("status") != "ready"
+            or review.get("kind") == "selection"
+        ):
             return review
         current = values(project["fields"])
         case_id = project.get("form_id")
@@ -1610,13 +1678,43 @@ class ProjectStore(_ProjectForms, _ProjectArchive):
             [material.get("file_sequence", 0), *versions],
         )
 
+    def upgrade_selection_approvals(self, root, project):
+        stage = self.stage(project, "selection")
+        files = self.path(root, project["id"]) / "files"
+        migrated = False
+        candidates = []
+        for material in stage["materials"]:
+            for file in material["files"]:
+                if file.get("approval") or not file["storage"].endswith(
+                    ".pdf",
+                ):
+                    continue
+                try:
+                    source = (files / file["storage"]).read_bytes()
+                except OSError:
+                    continue
+                if hashlib.sha256(source).hexdigest() != file["sha256"]:
+                    continue
+                file["approval"] = selection_approval_from_pdf(source)
+                migrated = True
+                if file["approval"]["status"] == "ready":
+                    candidates.append((material, file))
+        if candidates and stage["status"] != "completed":
+            material, file = max(
+                candidates,
+                key=lambda pair: pair[1]["uploaded_at"],
+            )
+            self.touch(project, stage, root)
+            self.complete_approval(root, project, stage, material, file)
+        return migrated
+
     def update_file_state(
         self,
         root,
         project,
         stage,
         removed_id=None,
-        restored=None,
+        added=None,
     ):
         previous_id = stage.get("completion_file_id")
         previous_time = stage.get("completed_at")
@@ -1625,20 +1723,20 @@ class ProjectStore(_ProjectForms, _ProjectArchive):
         if previous_id == removed_id or automatic:
             stage.pop("approval_date", None)
             stage.pop("completion_file_id", None)
-        if stage["id"] != "plan" or not (
-            automatic
-            or restored
-            and restored.get("approval", {}).get("status") == "ready"
+        added_approval = (
+            added and added.get("approval", {}).get("status") == "ready"
+        )
+        if stage["id"] not in {"plan", "selection"} or not (
+            automatic or added_approval
         ):
             return
+        prefer_previous = automatic and (
+            added is None or stage["id"] == "selection" and not added_approval
+        )
         candidates = [(m, f) for m in stage["materials"] for f in m["files"]]
         candidates.sort(
             key=lambda pair: (
-                bool(
-                    automatic
-                    and restored is None
-                    and pair[1]["id"] == previous_id,
-                ),
+                bool(prefer_previous and pair[1]["id"] == previous_id),
                 pair[1].get("uploaded_at", ""),
                 pair[1].get("version", 0),
             ),
@@ -1652,7 +1750,10 @@ class ProjectStore(_ProjectForms, _ProjectArchive):
 
     def complete_approval(self, root, project, stage, material, file):
         approval = file.get("approval", {})
-        if stage["id"] != "plan" or approval.get("status") != "ready":
+        if (
+            stage["id"] != approval.get("kind", "plan")
+            or approval.get("status") != "ready"
+        ):
             return False
         try:
             approved_at = date.fromisoformat(approval.get("approved_at", ""))
@@ -1676,6 +1777,7 @@ class ProjectStore(_ProjectForms, _ProjectArchive):
             (
                 file
                 for stage in project["stages"]
+                if stage["id"] == "plan"
                 for material in stage["materials"]
                 for file in material["files"]
                 if file["id"] == file_id
@@ -2121,17 +2223,24 @@ def register_file_routes(router, scope, lock, store):
                     or "application/octet-stream",
                 },
             )
-            if stage_id == "plan" and suffix == ".pdf":
-                material["files"][-1]["approval"] = approval_from_pdf(content)
+            uploaded = material["files"][-1]
+            if suffix == ".pdf":
+                if stage_id == "plan":
+                    uploaded["approval"] = approval_from_pdf(content)
+                elif stage_id == "selection":
+                    uploaded["approval"] = selection_approval_from_pdf(content)
             material["status"] = "preparing"
-            store.touch(project, stage, root)
-            store.complete_approval(
-                root,
-                project,
-                stage,
-                material,
-                material["files"][-1],
-            )
+            if stage_id == "selection":
+                store.update_file_state(root, project, stage, added=uploaded)
+            else:
+                store.touch(project, stage, root)
+                store.complete_approval(
+                    root,
+                    project,
+                    stage,
+                    material,
+                    uploaded,
+                )
             try:
                 store.save(root, project)
             except OSError:
@@ -2212,18 +2321,21 @@ def register_file_routes(router, scope, lock, store):
                 raise HTTPException(422, "单项材料最多保留 50 个文件版本")
             file = deleted["file"]
             source = store.path(root, project_id) / "files" / file["storage"]
-            if (
-                not source.is_file()
-                or hashlib.sha256(source.read_bytes()).hexdigest()
-                != file["sha256"]
-            ):
+            original = source.read_bytes() if source.is_file() else b""
+            if hashlib.sha256(original).hexdigest() != file["sha256"]:
                 raise HTTPException(422, "材料文件缺失或校验失败，无法恢复")
             material["files"].append(file)
             material["files"].sort(key=lambda item: item["version"])
             material["deleted_files"].remove(deleted)
             if len(material["files"]) == 1:
                 material["status"] = deleted["material_status"]
-            store.update_file_state(root, project, stage, restored=file)
+            if (
+                stage_id == "selection"
+                and file["storage"].endswith(".pdf")
+                and not file.get("approval")
+            ):
+                file["approval"] = selection_approval_from_pdf(original)
+            store.update_file_state(root, project, stage, added=file)
             store.save(root, project)
             return store.public(root, project)
 

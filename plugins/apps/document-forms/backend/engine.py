@@ -3,12 +3,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 from decimal import Decimal, InvalidOperation
 import re
 from datetime import date, datetime
 from zipfile import ZipFile, BadZipFile
 
+from docx.oxml import parse_xml
+from docx.oxml.ns import qn
 from docxtpl import DocxTemplate
 from jinja2 import StrictUndefined, nodes
 from jinja2.sandbox import SandboxedEnvironment
@@ -25,6 +28,9 @@ INVITATION_KEYS = {
     "invitation.end",
 }
 PARTICIPANT_KEYS = {"participants", "participant_groups"}
+STANDARD_SELECTION_OPINION = (
+    "190f1ad4f5f61b42bb856bf2202efa9587a99f782ed2b51c3d701c3fa914c784"
+)
 
 
 def template_metadata(name, index=1):
@@ -149,12 +155,23 @@ def kind_for(key, label, value):
     return "text"
 
 
-def recipient_defaults(recipients):
-    """Materialize linked times; never infer a link from an explicit value."""
+def recipient_end_on_start_date(start, end):
+    day = re.match(r"\d{4}-\d{2}-\d{2}(?=[T ]|$)", start)
+    if not day:
+        return end
+    clock = re.search(r"[T ](\d{2}:\d{2}(?::\d{2})?)$", end)
+    return day[0] + "T" + (clock[1] if clock else "17:30")
+
+
+def recipient_defaults(recipients, previous=()):
+    """Resolve linked clocks and carry the end date when the start changes."""
     result = [dict(recipient) for recipient in recipients]
     if not result:
         return result
     for index, recipient in enumerate(result):
+        end_was_unspecified = recipient.get(
+            "follow_end",
+        ) is None and not recipient.get("end")
         for key in ("start", "end"):
             flag = "follow_" + key
             follow = recipient.get(flag)
@@ -163,6 +180,23 @@ def recipient_defaults(recipients):
             recipient[flag] = bool(index and follow)
             if recipient[flag]:
                 recipient[key] = result[0].get(key, "")
+        start = recipient.get("start", "")
+        end = recipient.get("end", "")
+        prior = previous[index] if index < len(previous) else None
+        follows_start_change = (
+            prior
+            and prior.get("name") == recipient.get("name")
+            and prior.get("start") != start
+            and (recipient["follow_end"] or prior.get("end") == end)
+        )
+        if follows_start_change or (end_was_unspecified and not end):
+            recipient["end"] = recipient_end_on_start_date(start, end)
+        elif (
+            recipient["follow_end"]
+            and end
+            and start[:10] != result[0].get("start", "")[:10]
+        ):
+            recipient["end"] = recipient_end_on_start_date(start, end)
     return result
 
 
@@ -647,7 +681,7 @@ def date_roles(fields):
     return result
 
 
-def checks(case):
+def checks(case, selection_approval_date=None):
     # Required fields, templates, shared dates and budgets each add rules.
     # pylint: disable=too-many-branches,too-many-statements
     fields, recipients = case["fields"], case["recipients"]
@@ -755,7 +789,7 @@ def checks(case):
             },
         )
 
-    def compare(label, a, b, equal=True, field=""):
+    def compare(label, a, b, equal=True, field="", timing_labels=None):
         left, right = parsed_interval(a), parsed_interval(b)
         if not a or not b:
             add(label, "missing", "日期尚未补齐", field)
@@ -768,6 +802,25 @@ def checks(case):
             )
         elif left[1] <= right[0] if equal else left[1] < right[0]:
             add(label, "ok", f"{document_date(a)} → {document_date(b)}", field)
+        elif timing_labels:
+            start_label, end_label = timing_labels
+            start_time, end_time = (
+                point.isoformat(
+                    sep=" ",
+                    timespec="seconds" if point.second else "minutes",
+                )
+                if re.search(r"\d[:：时]\d", str(value))
+                else point.date().isoformat()
+                for point, value in ((left[1], a), (right[0], b))
+            )
+            relation = "不能晚于" if equal else "必须早于"
+            add(
+                label,
+                "error",
+                f"{start_label}{relation}{end_label}（{end_time}）。"
+                f"当前{start_label}为 {start_time}。",
+                field,
+            )
         else:
             add(
                 label,
@@ -822,7 +875,14 @@ def checks(case):
             "dates.invitation_issue",
         )
     if per_recipient or recipients:
-        check_recipients(case, roles, add, compare, overall_interval)
+        check_recipients(
+            case,
+            roles,
+            add,
+            compare,
+            overall_interval,
+            selection_approval_date,
+        )
     return results
 
 
@@ -850,56 +910,144 @@ def check_range_order(values, labels, roles, add):
             )
 
 
-def check_recipients(case, roles, add, compare, overall_interval):
+def check_recipients(
+    case,
+    roles,
+    add,
+    compare,
+    overall_interval,
+    selection_approval_date,
+):
     values = {f["key"]: f["value"] for f in case["fields"]}
     field_labels = {f["key"]: f["label"] for f in case["fields"]}
+    approval = parsed_date(selection_approval_date or "")
     seen = set()
     for i, r in enumerate(case["recipients"]):
         title = r["name"].strip() or f"第 {i + 1} 家单位"
+        start_field, end_field = f"recipient-{i}-start", f"recipient-{i}-end"
         if not r["name"].strip():
             add(title, "missing", "请填写单位名称", f"recipient-{i}")
         elif title in seen:
             add(title, "error", "单位名称重复，请核对", f"recipient-{i}")
         seen.add(title)
+        if approval:
+            start = parsed_date(r["start"])
+            if start and start.date() <= approval.date():
+                add(
+                    f"{title} · 领取开始时间",
+                    "error",
+                    "领取开始日期必须晚于选商论证审批日期" f"（{approval.date().isoformat()}）。",
+                    start_field,
+                )
         compare(
             f"{title} · 领取起止",
             r["start"],
             r["end"],
-            field=f"recipient-{i}",
+            field=end_field,
+            timing_labels=("领取开始时间", "领取结束时间"),
         )
         if "issue" in roles:
             compare(
                 f"{title} · 发文至领取",
                 values[roles["issue"]],
                 r["start"],
-                field=f"recipient-{i}",
+                field=start_field,
+                timing_labels=(field_labels[roles["issue"]], "领取开始时间"),
             )
         for role in ("qa", "response", "negotiation"):
             if role in roles:
-                endpoint = parsed_interval(values[roles[role]])
+                value = values[roles[role]]
+                endpoint = parsed_interval(value)
+                event_label = field_labels[roles[role]]
+                event_start = (
+                    event_label + "的开始时间"
+                    if endpoint and endpoint[0] != endpoint[1]
+                    else event_label
+                )
                 compare(
-                    f"{title} · 领取结束至{field_labels[roles[role]]}",
+                    f"{title} · 领取结束至{event_label}",
                     r["end"],
-                    (
-                        endpoint[0].isoformat()
-                        if endpoint
-                        else values[roles[role]]
-                    ),
-                    field=f"recipient-{i}",
+                    value,
+                    field=end_field,
+                    timing_labels=("领取结束时间", event_start),
                 )
         if overall_interval:
+            overall_label = field_labels["events.invitation_time"]
             compare(
                 f"{title} · 领取开始处于总体发放期",
                 overall_interval[0].isoformat(),
                 r["start"],
-                field=f"recipient-{i}",
+                field=start_field,
+                timing_labels=(
+                    overall_label + "的开始时间",
+                    "领取开始时间",
+                ),
             )
             compare(
                 f"{title} · 领取结束处于总体发放期",
                 r["end"],
                 overall_interval[1].isoformat(),
-                field=f"recipient-{i}",
+                field=end_field,
+                timing_labels=(
+                    "领取结束时间",
+                    overall_label + "的结束时间",
+                ),
             )
+
+
+def _anchor_selection_signatures(document):
+    """Position the standard opinion's signing block above the page footer."""
+    body = document.element.body
+    paragraphs = list(body.p_lst)
+    first = next(p for p in reversed(paragraphs) if p.text == "附：论证成员签字表")
+    start = paragraphs.index(first)
+    signatures = paragraphs[start : start + 4]
+    next_page = next(p for p in paragraphs[start + 4 :] if p.text.strip())
+    previous = first.getprevious()
+    while previous.tag == qn("w:p") and not previous.text.strip():
+        before = previous.getprevious()
+        body.remove(previous)
+        previous = before
+    for gap in paragraphs[start + 4 : paragraphs.index(next_page)]:
+        body.remove(gap)
+    next_page.get_or_add_pPr().get_or_add_pageBreakBefore()
+
+    # A full-width floating row reserves the signing area and can move
+    # intact to the next page. The member sheet keeps its own page break.
+    section = document.sections[0]
+    width = (
+        section.page_width - section.left_margin - section.right_margin
+    ) // 635
+    wordml = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    table = parse_xml(
+        f"""<w:tbl xmlns:w="{wordml}">
+        <w:tblPr>
+          <w:tblpPr w:vertAnchor="margin" w:horzAnchor="margin"
+            w:tblpXSpec="left" w:tblpYSpec="bottom" w:topFromText="160"/>
+          <w:tblOverlap w:val="never"/>
+          <w:tblW w:w="{width}" w:type="dxa"/>
+          <w:tblBorders>
+            <w:top w:val="nil"/><w:left w:val="nil"/>
+            <w:bottom w:val="nil"/><w:right w:val="nil"/>
+          </w:tblBorders>
+          <w:tblLayout w:type="fixed"/>
+          <w:tblCellMar>
+            <w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
+          </w:tblCellMar>
+        </w:tblPr>
+        <w:tblGrid><w:gridCol w:w="{width}"/></w:tblGrid>
+        <w:tr><w:trPr><w:cantSplit/></w:trPr>
+          <w:tc><w:tcPr><w:tcW w:w="{width}" w:type="dxa"/></w:tcPr></w:tc>
+        </w:tr>
+        </w:tbl>""",
+    )
+    first.addprevious(table)
+    cell = table.tr_lst[0].tc_lst[0]
+    for paragraph in signatures:
+        spacing = paragraph.get_or_add_pPr().get_or_add_spacing()
+        spacing.set(qn("w:before"), "0")
+        spacing.set(qn("w:after"), "0")
+        cell.append(paragraph)
 
 
 def render_template(
@@ -953,6 +1101,8 @@ def render_template(
         )
     template = DocxTemplate(io.BytesIO(content))
     template.render(context, jinja_env=environment(), autoescape=True)
+    if hashlib.sha256(content).hexdigest() == STANDARD_SELECTION_OPINION:
+        _anchor_selection_signatures(template.docx)
     output = io.BytesIO()
     template.save(output)
     # Catch placeholders accidentally emitted as values, too. Never label such
@@ -970,7 +1120,7 @@ def render_template(
     return output.getvalue()
 
 
-def export_excel(case):
+def export_excel(case, selection_approval_date=None):
     book = Workbook()
     sheet = book.active
     sheet.title = "变量配置"
@@ -1019,7 +1169,7 @@ def export_excel(case):
         )
     check = book.create_sheet("日期校核")
     check.append(["校核项", "结果", "说明"])
-    for r in checks(case):
+    for r in checks(case, selection_approval_date):
         check.append(
             [
                 r["label"],

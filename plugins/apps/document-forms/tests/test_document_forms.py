@@ -14,6 +14,7 @@ from zipfile import ZipFile
 
 import pytest
 from docx import Document
+from docx.oxml.ns import qn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
@@ -1605,6 +1606,166 @@ def test_material_file_deletion_and_restore_are_atomic_and_check_integrity(
     assert client.get(base + "/files/" + file["id"]).content == b"PDF-original"
 
 
+def test_selection_approval_completes_new_and_existing_files(client, tmp_path):
+    project = client.post(
+        "/api/document-forms/projects",
+        json={"name": "选商审批测试"},
+    ).json()
+    base = f"/api/document-forms/projects/{project['id']}"
+
+    def selection(payload):
+        return next(s for s in payload["stages"] if s["id"] == "selection")
+
+    material = next(
+        m for m in selection(project)["materials"] if m["name"] == "论证意见及审批记录"
+    )
+    route = f"{base}/stages/selection/materials/{material['id']}/files"
+    fixtures = Path(__file__).parent / "fixtures"
+    approved_pdf = (fixtures / "selection-approval.pdf").read_bytes()
+
+    def upload(payload, name, content):
+        response = client.post(
+            route,
+            data={"revision": payload["revision"]},
+            files={"file": (name, content, "application/pdf")},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    project = upload(
+        project,
+        "另一阶段的批复.pdf",
+        (fixtures / "plan-approval.pdf").read_bytes(),
+    )
+    assert selection(project)["status"] == "in_progress"
+    project = upload(project, "已签批.pdf", approved_pdf)
+    stage = selection(project)
+    file_id = stage["completion_file_id"]
+    assert stage["status"] == "completed"
+    assert stage["approval_date"] == "2026-11-06"
+    assert any(
+        m["id"] == material["id"] and m["status"] == "done"
+        for m in stage["materials"]
+    )
+
+    persisted = next(tmp_path.rglob(f"{project['id']}/project.json"))
+    original = json.loads(persisted.read_text(encoding="utf-8"))
+    stage = selection(original)
+    stage.pop("completion_file_id")
+    stage.pop("approval_date")
+    stage.update(status="in_progress", completed_at=None)
+    for row in stage["materials"]:
+        for file in row["files"]:
+            file.pop("approval", None)
+    persisted.write_text(json.dumps(original), encoding="utf-8")
+
+    project = client.get(base).json()
+    assert selection(project)["completion_file_id"] == file_id
+    assert selection(project)["approval_date"] == "2026-11-06"
+    assert project["revision"] == original["revision"] + 1
+    assert client.get(base).json()["revision"] == project["revision"]
+    assert client.get(base + "/files/" + file_id).content == approved_pdf
+
+    project = upload(
+        project,
+        "未签批的附件.pdf",
+        (fixtures / "plan-approval.pdf").read_bytes(),
+    )
+    assert selection(project)["completion_file_id"] == file_id
+    removed = client.request(
+        "DELETE",
+        f"{route}/{file_id}",
+        json={"revision": project["revision"]},
+    )
+    assert removed.status_code == 200, removed.text
+    assert selection(removed.json())["status"] == "in_progress"
+    assert "approval_date" not in selection(removed.json())
+    restored = client.post(
+        f"{route}/{file_id}/restore",
+        json={"revision": removed.json()["revision"]},
+    )
+    assert restored.status_code == 200, restored.text
+    assert selection(restored.json())["approval_date"] == "2026-11-06"
+
+
+def test_negotiation_pickup_rechecks_selection_approval_at_generation(
+    client,
+    sources,
+):
+    case = create(client, sources)
+    case_route = f"/api/document-forms/cases/{case['id']}"
+    project_list = client.get("/api/document-forms/projects").json()
+    project_route = f"/api/document-forms/projects/{project_list[0]['id']}"
+    project = client.get(project_route).json()
+    selection = next(s for s in project["stages"] if s["id"] == "selection")
+    material = next(m for m in selection["materials"] if "审批记录" in m["name"])
+    revision = {"revision": case["revision"]}
+    reviewed = client.post(case_route + "/review", json=revision).json()
+    assert reviewed["can_generate"], reviewed["checks"]
+
+    pdf = (
+        Path(__file__).parent / "fixtures/selection-approval.pdf"
+    ).read_bytes()
+    result = client.post(
+        project_route + f"/stages/selection/materials/{material['id']}/files",
+        data={"revision": project["revision"]},
+        files={"file": ("选商论证审批.pdf", pdf, "application/pdf")},
+    )
+    assert result.status_code == 200, result.text
+    attempt = client.post(
+        case_route + "/generate",
+        json={
+            **revision,
+            "confirmed": True,
+            "review_token": reviewed["review_token"],
+        },
+    )
+    assert attempt.status_code == 422
+    assert "必须晚于选商论证审批日期（2026-11-06）" in attempt.json()["detail"]
+
+    def save_start(recipient):
+        response = client.put(
+            case_route,
+            json={
+                "revision": case["revision"],
+                "name": case["name"],
+                "values": values_for(case),
+                "recipients": [recipient],
+            },
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    case = save_start({"name": "审批当天领取", "start": "2026-11-06T22:00"})
+    assert case["recipients"][0]["end"] == "2026-11-06T17:30"
+    review = client.post(
+        case_route + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    assert not review["can_generate"]
+    assert any(
+        check["field"] == "recipient-0-start"
+        and check["status"] == "error"
+        and "选商论证审批日期" in check["detail"]
+        for check in review["checks"]
+    )
+
+    recipient = dict(case["recipients"][0], end="2026-11-06T18:10")
+    case = save_start(recipient)
+    case = save_start(dict(recipient, start="2026-11-07T09:00"))
+    assert case["recipients"][0]["end"] == "2026-11-07T18:10"
+    review = client.post(
+        case_route + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    assert not any(
+        check["field"] == "recipient-0-start" and "选商论证审批日期" in check["detail"]
+        for check in review["checks"]
+    )
+    workbook = client.get(case_route + "/excel").content
+    assert engine.read_excel(workbook)["recipients"] == case["recipients"]
+
+
 def test_plan_approval_pdf_compares_and_applies_selected_changes(
     client,
     monkeypatch,
@@ -2549,7 +2710,6 @@ def test_split_runs_tables_headers_and_literal_xml():
 def test_multiline_values_keep_each_paragraph_indent_font_and_spacing():
     # Inspect OOXML for character-based indentation and real paragraph breaks.
     # pylint: disable=protected-access
-    from docx.oxml.ns import qn
     from docx.shared import Pt
 
     doc = Document()
@@ -2721,6 +2881,81 @@ def test_generate_requires_review_and_confirm(client, sources):
         ).status_code
         == 409
     )
+
+
+def test_draft_checks_without_saving_and_direct_generation(
+    client,
+    sources,
+    monkeypatch,
+):
+    case = create(client, sources)
+    route = f"/api/document-forms/cases/{case['id']}"
+    before = client.get(route).json()
+    payload = {
+        "revision": case["revision"],
+        "name": case["name"],
+        "values": values_for(case),
+        "recipients": case["recipients"],
+    }
+    payload["values"]["dates.issue"] = ""
+    checked = client.post(route + "/validate", json=payload)
+    assert checked.status_code == 200, checked.text
+    issues = checked.json()["issues"]
+    assert any(
+        row["field"] == "dates.issue" and row["status"] == "missing"
+        for row in issues
+    )
+    assert all(row["status"] != "ok" for row in issues)
+    assert client.get(route).json() == before
+
+    calls = []
+
+    class Context:
+        agent_id = "default"
+
+        async def chat(self, prompt, session_id):
+            calls.append((self.agent_id, prompt, session_id))
+            return types.SimpleNamespace(
+                text=json.dumps(
+                    {
+                        "issues": [
+                            {"field": "project.name", "detail": "同一项目使用了两个名称"},
+                        ],
+                    },
+                ),
+            )
+
+    monkeypatch.setattr(
+        main.response_review,
+        "inherit_model",
+        lambda _agent: None,
+    )
+    client.app.dependency_overrides[main.get_scoped_ctx] = Context
+    audited = client.post(route + "/agent-check", json=payload)
+    assert audited.status_code == 200, audited.text
+    assert audited.json()["issues"][0]["field"] == "project.name"
+    assert calls[0][0] == "ugsci-response-review"
+    assert case["id"] in calls[0][2]
+    assert client.get(route).json() == before
+
+    saved = client.put(route, json=payload).json()
+    blocked = client.post(
+        route + "/generate",
+        json={"revision": saved["revision"]},
+    )
+    assert blocked.status_code == 422, blocked.text
+    assert blocked.json()["detail"]["issues"] == issues
+    assert not client.get(route).json()["generations"]
+    payload["revision"] = saved["revision"]
+    payload["values"] = values_for(case)
+    saved = client.put(route, json=payload).json()
+    generated = client.post(
+        route + "/generate",
+        json={"revision": saved["revision"]},
+    )
+    assert generated.status_code == 200, generated.text
+    assert generated.json()["generations"][0]["files"]
+    assert len(calls) == 1
 
 
 def test_failed_batch_is_atomic_and_duplicate_names_are_safe(
@@ -3044,6 +3279,33 @@ def test_recipients_stay_in_overall_window_and_response_precedes_negotiation():
         r["status"] == "error" and r["field"] == "events.negotiation_time"
         for r in results
     )
+    assert any(
+        r["field"] == "recipient-0-start"
+        and r["detail"].startswith(
+            "总体邀请函发放时段的开始时间不能晚于领取开始时间",
+        )
+        for r in results
+    )
+
+    data["recipients"][0].update(
+        start="2026-11-07T14:30",
+        end="2026-11-07T17:30",
+    )
+    end_errors = [
+        r["detail"]
+        for r in engine.checks(dict(data, templates=[]))
+        if r["status"] == "error" and r["field"] == "recipient-0-end"
+    ]
+    assert end_errors == [
+        "领取结束时间不能晚于商务答疑时间段的开始时间（2026-07-03 09:00）。"
+        "当前领取结束时间为 2026-11-07 17:30。",
+        "领取结束时间不能晚于响应文件提交截止时间（2026-07-05 09:00）。"
+        "当前领取结束时间为 2026-11-07 17:30。",
+        "领取结束时间不能晚于商务谈判时间段的开始时间（2026-07-05 09:00）。"
+        "当前领取结束时间为 2026-11-07 17:30。",
+        "领取结束时间不能晚于总体邀请函发放时段的结束时间（2026-07-02 17:00）。"
+        "当前领取结束时间为 2026-11-07 17:30。",
+    ]
 
 
 def test_followed_times_manual_override_save_reload_and_excel_roundtrip(
@@ -3102,6 +3364,7 @@ def test_legacy_explicit_times_are_preserved_and_empty_slots_can_follow():
     assert recipients[1]["start"] == data[1]["start"]
     assert not recipients[1]["follow_start"]
     assert recipients[1]["follow_end"]
+    assert recipients[1]["end"] == "2026-07-02T17:00"
     assert recipients[2]["start"] == data[0]["start"]
     assert data[2]["start"] == "", "Input must not be mutated"
     recipients.pop(0)
@@ -3345,11 +3608,24 @@ def _assert_selection_outputs(client, route, batch, vals):
     assert word.paragraphs[3].text == "时间：2026年8月31日"
     assert word.paragraphs[9].text == vals["selection.reliability"]
     assert word.paragraphs[11].text == vals["selection.overview"]
+    signatures, members = word.tables
+    cell = signatures.cell(0, 0)
+    assert [p.text.strip() for p in cell.paragraphs[:3]] == [
+        "附：论证成员签字表",
+        "组长（签字）：",
+        "组织实施单位（盖章）",
+    ]
+    assert "年  月  日" in cell.paragraphs[3].text
+    signature_table = word.element.body.tbl_lst[0]
+    assert (
+        signature_table.tblPr.find(qn("w:tblpPr")).get(qn("w:tblpYSpec"))
+        == "bottom"
+    )
+    assert signature_table.xpath("./w:tr/w:trPr/w:cantSplit")
+    assert signature_table.getnext().pPr.pageBreakBefore is not None
     for i in range(1, 6):
-        assert (
-            word.tables[0].cell(i, 0).text == vals[f"selection.member{i}_name"]
-        )
-        assert word.tables[0].cell(i, 4).text == ""
+        assert members.cell(i, 0).text == vals[f"selection.member{i}_name"]
+        assert members.cell(i, 4).text == ""
     sheet = load_workbook(io.BytesIO(outputs["xlsx"])).worksheets[0]
     assert sheet["C6"].value == 200 and sheet["C8"].value == 45
     assert sheet["C3"].value == 2026 and sheet["C12"].value == "010-12345678"

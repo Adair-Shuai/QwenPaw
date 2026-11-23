@@ -32,7 +32,7 @@ from fastapi.responses import FileResponse, Response, JSONResponse
 from pydantic import BaseModel, Field
 from qwenpaw.constant import WORKING_DIR
 from qwenpaw.officecli_runtime import officecli_environment
-from qwenpaw.pawapp import PawApp
+from qwenpaw.pawapp import PawApp, get_scoped_ctx
 
 from .backend import builtin  # pylint: disable=relative-beyond-top-level
 from .backend import projects  # pylint: disable=relative-beyond-top-level
@@ -441,8 +441,8 @@ class ReviewBody(BaseModel):
 
 
 class GenerateBody(ReviewBody):
-    review_token: str
-    confirmed: bool = False
+    review_token: str | None = None
+    confirmed: bool | None = None
 
 
 @router.get("/cases")
@@ -541,53 +541,54 @@ def use_default_templates(case_id: str, body: ReviewBody, root=Depends(scope)):
         return public(case)
 
 
+def apply_draft_content(case, body):
+    if set(body.values) != {f["key"] for f in case["fields"]} or any(
+        len(v) > 20000 for v in body.values.values()
+    ):
+        raise HTTPException(422, "填写字段与 Excel 配置不一致或内容过长")
+    if any(
+        field.get("read_only") and body.values[field["key"]] != field["value"]
+        for field in case["fields"]
+    ):
+        raise HTTPException(
+            422,
+            "引用资料不能在本阶段修改，请返回基础信息填报或对应的前序阶段修改",
+        )
+    case["name"] = body.name
+    linked = {f["key"]: f for f in case["fields"] if f.get("linked_variables")}
+    if set(body.opinion_templates) - set(linked) or any(
+        len(text) > 20000
+        or any(
+            match.group(1).partition("|")[0] not in builtin.OPINION_VARIABLES
+            for match in builtin.OPINION_TOKEN.finditer(text)
+        )
+        for text in body.opinion_templates.values()
+    ):
+        raise HTTPException(422, "论证意见引用变量无效或内容过长")
+    for field in case["fields"]:
+        field["value"] = body.values[field["key"]]
+        if field["key"] in body.opinion_templates:
+            field["linked_template"] = body.opinion_templates[field["key"]]
+            field["linked_rendered"] = field["value"]
+    if (
+        case.get("stage_id") == "selection"
+        and case.get("selection_schema") == 1
+    ):
+        builtin.refresh_selection_opinions(case["fields"])
+        if any(len(f["value"]) > 20000 for f in case["fields"]):
+            raise HTTPException(422, "论证意见内容过长")
+    case["recipients"] = recipient_defaults(
+        [r.model_dump(exclude_none=True) for r in body.recipients],
+        case["recipients"],
+    )
+
+
 @router.put("/cases/{case_id}")
 def update_case(case_id: str, body: DraftBody, root=Depends(scope)):
     with _lock:
         case = load(root, case_id)
         version(case, body.revision)
-        if set(body.values) != {f["key"] for f in case["fields"]} or any(
-            len(v) > 20000 for v in body.values.values()
-        ):
-            raise HTTPException(422, "填写字段与 Excel 配置不一致或内容过长")
-        if any(
-            field.get("read_only")
-            and body.values[field["key"]] != field["value"]
-            for field in case["fields"]
-        ):
-            raise HTTPException(
-                422,
-                "引用资料不能在本阶段修改，请返回基础信息填报或对应的前序阶段修改",
-            )
-        case["name"] = body.name
-        linked = {
-            f["key"]: f for f in case["fields"] if f.get("linked_variables")
-        }
-        if set(body.opinion_templates) - set(linked) or any(
-            len(text) > 20000
-            or any(
-                match.group(1).partition("|")[0]
-                not in builtin.OPINION_VARIABLES
-                for match in builtin.OPINION_TOKEN.finditer(text)
-            )
-            for text in body.opinion_templates.values()
-        ):
-            raise HTTPException(422, "论证意见引用变量无效或内容过长")
-        for field in case["fields"]:
-            field["value"] = body.values[field["key"]]
-            if field["key"] in body.opinion_templates:
-                field["linked_template"] = body.opinion_templates[field["key"]]
-                field["linked_rendered"] = field["value"]
-        if (
-            case.get("stage_id") == "selection"
-            and case.get("selection_schema") == 1
-        ):
-            builtin.refresh_selection_opinions(case["fields"])
-            if any(len(f["value"]) > 20000 for f in case["fields"]):
-                raise HTTPException(422, "论证意见内容过长")
-        case["recipients"] = recipient_defaults(
-            [r.model_dump(exclude_none=True) for r in body.recipients],
-        )
+        apply_draft_content(case, body)
         case["revision"] += 1
         case["review_token"] = None
         normalize_templates(case)
@@ -672,12 +673,75 @@ def remove_template(
         return public(case)
 
 
+def selection_approval_date_for_case(root, case):
+    if case.get("stage_id", "negotiation") != "negotiation":
+        return None
+    project_id = case.get("project_id")
+    if not project_id:
+        # Older drafts are indexed by project without rewriting their bytes.
+        matches = [
+            project["id"]
+            for project in project_store.all_projects(root)
+            if project.get("form_id") == case["id"]
+            or any(form["case_id"] == case["id"] for form in project["forms"])
+        ]
+        if len(matches) != 1:
+            return None
+        project_id = matches[0]
+    project = project_store.load(root, project_id)
+    selection = project_store.stage(project, "selection")
+    return (
+        selection.get("approval_date")
+        if selection["status"] == "completed"
+        else None
+    )
+
+
+@router.post("/cases/{case_id}/validate")
+def validate_draft(case_id: str, body: DraftBody, root=Depends(scope)):
+    with _lock:
+        case = load(root, case_id)
+        version(case, body.revision)
+        apply_draft_content(case, body)
+        return {
+            "issues": [
+                row
+                for row in checks(
+                    case,
+                    selection_approval_date_for_case(root, case),
+                )
+                if row["status"] != "ok"
+            ],
+        }
+
+
+@router.post("/cases/{case_id}/agent-check")
+async def check_draft_with_agent(
+    case_id: str,
+    body: DraftBody,
+    request: Request,
+    root=Depends(scope),
+    ctx=Depends(get_scoped_ctx),
+):
+    with _lock:
+        case = load(root, case_id)
+        version(case, body.revision)
+        apply_draft_content(case, body)
+    result = await response_review.check_generation_draft(
+        case,
+        root.name,
+        ctx,
+        request.headers.get("X-Agent-Id") or ctx.agent_id,
+    )
+    return {"issues": result}
+
+
 @router.post("/cases/{case_id}/review")
 def review(case_id: str, body: ReviewBody, root=Depends(scope)):
     with _lock:
         case = load(root, case_id)
         version(case, body.revision)
-        results = checks(case)
+        results = checks(case, selection_approval_date_for_case(root, case))
         blocked = any(r["status"] != "ok" for r in results)
         case["review_token"] = None if blocked else uuid.uuid4().hex
         save(root, case)
@@ -694,14 +758,24 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
     with _lock:
         case = load(root, case_id)
         version(case, body.revision)
-        if (
+        legacy_review = {"review_token", "confirmed"} & body.model_fields_set
+        if legacy_review and (
             not body.confirmed
             or not body.review_token
             or body.review_token != case["review_token"]
         ):
             raise HTTPException(409, "请先完成核对并确认本次填写内容")
-        if any(r["status"] != "ok" for r in checks(case)):
-            raise HTTPException(422, "资料不完整或存在日期冲突，请重新核对")
+        approval_date = selection_approval_date_for_case(root, case)
+        results = checks(case, approval_date)
+        issues = [row for row in results if row["status"] != "ok"]
+        if issues:
+            message = "资料不完整或存在日期冲突。" + issues[0]["detail"]
+            raise HTTPException(
+                422,
+                message
+                if legacy_review
+                else {"message": message, "issues": issues},
+            )
         generation_id = uuid.uuid4().hex
         base = folder(root, case_id)
         staging = base / ("staging-" + generation_id)
@@ -739,12 +813,14 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
                             ),
                         },
                     )
-            (staging / "填写数据.xlsx").write_bytes(export_excel(case))
+            (staging / "填写数据.xlsx").write_bytes(
+                export_excel(case, approval_date),
+            )
             (staging / "核对记录.json").write_text(
                 json.dumps(
                     {
                         "revision": case["revision"],
-                        "checks": checks(case),
+                        "checks": results,
                         "fields": case["fields"],
                         "recipients": case["recipients"],
                         "templates": case["templates"],
@@ -893,7 +969,7 @@ def excel(case_id: str, root=Depends(scope)):
     with _lock:
         case = load(root, case_id)
         return Response(
-            export_excel(case),
+            export_excel(case, selection_approval_date_for_case(root, case)),
             media_type=(
                 "application/vnd.openxmlformats-officedocument."
                 "spreadsheetml.sheet"

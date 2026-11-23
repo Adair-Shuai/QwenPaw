@@ -361,22 +361,33 @@ async function exerciseWorkflowTabs(
       }
       return reply(state);
     }
-    if (url.endsWith("/review"))
+    if (url.endsWith("/agent-check"))
       return reply({
-        checks: state.fields[1].value
-          ? []
-          : [
+        issues: [
+          {
+            field: "step.second",
+            label: "流程字段二",
+            status: "error",
+            detail: "模板与内容约定冲突",
+          },
+        ],
+      });
+    if (url.endsWith("/generate"))
+      return new Response(
+        JSON.stringify({
+          detail: {
+            issues: [
               {
                 field: "step.second",
                 label: "流程字段二",
-                status: "missing",
                 detail: "请填写流程字段二",
+                status: "missing",
               },
             ],
-        can_generate: !!state.fields[1].value,
-        review_token: "toolbar-review",
-        revision: state.revision,
-      });
+          },
+        }),
+        { status: 422 },
+      );
     throw new Error("Unexpected workflow request: " + url);
   });
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
@@ -601,13 +612,24 @@ async function exerciseWorkflowTabs(
   expect(saves).toHaveLength(2);
   expect(statusButton).toBeEnabled();
   expect(saves[1].values["step.first"]).toBe("跨标签保留的草稿");
-  await user.click(within(groupTabs).getByRole("tab", { name: "第一项" }));
-  await user.keyboard("{End}");
+  const workflow = screen.getByRole("tablist", { name: "阶段办理流程" });
   expect(
-    within(groupTabs).getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
-  ).toHaveFocus();
-  expect(screen.getByRole("region", { name: "核对与生成" })).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
+    within(workflow)
+      .getAllByRole("tab")
+      .slice(0, 2)
+      .map((item) => item.textContent),
+  ).toEqual(["内容填写", "文件生成"]);
+  expect(
+    within(groupTabs).queryByRole("tab", { name: "文件生成" }),
+  ).not.toBeInTheDocument();
+  within(workflow).getByRole("tab", { name: "内容填写" }).focus();
+  await user.keyboard("{ArrowRight}");
+  expect(within(workflow).getByRole("tab", { name: "文件生成" })).toHaveFocus();
+  const generationPanel = screen.getByRole("tabpanel", { name: "文件生成" });
+  expect(
+    within(generationPanel).getByRole("region", { name: "文件生成操作" }),
+  ).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "生成文件" }));
   await screen.findByText("请填写流程字段二");
   await user.click(screen.getByRole("button", { name: "修改" }));
   await waitFor(() =>
@@ -719,8 +741,10 @@ async function exerciseWorkflowTabs(
     expect(screen.getByText("恢复的默认模板.docx")).toBeVisible();
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("tab", { name: "文件生成" }));
-    await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
-    await user.click(await screen.findByRole("checkbox", { name: /我已核对/ }));
+    await user.click(screen.getByRole("button", { name: "智能体核查" }));
+    expect(
+      await screen.findByRole("region", { name: "智能体冲突" }),
+    ).toHaveTextContent("模板与内容约定冲突");
     await openTemplates();
     await user.upload(
       picker,
@@ -730,9 +754,9 @@ async function exerciseWorkflowTabs(
     );
     await screen.findByText("Word 模板已添加，生成时会保留原有排版。");
     expect(
-      screen.queryByRole("checkbox", { name: /我已核对/ }),
+      screen.queryByRole("region", { name: "智能体冲突" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "核对与生成" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "文件生成操作" })).toBeVisible();
     await openTemplates();
     await user.click(
       within(toolbar).getByRole("button", { name: "下载配套模板" }),
@@ -740,8 +764,9 @@ async function exerciseWorkflowTabs(
     await waitFor(() => expect(downloads).toContain("文书填报_配套模板.zip"));
     await user.keyboard("{Escape}");
     await openTemplates();
-    await user.click(screen.getByRole("tab", { name: "第二项" }));
+    await user.click(screen.getByRole("tab", { name: "内容填写" }));
     expect(templateMenu.parentElement).not.toHaveAttribute("open");
+    await user.click(screen.getByRole("tab", { name: "第二项" }));
     await user.type(screen.getByLabelText("流程字段二"), "尚未保存");
     await user.click(screen.getByRole("tab", { name: "审批资料" }));
     expect(exportButton).toBeVisible();
@@ -1644,14 +1669,21 @@ it("keeps a single project form in the middle while questions and Office preview
   await within(right).findByText("请核对本阶段材料清单。");
   expect(field).toHaveValue("正在填写的内容");
   await user.click(within(right).getByRole("tab", { name: "预览" }));
-  expect(within(right).getByText(/建议打印 7 份/)).toBeVisible();
-  await user.click(
-    within(right).getByRole("button", { name: "下载" + filename }),
-  );
+  expect(within(right).getByText(/从「文件生成」/)).toBeVisible();
+  expect(within(right).queryByText(/建议打印 7 份/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "文件生成" }));
+  const generated = within(screen.getByRole("tabpanel", { name: "文件生成" }));
+  expect(generated.getByText(/建议打印 7 份/)).toBeVisible();
+  await user.click(generated.getByRole("button", { name: "下载" + filename }));
   await waitFor(() => expect(downloaded).toContain(filename));
-  await user.click(within(right).getByRole("button", { name: "打包下载" }));
+  await user.click(generated.getByRole("button", { name: /打包下载/ }));
   await waitFor(() => expect(downloaded).toContain("三栏测试项目_文书.zip"));
-  await user.click(within(right).getByRole("button", { name: filename }));
+  await user.click(
+    generated.getByRole("button", { name: /^01_商务谈判文件_三栏测试\.docx/ }),
+  );
+  expect(
+    within(right).queryByRole("button", { name: /下载当前文件|就此文件提问/ }),
+  ).not.toBeInTheDocument();
   await within(right).findByRole("button", { name: "文字预览" });
   await user.click(within(right).getByRole("button", { name: "文字预览" }));
   await within(right).findByTestId("right-office-preview");
@@ -1662,7 +1694,7 @@ it("keeps a single project form in the middle while questions and Office preview
   expect(officePreview).toBeVisible();
 
   expect(field).toHaveValue("正在填写的内容");
-  await user.click(within(right).getByRole("button", { name: /就此文件提问/ }));
+  await user.click(generated.getByRole("button", { name: /就此文件提问/ }));
   expect(within(right).getByText("参考文件：" + filename)).toBeVisible();
   await user.type(
     within(right).getByLabelText("向项目智能体提问"),
@@ -1675,6 +1707,8 @@ it("keeps a single project form in the middle while questions and Office preview
     generation_id: "g1",
     name: filename,
   });
+  await user.click(screen.getByRole("tab", { name: "内容填写" }));
+  expect(field).toBeVisible();
   confirm.mockReturnValueOnce(false);
   await user.click(screen.getByRole("button", { name: "基础信息填报" }));
   expect(confirm).toHaveBeenCalled();
@@ -1682,6 +1716,11 @@ it("keeps a single project form in the middle while questions and Office preview
   await user.click(within(nav).getByRole("button", { name: /上报计划/ }));
   await screen.findByLabelText("主要研究内容（整段）");
   expect(confirm).toHaveBeenCalled();
+  await user.click(screen.getByRole("tab", { name: "文件生成" }));
+  expect(screen.getByText("本阶段还没有生成文件。")).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: /^01_商务谈判文件_三栏测试\.docx/ }),
+  ).not.toBeInTheDocument();
   await user.click(within(nav).getByRole("button", { name: /商务谈判/ }));
   await screen.findByLabelText("主要研究内容（整段）");
   expect(screen.getByLabelText("节点办理概况")).toHaveTextContent("今天到期");
@@ -1858,17 +1897,9 @@ it("fills plan-specific information, keeps common fields in the basic profile an
       }
       return reply(state);
     }
-    if (url.endsWith("/review"))
-      return reply({
-        checks: [{ label: "填写信息", status: "ok", detail: "已填写" }],
-        can_generate: true,
-        review_token: "plan-token",
-        revision: state.revision,
-      });
     if (url.endsWith("/generate")) {
-      expect(JSON.parse(String(init?.body))).toMatchObject({
-        confirmed: true,
-        review_token: "plan-token",
+      expect(JSON.parse(String(init?.body))).toEqual({
+        revision: state.revision,
       });
       state.generations = [
         {
@@ -1996,17 +2027,18 @@ it("fills plan-specific information, keeps common fields in the basic profile an
     screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
   );
   expect(
-    within(screen.getByRole("region", { name: "核对与生成" })).getByText(
+    within(screen.getByRole("region", { name: "文件生成操作" })).getByText(
       /本次计划生成/,
     ),
   ).toBeInTheDocument();
   expect(screen.queryByText(/0 类按单位文书/)).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
-  await user.click(await screen.findByRole("checkbox", { name: /我已核对/ }));
   await user.click(screen.getByRole("tab", { name: "审批资料" }));
   await user.click(screen.getByRole("tab", { name: "内容填写" }));
-  expect(screen.getByRole("checkbox", { name: /我已核对/ })).toBeChecked();
-  await user.click(screen.getByRole("button", { name: "确认并生成 2 份文书" }));
+  await user.click(screen.getByRole("tab", { name: "文件生成" }));
+  expect(
+    screen.queryByRole("checkbox", { name: /我已核对/ }),
+  ).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "生成文件" }));
   const dock = screen.getByRole("complementary", {
     name: "项目智能体与文件预览",
   });
@@ -2015,7 +2047,7 @@ it("fills plan-specific information, keeps common fields in the basic profile an
   });
   const fileList = document.querySelector(".df-results-docked") as HTMLElement;
   expect(fileList).toBeInTheDocument();
-  expect(screen.queryByLabelText("申报备注")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("申报备注")).not.toBeVisible();
   expect(
     within(fileList).getByRole("button", { name: /打包下载/ }),
   ).toBeInTheDocument();
@@ -2320,7 +2352,7 @@ it("automatically loads the five bundled templates and downloads their blank Exc
 describe.each(["embedded", "compatible"])(
   "UGSci document forms packaged page (%s)",
   (previewMode) => {
-    it("imports Excel, edits the real form, requires review and confirmation, then previews generated Word with the host Office component", async () => {
+    it("imports Excel, edits the real form, generates without manual confirmation, then previews generated Word with the host Office component", async () => {
       const user = userEvent.setup();
       let Page: React.ComponentType = () => null;
       let state: FormCaseFixture = {
@@ -2455,16 +2487,8 @@ describe.each(["embedded", "compatible"])(
             recipients: body.recipients,
           };
           result = state;
-        } else if (url.endsWith("/review"))
-          result = {
-            can_generate: true,
-            checks: [],
-            review_token: "review-1",
-            revision: state.revision,
-          };
-        else if (url.endsWith("/generate")) {
-          expect(body.confirmed).toBe(true);
-          expect(body.review_token).toBe("review-1");
+        } else if (url.endsWith("/generate")) {
+          expect(body).toEqual({ revision: state.revision });
           state = {
             ...state,
             generations: [
@@ -2650,13 +2674,13 @@ describe.each(["embedded", "compatible"])(
         screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
       );
       const generationFooter = screen.getByRole("region", {
-        name: "核对与生成",
+        name: "文件生成操作",
       });
       expect(generationFooter.parentElement?.lastElementChild).toBe(
         generationFooter,
       );
       expect(generationFooter).toContainElement(
-        screen.getByRole("button", { name: "核对填写内容 →" }),
+        screen.getByRole("button", { name: "生成文件" }),
       );
       expect(
         screen
@@ -2670,27 +2694,16 @@ describe.each(["embedded", "compatible"])(
       await user.click(
         screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
       );
-      await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
-      await screen.findByText("资料已齐备，请确认本次内容。");
+      await user.click(screen.getByRole("button", { name: "生成文件" }));
+      await screen.findByText("2 份文件已生成");
       expect(
-        screen.getByRole("button", { name: "确认并生成 2 份文书" }),
-      ).toBeDisabled();
-      expect(calls.filter((c) => c.url.endsWith("/generate"))).toHaveLength(0);
+        screen.queryByRole("checkbox", { name: /我已核对/ }),
+      ).not.toBeInTheDocument();
+      expect(calls.filter((c) => c.url.endsWith("/review"))).toHaveLength(0);
       expect(state.fields[0].value).toBe("新项目");
       expect(state.fields[1].value).toBe("第一项\n第二项\n第三项");
       expect(state.fields[3].value).toBe("2026-10-22 14:30 ~ 2026-10-22 17:30");
-      expect(screen.getByText("2026年9月30日")).toBeInTheDocument();
-      expect(
-        screen.getByText("2026年10月22日下午14:30至17:30"),
-      ).toBeInTheDocument();
-      await user.click(screen.getByRole("checkbox"));
-      await user.click(
-        screen.getByRole("button", { name: "确认并生成 2 份文书" }),
-      );
-      await screen.findByText("2 份文件已生成");
-      expect(
-        screen.getByText(/共用文件 · 41 KB · 建议打印 7 份/),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/建议打印 7 份/)).toBeInTheDocument();
       await waitFor(
         () => {
           const feedback = screen.queryByRole("alert")?.textContent;
@@ -3039,31 +3052,29 @@ async function exerciseSelectionPage(linked = false, paste = false) {
       }
       return reply(state);
     }
-    if (url.endsWith("/review")) {
+    if (url.endsWith("/generate")) {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        revision: state.revision,
+      });
       const memberName = state.fields.find(
         (f) => f.key === "selection.member1_name",
       )!.value;
-      return reply({
-        checks: memberName
-          ? []
-          : [
-              {
-                status: "missing",
-                field: "selection.member1_name",
-                label: "成员1姓名",
-                detail: "请补充成员姓名",
-              },
-            ],
-        can_generate: !!memberName,
-        review_token: "selection-token",
-        revision: state.revision,
-      });
-    }
-    if (url.endsWith("/generate")) {
-      expect(JSON.parse(String(init?.body))).toMatchObject({
-        confirmed: true,
-        review_token: "selection-token",
-      });
+      if (!memberName)
+        return new Response(
+          JSON.stringify({
+            detail: {
+              issues: [
+                {
+                  field: "selection.member1_name",
+                  label: "成员1姓名",
+                  detail: "请补充成员姓名",
+                  status: "missing",
+                },
+              ],
+            },
+          }),
+          { status: 422 },
+        );
       state.generations = [
         {
           id: "selection-g1",
@@ -3215,7 +3226,7 @@ async function exerciseSelectionPage(linked = false, paste = false) {
   await user.click(
     screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
   );
-  await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
+  await user.click(screen.getByRole("button", { name: "生成文件" }));
   await screen.findByText("请补充成员姓名");
   await user.click(screen.getByRole("button", { name: "修改" }));
   await waitFor(() => expect(screen.getByLabelText("成员1姓名")).toHaveFocus());
@@ -3227,19 +3238,13 @@ async function exerciseSelectionPage(linked = false, paste = false) {
   await user.click(
     screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
   );
-  await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
+  await user.click(screen.getByRole("button", { name: "生成文件" }));
   expect(
-    screen.getByRole("button", { name: "确认并生成 2 份文书" }),
-  ).toBeDisabled();
-  await user.click(
-    screen.getByRole("checkbox", {
-      name: "我已核对论证意见、候选单位、成员与系统填报信息",
-    }),
-  );
-  await user.click(screen.getByRole("button", { name: "确认并生成 2 份文书" }));
+    screen.queryByRole("checkbox", { name: /我已核对/ }),
+  ).not.toBeInTheDocument();
   const list = document.querySelector(".df-results-docked") as HTMLElement;
   await waitFor(() => expect(list).toBeInTheDocument());
-  expect(screen.queryByLabelText("项目概况")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("项目概况")).not.toBeVisible();
   await user.click(
     within(list).getByRole("button", { name: /^02_非招标方案填报/ }),
   );
@@ -3811,7 +3816,7 @@ it("groups negotiation content into five ordered tabs without duplicating fields
       required: true,
     })),
     recipients: [
-      { name: "甲单位", start: "2026-11-03T09:00", end: "2026-11-03T10:00" },
+      { name: "甲单位", start: "2026-11-03T09:00", end: "", follow_end: false },
     ],
     templates: [
       { id: "t", name: "谈判模板.docx", keys: [], per_recipient: false },
@@ -3832,7 +3837,8 @@ it("groups negotiation content into five ordered tabs without duplicating fields
     stages: stageIds.map((id, i) => ({
       id,
       title: stageNames[i],
-      status: "pending",
+      status: id === "selection" ? "completed" : "pending",
+      approval_date: id === "selection" ? "2026-11-06" : undefined,
       purpose: "",
       materials: [],
       upstream_changed: [],
@@ -3864,18 +3870,55 @@ it("groups negotiation content into five ordered tabs without duplicating fields
       }
       return reply(state);
     }
-    if (url.endsWith("/review"))
+    if (url.endsWith("/validate")) {
+      const body = JSON.parse(String(init?.body));
+      const firstEnd = body.recipients[0]?.end;
       return reply({
-        checks: [
-          {
-            field: "workload.items",
-            label: "实物工作量",
-            status: "missing",
-            detail: "请补充实物工作量",
-          },
+        issues: [
+          ...(body.values["project.background"].includes("追加原句")
+            ? [
+                {
+                  field: "project.background",
+                  label: "项目背景",
+                  status: "error",
+                  detail: "项目背景与技术要求冲突",
+                },
+              ]
+            : []),
+          ...(firstEnd === "2026-11-07T17:30"
+            ? [
+                {
+                  field: "recipient-0-end",
+                  status: "error",
+                  detail:
+                    "领取结束时间不能晚于答疑截止时间（2026-11-07 15:00）。",
+                },
+                {
+                  field: "recipient-0-end",
+                  status: "error",
+                  detail: "领取结束时间不能晚于谈判时间（2026-11-07 16:00）。",
+                },
+              ]
+            : []),
         ],
-        can_generate: false,
       });
+    }
+    if (url.endsWith("/generate"))
+      return new Response(
+        JSON.stringify({
+          detail: {
+            issues: [
+              {
+                field: "workload.items",
+                label: "实物工作量",
+                detail: "请补充实物工作量",
+                status: "missing",
+              },
+            ],
+          },
+        }),
+        { status: 422 },
+      );
     throw new Error("Unexpected grouping request: " + url);
   });
   Object.defineProperty(window, "QwenPaw", {
@@ -3911,7 +3954,6 @@ it("groups negotiation content into five ordered tabs without duplicating fields
     "受邀单位与资格要求",
     "谈判要求",
     "实施方案",
-    "文件生成",
   ]);
   const expected = [
     ["项目研究内容", definitions.slice(0, 5)],
@@ -3938,6 +3980,24 @@ it("groups negotiation content into five ordered tabs without duplicating fields
     }
     if (tab === "受邀单位与资格要求") {
       expect(screen.getByLabelText("第1家单位名称")).toBeVisible();
+      const start = screen.getByLabelText("第1家领取开始时间");
+      const end = screen.getByLabelText("第1家领取结束时间");
+      expect(start).toHaveAccessibleDescription(/审批日期（2026-11-06）/);
+      fireEvent.change(start, { target: { value: "2026-11-06T09:00" } });
+      expect(start).toHaveAttribute("aria-invalid", "true");
+      expect(end).toHaveValue("2026-11-06T17:30");
+      fireEvent.change(start, { target: { value: "2026-11-07T09:00" } });
+      expect(start).not.toHaveAttribute("aria-invalid");
+      expect(end).toHaveValue("2026-11-07T17:30");
+      expect(
+        await screen.findByText(/领取结束时间不能晚于答疑截止时间/),
+      ).toBeVisible();
+      expect(end).toHaveAccessibleDescription(/答疑截止时间.*谈判时间/);
+      expect(end).toHaveAttribute("aria-invalid", "true");
+      expect(start).not.toHaveAttribute("aria-invalid");
+      fireEvent.change(end, { target: { value: "2026-11-07T14:30" } });
+      expect(end).not.toHaveAttribute("aria-invalid");
+      fireEvent.change(end, { target: { value: "2026-11-07T18:10" } });
       fireEvent.change(screen.getByLabelText("第1家单位名称"), {
         target: { value: "甲单位（保留）" },
       });
@@ -3945,12 +4005,26 @@ it("groups negotiation content into five ordered tabs without duplicating fields
       fireEvent.change(screen.getByLabelText("第2家单位名称"), {
         target: { value: "乙单位" },
       });
+      fireEvent.change(screen.getByLabelText("第2家领取开始时间"), {
+        target: { value: "2026-11-09T09:00" },
+      });
+      fireEvent.change(start, { target: { value: "2026-11-08T09:00" } });
+      expect(end).toHaveValue("2026-11-08T18:10");
+      expect(screen.getByLabelText("第2家领取结束时间")).toHaveValue(
+        "2026-11-09T18:10",
+      );
     }
   }
   await user.click(within(tabs).getByRole("tab", { name: "项目研究内容" }));
   fireEvent.change(screen.getByLabelText("项目背景"), {
     target: { value: "项目背景原文追加原句。" },
   });
+  expect(await screen.findByText("项目背景与技术要求冲突")).toBeVisible();
+  expect(screen.getByLabelText("项目背景")).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  expect(saves).toHaveLength(0);
   await user.click(
     within(screen.getByRole("tablist", { name: "填写内容分组" })).getByRole(
       "tab",
@@ -3966,8 +4040,8 @@ it("groups negotiation content into five ordered tabs without duplicating fields
   expect(screen.getByLabelText("实物工作量")).toHaveValue(
     "实物工作量原文新增工作量。",
   );
-  await user.click(within(tabs).getByRole("tab", { name: "文件生成" }));
-  await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
+  await user.click(screen.getByRole("tab", { name: "文件生成" }));
+  await user.click(screen.getByRole("button", { name: "生成文件" }));
   await screen.findByText("请补充实物工作量");
   expect(saves).toHaveLength(1);
   expect(saves[0].values["project.background"]).toBe("项目背景原文追加原句。");

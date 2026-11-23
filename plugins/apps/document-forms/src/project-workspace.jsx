@@ -35,9 +35,6 @@ const AppBrandIcon = () =>
     }),
   );
 
-
-
-
 const STATUS = {
   pending: "未开始",
   in_progress: "进行中",
@@ -238,7 +235,9 @@ function deadline(stage, today) {
     return {
       kind: "done",
       text: stage.approval_date
-        ? `批复日期 ${stage.approval_date}`
+        ? `${stage.id === "selection" ? "审批日期" : "批复日期"} ${
+            stage.approval_date
+          }`
         : stage.due_date
         ? `计划日期 ${stage.due_date} · 已办结`
         : "已办结",
@@ -560,9 +559,14 @@ export default function ProjectWorkspace({ Editor, services }) {
       setNotice(
         updatedStage?.status === "completed" &&
           updatedStage.completion_file_id === uploaded?.id
-          ? `审批文件已保存，本阶段已自动标记为已完成，批复日期 ${updatedStage.approval_date}。`
-          : uploaded?.approval_review?.status === "ready"
+          ? `审批文件已保存，本阶段已自动标记为已完成，${
+              deadline(updatedStage, today).text
+            }。`
+          : uploaded?.approval_review?.status === "ready" &&
+            uploaded.approval_review.fields?.length
           ? `审批文件已保存，并识别出 ${uploaded.approval_review.fields.length} 项审批结果。`
+          : tab === "selection" && uploaded?.approval_review?.message
+          ? `审批文件已保存。${uploaded.approval_review.message}`
           : "材料已保存，原有版本继续保留。请核对后更新材料状态。",
       );
     });
@@ -570,6 +574,7 @@ export default function ProjectWorkspace({ Editor, services }) {
   const base = project ? `/projects/${project.id}` : "";
   const nodeTabs = [
     { id: "form", label: "内容填写" },
+    ...(project?.single_form ? [{ id: "generate", label: "文件生成" }] : []),
     ...(stage?.id === "negotiation"
       ? [{ id: "response", label: "响应文件核查" }]
       : []),
@@ -647,7 +652,13 @@ export default function ProjectWorkspace({ Editor, services }) {
           <span aria-hidden="true">{leftCollapsed ? "›" : "‹"}</span>
           <span>{leftCollapsed ? "项目" : "收起"}</span>
         </button>
-        <div className="df-brand" style={{ display: "flex", alignItems: "center", gap: 10 }}><AppBrandIcon />外协助手</div>
+        <div
+          className="df-brand"
+          style={{ display: "flex", alignItems: "center", gap: 10 }}
+        >
+          <AppBrandIcon />
+          外协助手
+        </div>
         <button
           className="df-primary df-new"
           disabled={!!busy || !!editorBusy}
@@ -1117,10 +1128,23 @@ export default function ProjectWorkspace({ Editor, services }) {
                     </section>
                   )}
                   <div
-                    id="df-node-panel-form"
-                    role="tabpanel"
-                    aria-labelledby="df-node-tab-form"
-                    hidden={nodeTab !== "form"}
+                    id={
+                      project.single_form && editor
+                        ? undefined
+                        : "df-node-panel-form"
+                    }
+                    role={
+                      project.single_form && editor ? undefined : "tabpanel"
+                    }
+                    aria-labelledby={
+                      project.single_form && editor
+                        ? undefined
+                        : "df-node-tab-form"
+                    }
+                    hidden={
+                      nodeTab !== "form" &&
+                      !(project.single_form && editor && nodeTab === "generate")
+                    }
                   >
                     <div id="df-node-form">
                       {editor && (
@@ -1154,6 +1178,12 @@ export default function ProjectWorkspace({ Editor, services }) {
                           }}
                           onChanged={() => reload()}
                           docked={project.single_form}
+                          nodeTab={nodeTab}
+                          selectedOutput={selection?.reference}
+                          onAskAboutOutput={() => {
+                            setRightCollapsed(false);
+                            setDockMode("assistant");
+                          }}
                           toolbarTarget={toolbarTarget}
                           onShowForm={() => setNodeTab("form")}
                           onDownloadStageMaterials={() =>
@@ -1171,6 +1201,7 @@ export default function ProjectWorkspace({ Editor, services }) {
                           onPreview={(item) => {
                             setSelection(item);
                             setPreview(null);
+                            setRightCollapsed(false);
                             setDockMode("preview");
                           }}
                         />
@@ -1206,7 +1237,7 @@ export default function ProjectWorkspace({ Editor, services }) {
                         </div>
                         {project.single_form ? (
                           <p className="df-muted">
-                            每个项目共用一份表单，七个阶段各办理一次。已有文书与历史底稿可在右侧查看。
+                            每个项目共用一份表单，七个阶段各办理一次。
                           </p>
                         ) : forms.length ? (
                           <div className="df-project-forms">
@@ -1255,6 +1286,22 @@ export default function ProjectWorkspace({ Editor, services }) {
                       </section>
                     )}
                   </div>
+                  {project.single_form && !editor && (
+                    <section
+                      className="df-paper df-stage-forms"
+                      id="df-node-panel-generate"
+                      role="tabpanel"
+                      aria-labelledby="df-node-tab-generate"
+                      hidden={nodeTab !== "generate"}
+                    >
+                      <button
+                        className="df-primary"
+                        onClick={() => createForm()}
+                      >
+                        打开项目表单
+                      </button>
+                    </section>
+                  )}
                   {stage.id === "negotiation" && (
                     <section
                       className="df-paper df-review-entry"
@@ -1426,7 +1473,10 @@ export default function ProjectWorkspace({ Editor, services }) {
                                 </span>
                                 {generated > 0 && (
                                   <small>
-                                    已有 {generated} 份生成稿 · 在上方表单查看
+                                    已有 {generated} 份生成稿 ·{" "}
+                                    {project.single_form
+                                      ? "在文件生成中查看"
+                                      : "在上方表单查看"}
                                   </small>
                                 )}
                                 {m.note && <p>{m.note}</p>}

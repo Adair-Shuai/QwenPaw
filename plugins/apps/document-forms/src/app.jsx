@@ -9,14 +9,41 @@ const Q = window.QwenPaw,
   React = Q.host.React;
 const { useState, useEffect, useLayoutEffect, useRef } = React;
 const API = "/document-forms";
-const MIME =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+function generatedSelection(caseId, generation, file) {
+  return {
+    artifact: {
+      id: generation.id + file.name,
+      title: file.name,
+      source: "generated",
+      extension: file.name.endsWith(".xlsx") ? "xlsx" : "docx",
+      mimeType: file.name.endsWith(".xlsx")
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      binaryUrl: file.preview_url,
+      printUrl:
+        API +
+        `/cases/${caseId}/print/${generation.id}/${encodeURIComponent(
+          file.name,
+        )}`,
+      agentId: Q.host.getSelectedAgentId?.(),
+      createdAt: Date.parse(generation.created_at),
+    },
+    reference: {
+      case_id: caseId,
+      generation_id: generation.id,
+      name: file.name,
+    },
+  };
+}
+
 async function request(path, init) {
   const response = await Q.host.fetch(API + path, init);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(
-      typeof data.detail === "string"
+    const error = new Error(
+      typeof data.detail?.message === "string"
+        ? data.detail.message
+        : typeof data.detail === "string"
         ? data.detail
         : Array.isArray(data.detail)
         ? data.detail
@@ -27,6 +54,8 @@ async function request(path, init) {
             .join("；")
         : `操作未完成（${response.status}），请检查填写内容`,
     );
+    error.issues = data.detail?.issues;
+    throw error;
   }
   return response.json();
 }
@@ -66,18 +95,32 @@ const compactParagraph = (field) =>
   /^(research\.contents|deliverables\.|metrics\.|milestones\.)/.test(
     field.key,
   ) || /主要研究内容|预期成果|考核指标|进度安排/.test(field.label);
-function recipientDefaults(recipients) {
-  return recipients.map((recipient, index) => {
-    const result = { ...recipient };
+const recipientDate = (value) =>
+  value?.match(/^\d{4}-\d{2}-\d{2}(?=[T ]|$)/)?.[0];
+
+function recipientDefaults(recipients, previous) {
+  const rows = recipients.map((recipient) => ({ ...recipient }));
+  for (const [index, row] of rows.entries()) {
+    const endWasUnspecified = typeof row.follow_end !== "boolean" && !row.end;
     for (const key of ["start", "end"]) {
       const flag = "follow_" + key;
-      result[flag] =
-        index > 0 &&
-        (typeof result[flag] === "boolean" ? result[flag] : !result[key]);
-      if (result[flag]) result[key] = recipients[0][key];
+      row[flag] =
+        index > 0 && (typeof row[flag] === "boolean" ? row[flag] : !row[key]);
+      row[key] = (row[flag] ? rows[0][key] : row[key]) || "";
     }
-    return result;
-  });
+    const day = recipientDate(row.start);
+    const startChanged = previous && row.start !== previous[index].start;
+    const followsFirstClock =
+      row.follow_end && row.end && day !== recipientDate(rows[0].start);
+    if (
+      day &&
+      (startChanged || followsFirstClock || (endWasUnspecified && !row.end))
+    ) {
+      const clock = row.end.match(/[T ](\d{2}:\d{2}(?::\d{2})?)$/)?.[1];
+      row.end = day + "T" + (clock || "17:30");
+    }
+  }
+  return rows;
 }
 function PlanPartnersField({ field, onChange }) {
   const names = ["", "", ""];
@@ -120,8 +163,35 @@ function PlanPartnersField({ field, onChange }) {
     </div>
   );
 }
-function Field({ field, displayValue, onChange }) {
+function DraftConflicts({ title, issues, onFix }) {
+  if (!issues.length) return null;
+  return (
+    <section className="df-paper" aria-label={title}>
+      <h3>{title}</h3>
+      <div className="df-checks" aria-live="polite">
+        {issues.map(({ label, detail, status, field }, index) => (
+          <div key={index} className={"df-check " + status}>
+            <span>{status === "missing" ? "待补充" : "冲突"}</span>
+            <div>
+              <b>{label}</b>
+              <p>{detail}</p>
+            </div>
+            {field && <button onClick={() => onFix(field)}>修改</button>}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Field({ field, displayValue, onChange, issue }) {
   const inputId = "df-input-" + field.key;
+  const validation = issue
+    ? {
+        "aria-invalid": true,
+        "aria-describedby": inputId + "-error",
+      }
+    : {};
   const multiline = field.key !== "plan.notes" && isParagraph(field);
   const linked = field.linked_template !== undefined;
   const compact = compactParagraph(field) || linked;
@@ -156,6 +226,7 @@ function Field({ field, displayValue, onChange }) {
           id={inputId}
           aria-label={field.label}
           aria-required={field.required || undefined}
+          {...validation}
           value={value}
           onChange={(e) => onChange(e.target.value)}
         >
@@ -177,6 +248,7 @@ function Field({ field, displayValue, onChange }) {
           ref={textarea}
           aria-label={field.label}
           aria-required={field.required || undefined}
+          {...validation}
           rows={compact ? 3 : 8}
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -186,12 +258,18 @@ function Field({ field, displayValue, onChange }) {
           id={inputId}
           aria-label={field.label}
           aria-required={field.required || undefined}
+          {...validation}
           type={field.key === "plan.notes" ? "text" : field.kind}
           readOnly={!!field.read_only}
           step={field.kind === "number" ? "any" : undefined}
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />
+      )}
+      {issue && (
+        <small id={inputId + "-error"} className="df-field-validation">
+          {issue.detail}
+        </small>
       )}
     </div>
   );
@@ -310,6 +388,9 @@ function Workbench({
   onViewChange,
   docked = false,
   onPreview,
+  nodeTab,
+  selectedOutput,
+  onAskAboutOutput,
   onStageStatus,
   onEditBasics,
   toolbarTarget,
@@ -322,8 +403,9 @@ function Workbench({
   const [selectedKeys, setSelectedKeys] = useState([]);
   const [stage, setStage] = useState("import"),
     [dirty, setDirty] = useState(false);
-  const [review, setReview] = useState(null),
-    [confirmed, setConfirmed] = useState(false);
+  const [fillingIssues, setFillingIssues] = useState([]);
+  const [ruleIssues, setRuleIssues] = useState([]);
+  const [agentIssues, setAgentIssues] = useState([]);
   const [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -373,7 +455,6 @@ function Workbench({
   useEffect(() => {
     if (editRequest) {
       setStage("edit");
-      setConfirmed(false);
     }
   }, [editRequest]);
   useEffect(() => {
@@ -406,13 +487,13 @@ function Workbench({
     } catch (e) {
       if (alive.current && ticket === seq.current) {
         setError(e.message);
-        onShowForm?.();
+        if (nodeTab !== "generate") onShowForm?.();
       }
     } finally {
       if (alive.current && ticket === seq.current) setBusy("");
     }
   }
-  function receive(data) {
+  function receive(data, { retainAgent = false } = {}) {
     if (!alive.current) return;
     setDraft({
       ...data,
@@ -422,15 +503,17 @@ function Workbench({
       ),
     });
     setDirty(false);
-    setStage((current) => (current === "review" ? "edit" : current));
-    setReview(null);
-    setConfirmed(false);
+    setFillingIssues([]);
+    setRuleIssues([]);
+    if (!retainAgent) setAgentIssues([]);
   }
   function edit(update) {
     setDraft({ ...update, fields: refreshLinkedFields(update.fields) });
     setDirty(true);
-    setReview(null);
-    setConfirmed(false);
+    if (docked) setStage("edit");
+    setFillingIssues([]);
+    setRuleIssues([]);
+    setAgentIssues([]);
     setNotice("");
   }
   function editRecipient(index, key, value, follow = false) {
@@ -443,11 +526,16 @@ function Workbench({
           }
         : recipient,
     );
-    edit({ ...draft, recipients: recipientDefaults(recipients) });
+    edit({
+      ...draft,
+      recipients: recipientDefaults(
+        recipients,
+        key === "start" ? draft.recipients : undefined,
+      ),
+    });
   }
-  async function saveDraft() {
-    if (!dirty) return draft;
-    const body = {
+  function draftContent() {
+    return {
       revision: draft.revision,
       name: draft.name.trim() || "未命名填报",
       values: Object.fromEntries(draft.fields.map((f) => [f.key, f.value])),
@@ -458,11 +546,14 @@ function Workbench({
           .map((f) => [f.key, f.linked_template]),
       ),
     };
+  }
+  async function saveDraft() {
+    if (!dirty) return draft;
     const data = await request("/cases/" + draft.id, {
-      ...json(body),
+      ...json(draftContent()),
       method: "PUT",
     });
-    receive(data);
+    receive(data, { retainAgent: true });
     return data;
   }
   function canLeave() {
@@ -474,6 +565,12 @@ function Workbench({
   const isContract = draft?.stage_id === "contract";
   const isNegotiation =
     (workflowStage?.id || draft?.stage_id) === "negotiation";
+  const selectionApproval = isNegotiation
+    ? project?.stages?.find(
+        (item) => item.id === "selection" && item.status === "completed",
+      )
+    : undefined;
+  const selectionApprovalDate = recipientDate(selectionApproval?.approval_date);
   const tabFor = (field) =>
     fieldTab(field, isNegotiation ? "negotiation" : undefined);
   const recipientsTab = isNegotiation ? negotiationTabs[2] : "recipients";
@@ -509,33 +606,68 @@ function Workbench({
     ...(!hasSharedReferences && !isNegotiation
       ? [{ id: "recipients", label: "受邀单位" }]
       : []),
-    { id: "generate", label: docked ? "文件生成" : "模板与生成", align: "end" },
+    ...(!docked ? [{ id: "generate", label: "模板与生成", align: "end" }] : []),
   ];
   const activeFormTab = formTabs.some((item) => item.id === formTab)
     ? formTab
-    : formTabs[0].id;
+    : formTabs[0]?.id;
   const templates = draft?.templates || [];
   const outputCount = templates.reduce(
     (n, t) => n + (t.per_recipient ? draft.recipients.length : 1),
     0,
   );
+  const isStageGeneration = (generation, form) =>
+    (generation.stage_id || form.original_stage_id || form.stage_id) ===
+    workflowStage.id;
   const visibleGenerations = (draft?.generations || []).filter(
-    (g) =>
-      !docked ||
-      (g.stage_id || draft.original_stage_id || workflowStage.id) ===
-        workflowStage.id,
+    (generation) => !docked || isStageGeneration(generation, draft),
   );
   const generation = visibleGenerations[0];
+  const historicalForms = docked
+    ? project.forms.filter(
+        (form) => form.case_id !== (draft?.id || project.form_id),
+      )
+    : [];
+  const batches = [
+    ...visibleGenerations.map((batch) => ({ caseId: draft.id, batch })),
+    ...historicalForms.flatMap((form) =>
+      form.generations
+        .filter((batch) => isStageGeneration(batch, form))
+        .map((batch) => ({ caseId: form.case_id, batch })),
+    ),
+  ];
   useEffect(() => {
-    if (
-      docked &&
-      stage === "files" &&
-      generation &&
-      !visibleGenerations.some((g) => g.id === preview?.generation.id)
-    )
-      setPreview({ file: generation.files[0], generation });
-  }, [stage, generation?.id]);
-  const issues = review?.checks.filter((r) => r.status !== "ok") || [];
+    if (!draft || busy || stage !== "edit" || (docked && nodeTab !== "form"))
+      return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const result = await request("/cases/" + draft.id + "/validate", {
+          ...json(draftContent()),
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) setFillingIssues(result.issues);
+      } catch {
+        // Generation validates again even if live validation is unavailable.
+        if (!controller.signal.aborted) setFillingIssues([]);
+      }
+    }, 350);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [draft, busy, stage, nodeTab, docked, selectionApprovalDate]);
+
+  function fixableIssues(items) {
+    return items.map((issue) => ({
+      ...issue,
+      field:
+        draft.fields.some((f) => f.key === issue.field) ||
+        /^recipient-\d+(?:-start|-end)?$/.test(issue.field)
+          ? issue.field
+          : "",
+    }));
+  }
   async function importExcel(file) {
     if (!file || !canLeave()) return;
     await run("读取 Excel", async () => {
@@ -585,36 +717,44 @@ function Workbench({
       setNotice("Word 模板已添加，生成时会保留原有排版。");
     });
   }
-  async function reviewDraft() {
-    await run("核对资料", async () => {
-      const saved = await saveDraft();
+  async function checkWithAgent() {
+    await run("智能体核查", async () => {
+      setAgentIssues([]);
       const result = await request(
-        "/cases/" + saved.id + "/review",
-        json({ revision: saved.revision }),
+        "/cases/" + draft.id + "/agent-check",
+        json(draftContent()),
       );
       if (!alive.current) return;
-      setReview(result);
-      setConfirmed(false);
-      setStage("review");
-      await refresh();
+      setAgentIssues(result.issues);
+      if (!result.issues.length) setNotice("智能体未发现冲突。");
     });
   }
   async function generate() {
     await run("生成文书", async () => {
-      const data = await request(
-        "/cases/" + draft.id + "/generate",
-        json({
-          revision: draft.revision,
-          review_token: review.review_token,
-          confirmed,
-        }),
-      );
-      receive(data);
-      setStage("files");
-      setPreview({
-        file: data.generations[0].files[0],
-        generation: data.generations[0],
-      });
+      setRuleIssues([]);
+      const saved = await saveDraft();
+      let data;
+      try {
+        data = await request(
+          "/cases/" + saved.id + "/generate",
+          json({ revision: saved.revision }),
+        );
+      } catch (error) {
+        if (!Array.isArray(error.issues)) throw error;
+        if (alive.current) setRuleIssues(error.issues);
+        return;
+      }
+      if (!alive.current) return;
+      receive(data, { retainAgent: true });
+      const batch = data.generations[0];
+      const file = batch.files[0];
+      if (docked) {
+        setStage("edit");
+        if (file) onPreview(generatedSelection(data.id, batch, file));
+      } else {
+        setStage("files");
+        setPreview({ file, generation: batch });
+      }
       await refresh();
     });
   }
@@ -632,53 +772,29 @@ function Workbench({
         : "generate",
     );
     setStage("edit");
+    if (field || key.startsWith("recipient-")) onShowForm?.();
     requestAnimationFrame(() => {
       const el = document.getElementById("df-" + key);
       el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-      el?.querySelector("input,textarea,select")?.focus();
+      const controls = "input,textarea,select";
+      const input = el?.matches(controls) ? el : el?.querySelector(controls);
+      input?.focus();
     });
   }
-  const filePath = (g, f) =>
-    `/cases/${draft.id}/outputs/${g.id}/${encodeURIComponent(f)}`;
-  function downloadBundle(batch) {
+  const filePath = (caseId, batch, filename) =>
+    `/cases/${caseId}/outputs/${batch.id}/${encodeURIComponent(filename)}`;
+  function downloadBundle(caseId, batch) {
     return run("正在下载压缩包", async () => {
       await download(
-        filePath(batch, "全部文书.zip"),
-        batch.bundle_name || draft.name + "_文书.zip",
+        filePath(caseId, batch, "全部文书.zip"),
+        batch.bundle_name || (docked ? project.name : draft.name) + "_文书.zip",
       );
       setNotice(`已开始下载该批次的 ${batch.files.length} 份文书压缩包。`);
     });
   }
-  const artifact = preview
-    ? {
-        id: preview.generation.id + preview.file.name,
-        title: preview.file.name,
-        source: "generated",
-        mimeType: preview.file.name.endsWith(".xlsx")
-          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          : MIME,
-        extension: preview.file.name.endsWith(".xlsx") ? "xlsx" : "docx",
-        binaryUrl: preview.file.preview_url,
-        printUrl:
-          API +
-          `/cases/${draft.id}/print/${
-            preview.generation.id
-          }/${encodeURIComponent(preview.file.name)}`,
-        agentId: Q.host.getSelectedAgentId?.(),
-        createdAt: Date.parse(preview.generation.created_at),
-      }
+  const artifact = preview?.file
+    ? generatedSelection(draft.id, preview.generation, preview.file).artifact
     : null;
-  useEffect(() => {
-    if (docked && stage === "files" && artifact)
-      onPreview?.({
-        artifact,
-        reference: {
-          case_id: draft.id,
-          generation_id: preview.generation.id,
-          name: preview.file.name,
-        },
-      });
-  }, [stage, preview?.generation.id, preview?.file.name]);
   async function exportExcel() {
     await run("导出 Excel", async () => {
       const data = await saveDraft();
@@ -827,38 +943,92 @@ function Workbench({
               ["name", "单位名称"],
               ["start", "领取开始时间"],
               ["end", "领取结束时间"],
-            ].map(([key, label]) => (
-              <label
-                className={"df-field " + (key === "name" ? "df-span" : "")}
-                key={key}
-              >
-                <span>{label}</span>
-                <input
-                  aria-label={`第${i + 1}家${label}`}
-                  type={key === "name" ? "text" : "datetime-local"}
-                  value={key === "name" ? r[key] : r[key].replace(" ", "T")}
-                  onChange={(e) => editRecipient(i, key, e.target.value)}
-                />
-                {i > 0 && key !== "name" && (
-                  <small className="df-follow-state">
-                    {r["follow_" + key] ? "跟随第1家" : "已单独设置"}
-                    {!r["follow_" + key] && (
-                      <button
-                        type="button"
-                        aria-label={`第${i + 1}家${label}恢复跟随`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          editRecipient(i, key, draft.recipients[0][key], true);
-                        }}
-                      >
-                        恢复跟随
-                      </button>
-                    )}
-                  </small>
-                )}
-              </label>
-            ))}
+            ].map(([key, label]) => {
+              const id = `df-recipient-${i}-${key}`;
+              const startDate = recipientDate(r.start);
+              const approvalIssue =
+                key === "start" &&
+                selectionApprovalDate &&
+                startDate &&
+                startDate <= selectionApprovalDate
+                  ? `领取开始日期必须晚于选商论证审批日期（${selectionApprovalDate}）。`
+                  : "";
+              const issues = fillingIssues
+                .filter(
+                  (item) =>
+                    item.status === "error" &&
+                    item.field === `recipient-${i}-${key}` &&
+                    item.detail !== approvalIssue,
+                )
+                .map((item) => item.detail);
+              if (approvalIssue) issues.unshift(approvalIssue);
+              return (
+                <div
+                  className={"df-field " + (key === "name" ? "df-span" : "")}
+                  key={key}
+                >
+                  <label htmlFor={id}>{label}</label>
+                  <input
+                    id={id}
+                    aria-label={`第${i + 1}家${label}`}
+                    aria-invalid={issues.length ? true : undefined}
+                    aria-describedby={issues.length ? id + "-error" : undefined}
+                    type={key === "name" ? "text" : "datetime-local"}
+                    value={key === "name" ? r[key] : r[key].replace(" ", "T")}
+                    onChange={(e) => editRecipient(i, key, e.target.value)}
+                  />
+                  {issues.length === 1 && (
+                    <small id={id + "-error"} className="df-field-validation">
+                      {issues[0]}
+                    </small>
+                  )}
+                  {issues.length > 1 && (
+                    <ul id={id + "-error"} className="df-field-validation">
+                      {issues.map((detail, index) => (
+                        <li key={index}>{detail}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {i > 0 && key !== "name" && (
+                    <small className="df-follow-state">
+                      {r["follow_" + key]
+                        ? key === "end"
+                          ? "时刻跟随第1家"
+                          : "跟随第1家"
+                        : "已单独设置"}
+                      {!r["follow_" + key] && (
+                        <button
+                          type="button"
+                          aria-label={`第${i + 1}家${label}恢复跟随`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            editRecipient(
+                              i,
+                              key,
+                              draft.recipients[0][key],
+                              true,
+                            );
+                          }}
+                        >
+                          恢复跟随
+                        </button>
+                      )}
+                    </small>
+                  )}
+                </div>
+              );
+            })}
           </div>
+          {fillingIssues
+            .filter(
+              (item) =>
+                item.status === "error" && item.field === "recipient-" + i,
+            )
+            .map((item, index) => (
+              <p className="df-field-validation" key={index}>
+                {item.detail}
+              </p>
+            ))}
         </div>
       ))}
     </section>
@@ -889,33 +1059,6 @@ function Workbench({
           </button>
           {templatePanel}
         </ToolbarMenu>
-        {stage !== "edit" && (
-          <button
-            disabled={!!busy}
-            onClick={() => {
-              setStage("edit");
-              setConfirmed(false);
-              onShowForm?.();
-            }}
-          >
-            <ToolbarIcon name="back" />
-            返回填写
-          </button>
-        )}
-        {generation && stage !== "files" && (
-          <button
-            title="查看生成文件"
-            aria-label="查看生成文件"
-            disabled={!!busy}
-            onClick={() => {
-              setStage("files");
-              onShowForm?.();
-            }}
-          >
-            <ToolbarIcon name="file" />
-            生成文件
-          </button>
-        )}
         <button
           aria-label="下载本阶段材料"
           title="下载本阶段材料"
@@ -1010,6 +1153,34 @@ function Workbench({
           <ToolbarIcon name="save" />
         </button>
       </div>
+    </>
+  );
+  const generationPlan = draft && (
+    <>
+      {!compact && templatePanel}
+      <DraftConflicts
+        title="规则冲突"
+        issues={fixableIssues(ruleIssues)}
+        onFix={focusField}
+      />
+      <DraftConflicts
+        title="智能体冲突"
+        issues={fixableIssues(agentIssues)}
+        onFix={focusField}
+      />
+      <section className="df-paper df-edit-footer" aria-label="文件生成操作">
+        <div className="df-generation-plan">
+          <p>
+            本次计划生成 <b>{outputCount}</b> 份文书
+          </p>
+        </div>
+        <div className="df-actions">
+          <button onClick={checkWithAgent}>智能体核查</button>
+          <button className="df-primary" onClick={generate}>
+            生成文件
+          </button>
+        </div>
+      </section>
     </>
   );
   return (
@@ -1123,28 +1294,12 @@ function Workbench({
           Q.host.ReactDOM.createPortal(toolbarContent, toolbarTarget)
         ) : docked ? (
           <div className="df-node-tools" aria-label="表单操作">
-            {stage !== "edit" && (
-              <button
-                disabled={!!busy}
-                onClick={() => {
-                  setStage("edit");
-                  setConfirmed(false);
-                }}
-              >
-                返回填写
-              </button>
-            )}
             <button
               disabled={!!busy}
               onClick={() => excelInput.current.click()}
             >
               导入 Excel
             </button>
-            {generation && stage !== "files" && (
-              <button disabled={!!busy} onClick={() => setStage("files")}>
-                查看生成文件
-              </button>
-            )}
             <details>
               <summary>更多操作</summary>
               <div className="df-actions">
@@ -1174,7 +1329,7 @@ function Workbench({
             {[
               ["import", "01", "导入模板"],
               ["edit", "02", "填写资料"],
-              ["review", "03", "核对生成"],
+              ["generate", "03", "文件生成"],
               ["files", "04", "文件预览"],
             ].map(([id, n, label]) => (
               <button
@@ -1186,7 +1341,10 @@ function Workbench({
                   (!draft && id !== "import") ||
                   (id === "files" && !generation)
                 }
-                onClick={() => (id === "review" ? reviewDraft() : setStage(id))}
+                onClick={() => {
+                  if (id === "generate") setFormTab("generate");
+                  setStage(id === "generate" ? "edit" : id);
+                }}
               >
                 <span>{n}</span>
                 {label}
@@ -1262,8 +1420,14 @@ function Workbench({
               </section>
             </div>
           )}
-          {draft && stage === "edit" && (
-            <div className="df-edit-layout">
+          {draft && (docked || stage === "edit") && (
+            <div
+              className="df-edit-layout"
+              id={docked ? "df-node-panel-form" : undefined}
+              role={docked ? "tabpanel" : undefined}
+              aria-labelledby={docked ? "df-node-tab-form" : undefined}
+              hidden={docked && nodeTab !== "form"}
+            >
               {!compact && (
                 <section className="df-paper df-form-heading">
                   <div className="df-section-head">
@@ -1347,6 +1511,13 @@ function Workbench({
                             <Field
                               key={field.key}
                               field={field}
+                              issue={fillingIssues.find(
+                                (item) =>
+                                  item.field === field.key &&
+                                  (item.status === "error" ||
+                                    draft.presentation_sources?.[field.key] !==
+                                      field.value),
+                              )}
                               displayValue={
                                 draft.presentation_sources?.[field.key] ===
                                 field.value
@@ -1391,301 +1562,196 @@ function Workbench({
                 </section>
               ))}
               {!isNegotiation && recipientsPanel}
-              <div
-                role="tabpanel"
-                id="df-form-panel-generate"
-                aria-labelledby="df-form-tab-generate"
-                hidden={activeFormTab !== "generate"}
-              >
-                {!compact && templatePanel}
-                <section
-                  className="df-paper df-edit-footer"
-                  aria-label="核对与生成"
-                >
-                  <div className="df-generation-plan">
-                    {!compact && <h2>核对与生成</h2>}
-                    <p>
-                      本次计划生成 <b>{outputCount}</b> 份文书
-                    </p>
-                    {!compact && (
-                      <small>
-                        {isSelection ? (
-                          "生成论证意见及签字表，以及论证结束后上传的非招标方案。签字盖章后，在阶段材料中留存扫描件。"
-                        ) : isPlan ? (
-                          "按本次填写内容生成 Word 说明与 Excel 计划表。"
-                        ) : (
-                          <>
-                            {templates.filter((t) => !t.per_recipient).length}{" "}
-                            份共用文件 ·{" "}
-                            {templates.filter((t) => t.per_recipient).length}{" "}
-                            类按单位文书 × {draft.recipients.length} 家单位
-                          </>
-                        )}
-                      </small>
-                    )}
-                  </div>
-                  <div className="df-next-action">
-                    <button className="df-primary" onClick={reviewDraft}>
-                      核对填写内容 →
-                    </button>
-                    {!compact && (
-                      <small>
-                        {isSelection
-                          ? "核对论证意见、三家单位与成员信息，再确认生成"
-                          : isPlan
-                          ? "先核对基础信息与申报经费，再确认生成"
-                          : "先核对缺项与日期，再确认生成"}
-                      </small>
-                    )}
-                  </div>
-                </section>
-              </div>
-            </div>
-          )}
-          {draft && stage === "review" && review && (
-            <div className="df-review">
-              <section className="df-paper">
-                <span className="df-eyebrow">填写核对</span>
-                <h2>
-                  {review.can_generate
-                    ? "资料已齐备，请确认本次内容。"
-                    : `还有 ${issues.length} 项需要处理`}
-                </h2>
-                <p>
-                  本次使用修订 {draft.revision} 的数据，计划生成 {outputCount}{" "}
-                  份文书。
-                </p>
-                {issues.length > 0 && (
-                  <div className="df-checks">
-                    {issues.map((r, i) => (
-                      <div key={i} className={"df-check " + r.status}>
-                        <span>
-                          {r.status === "ok"
-                            ? "通过"
-                            : r.status === "missing"
-                            ? "待补充"
-                            : "冲突"}
-                        </span>
-                        <div>
-                          <b>{r.label}</b>
-                          <p>{r.detail}</p>
-                        </div>
-                        {r.status !== "ok" && r.field && (
-                          <button onClick={() => focusField(r.field)}>
-                            修改
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {review.checks.some((r) => r.status === "ok") && (
-                  <details className="df-passed">
-                    <summary>
-                      {review.checks.filter((r) => r.status === "ok").length}{" "}
-                      项日期校核通过 · 查看明细
-                    </summary>
-                    {review.checks
-                      .filter((r) => r.status === "ok")
-                      .map((r, i) => (
-                        <p key={i}>
-                          <b>{r.label}</b>
-                          <br />
-                          {r.detail.replaceAll("T", " ")}
-                        </p>
-                      ))}
-                  </details>
-                )}
-                <div className="df-review-data">
-                  <h3>共用信息</h3>
-                  <dl>
-                    {draft.fields.map((f) => (
-                      <div
-                        key={f.key}
-                        className={isParagraph(f) ? "df-span" : undefined}
-                      >
-                        <dt>{f.label}</dt>
-                        <dd>
-                          {(draft.document_values?.[f.key] ?? f.value) ||
-                            "尚未填写"}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {draft.recipients.length > 0 && (
-                    <>
-                      <h3>受邀单位</h3>
-                      {draft.recipients.map((r, i) => (
-                        <p key={i}>
-                          {i + 1}. {r.name || "尚未填写"}　
-                          {draft.recipient_document_times?.[i] ??
-                            `${r.start.replace("T", " ")} — ${r.end.replace(
-                              "T",
-                              " ",
-                            )}`}
-                        </p>
-                      ))}
-                    </>
-                  )}
-                </div>
-                <div className="df-review-data">
-                  <h3>输出清单</h3>
-                  {templates.map((t) => (
-                    <p key={t.id}>
-                      {t.name} ·{" "}
-                      {t.per_recipient
-                        ? draft.recipients
-                            .map((r) => r.name || "待填单位")
-                            .join("、")
-                        : "共用文件"}
-                      {t.print_copies > 1 &&
-                        ` · 建议打印 ${t.print_copies} 份，每位专家一份`}
-                    </p>
-                  ))}
-                </div>
-                <div className="df-confirm">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={confirmed}
-                      disabled={!review.can_generate}
-                      onChange={(e) => setConfirmed(e.target.checked)}
-                    />
-                    {isSelection
-                      ? "我已核对论证意见、候选单位、成员与系统填报信息"
-                      : isPlan
-                      ? "我已核对基础信息、申报经费和外协必要性"
-                      : "我已核对填写内容、受邀单位和日期安排"}
-                  </label>
-                  <p>
-                    {isSelection
-                      ? "生成后请完成线下签字盖章，再将非招标方案和签字材料上传业务系统。"
-                      : isPlan
-                      ? "申报口径与模板版式请由经办人复核。"
-                      : "校核检查资料完整性及时间顺序。业务条款与 Word 模板请由经办人复核。"}
-                  </p>
-                  <div>
-                    <button
-                      onClick={() => {
-                        setStage("edit");
-                        setConfirmed(false);
-                      }}
-                    >
-                      返回修改
-                    </button>
-                    <button
-                      className="df-primary"
-                      disabled={!review.can_generate || !confirmed}
-                      onClick={generate}
-                    >
-                      确认并生成 {outputCount} 份文书
-                    </button>
-                  </div>
-                </div>
-              </section>
-            </div>
-          )}
-          {draft && stage === "files" && generation && (
-            <div
-              className={"df-results" + (docked ? " df-results-docked" : "")}
-            >
-              <section className="df-paper df-output-list">
-                <span className="df-eyebrow">生成记录</span>
-                <h2>{generation.files.length} 份文件已生成</h2>
-                <p>
-                  {time(generation.created_at)} · 修订 {generation.revision}
-                </p>
-                <p className="df-muted">
-                  {isSelection
-                    ? "压缩包包含论证意见及签字表、非招标方案、填写数据和核对记录"
-                    : isPlan
-                    ? "压缩包包含 Word、科研计划表、填写数据和核对记录"
-                    : "压缩包包含 Word、填写数据和核对记录"}
-                </p>
-                {(dirty ||
-                  (generation.content_digest
-                    ? generation.content_digest !== draft.content_digest
-                    : generation.revision !== draft.revision)) && (
-                  <div className="df-alert">
-                    填写内容已有修改，下列文件保留生成时的内容。请重新核对并生成新版。
-                  </div>
-                )}
-                {visibleGenerations.map((g) => (
-                  <div className="df-generation" key={g.id}>
-                    <div className="df-generation-heading">
-                      <h3>
-                        {time(g.created_at)} · 修订 {g.revision}
-                        {g.date_style !== "zh-CN" && " · 原日期格式"}
-                        {g.naming_style !== "formal" && " · 原文件名"}
-                      </h3>
-                      <button
-                        aria-label={`打包下载 ${time(g.created_at)} 修订 ${
-                          g.revision
-                        }`}
-                        onClick={() => downloadBundle(g)}
-                      >
-                        打包下载
-                      </button>
-                    </div>
-                    {g.files.map((f) => (
-                      <div
-                        className={
-                          "df-output " +
-                          (preview?.file.name === f.name &&
-                          preview?.generation.id === g.id
-                            ? "selected"
-                            : "")
-                        }
-                        key={f.name}
-                      >
-                        <button
-                          onClick={() => setPreview({ file: f, generation: g })}
-                        >
-                          <b>{f.name}</b>
-                          <small>
-                            {f.recipient} · {(f.size / 1024).toFixed(0)} KB
-                            {f.print_copies > 1 &&
-                              ` · 建议打印 ${f.print_copies} 份`}
-                          </small>
-                        </button>
-                        <button
-                          aria-label={"下载" + f.name}
-                          onClick={() =>
-                            run("下载文件", () =>
-                              download(filePath(g, f.name), f.name),
-                            )
-                          }
-                        >
-                          ↓
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </section>
               {!docked && (
-                <section className="df-paper df-preview">
-                  <div className="df-section-head">
-                    <h2>{preview ? preview.file.name : "选择文件预览"}</h2>
-                    <span>Office 预览</span>
-                  </div>
-                  <div className="df-preview-body">
-                    {artifact && Preview ? (
-                      <OfficePrintPreview key={artifact.id} artifact={artifact}>
-                        <Preview
-                          key={artifact.id}
-                          artifact={artifact}
-                          readOnly
-                          hostControls
-                        />
-                      </OfficePrintPreview>
+                <div
+                  role="tabpanel"
+                  id="df-form-panel-generate"
+                  aria-labelledby="df-form-tab-generate"
+                  hidden={activeFormTab !== "generate"}
+                >
+                  {generationPlan}
+                </div>
+              )}
+            </div>
+          )}
+          {draft && (
+            <div
+              className={docked ? "df-generation-panel" : undefined}
+              id={docked ? "df-node-panel-generate" : undefined}
+              role={docked ? "tabpanel" : undefined}
+              aria-labelledby={docked ? "df-node-tab-generate" : undefined}
+              hidden={docked && nodeTab !== "generate"}
+            >
+              {docked && stage === "edit" && generationPlan}
+              {(docked || (stage === "files" && generation)) && (
+                <div
+                  className={
+                    "df-results" + (docked ? " df-results-docked" : "")
+                  }
+                >
+                  <section
+                    className="df-paper df-output-list"
+                    aria-label="生成记录"
+                  >
+                    {docked ? (
+                      <h2>生成记录</h2>
                     ) : (
+                      <>
+                        <span className="df-eyebrow">生成记录</span>
+                        <h2>{generation.files.length} 份文件已生成</h2>
+                        <p>
+                          {time(generation.created_at)} · 修订{" "}
+                          {generation.revision}
+                        </p>
+                      </>
+                    )}
+                    {!batches.length && (
+                      <p className="df-muted">本阶段还没有生成文件。</p>
+                    )}
+                    {generation && (
                       <p className="df-muted">
-                        {artifact ? "正在打开文件…" : "从左侧选择一份文件。"}
+                        {isSelection
+                          ? "压缩包包含论证意见及签字表、非招标方案、填写数据和核对记录"
+                          : isPlan
+                          ? "压缩包包含 Word、科研计划表、填写数据和核对记录"
+                          : "压缩包包含 Word、填写数据和核对记录"}
                       </p>
                     )}
-                  </div>
-                </section>
+                    {generation &&
+                      (dirty ||
+                        (generation.content_digest
+                          ? generation.content_digest !== draft.content_digest
+                          : generation.revision !== draft.revision)) && (
+                        <div className="df-alert">
+                          填写内容已有修改，下列文件保留生成时的内容。请重新核对并生成新版。
+                        </div>
+                      )}
+                    {batches.map(({ caseId, batch: g }) => (
+                      <div className="df-generation" key={caseId + ":" + g.id}>
+                        <div className="df-generation-heading">
+                          <h3>
+                            {time(g.created_at)} · 修订 {g.revision}
+                            {g.date_style !== "zh-CN" && " · 原日期格式"}
+                            {g.naming_style !== "formal" && " · 原文件名"}
+                          </h3>
+                          <button
+                            aria-label={`打包下载 ${time(g.created_at)} 修订 ${
+                              g.revision
+                            }`}
+                            onClick={() => downloadBundle(caseId, g)}
+                          >
+                            打包下载
+                          </button>
+                        </div>
+                        {g.files.map((f) => {
+                          const selected = docked
+                            ? selectedOutput?.case_id === caseId &&
+                              selectedOutput.generation_id === g.id &&
+                              selectedOutput.name === f.name
+                            : preview?.generation.id === g.id &&
+                              preview.file.name === f.name;
+                          return (
+                            <div
+                              className={
+                                "df-output" + (selected ? " selected" : "")
+                              }
+                              key={f.name}
+                            >
+                              <button
+                                onClick={() => {
+                                  if (docked)
+                                    onPreview(generatedSelection(caseId, g, f));
+                                  else setPreview({ file: f, generation: g });
+                                }}
+                              >
+                                <b>{f.name}</b>
+                                <small>
+                                  {f.recipient} · {(f.size / 1024).toFixed(0)}{" "}
+                                  KB
+                                  {f.print_copies > 1 &&
+                                    ` · 建议打印 ${f.print_copies} 份`}
+                                </small>
+                              </button>
+                              <button
+                                aria-label={"下载" + f.name}
+                                onClick={() =>
+                                  run("下载文件", () =>
+                                    download(
+                                      filePath(caseId, g, f.name),
+                                      f.name,
+                                    ),
+                                  )
+                                }
+                              >
+                                ↓
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                    {docked &&
+                      selectedOutput?.case_id &&
+                      batches.some(
+                        ({ caseId, batch }) =>
+                          caseId === selectedOutput.case_id &&
+                          batch.id === selectedOutput.generation_id,
+                      ) && (
+                        <button onClick={onAskAboutOutput}>
+                          就此文件提问 →
+                        </button>
+                      )}
+                    {historicalForms.length > 0 && (
+                      <details className="df-historical-forms">
+                        <summary>历史底稿</summary>
+                        {historicalForms.map((form) => (
+                          <button
+                            key={form.case_id}
+                            onClick={() =>
+                              run("下载历史底稿", () =>
+                                download(
+                                  `/cases/${form.case_id}/excel`,
+                                  form.name + "_历史底稿.xlsx",
+                                ),
+                              )
+                            }
+                          >
+                            {form.name} ↓
+                          </button>
+                        ))}
+                      </details>
+                    )}
+                  </section>
+                  {!docked && (
+                    <section className="df-paper df-preview">
+                      <div className="df-section-head">
+                        <h2>{preview ? preview.file.name : "选择文件预览"}</h2>
+                        <span>Office 预览</span>
+                      </div>
+                      <div className="df-preview-body">
+                        {artifact && Preview ? (
+                          <OfficePrintPreview
+                            key={artifact.id}
+                            artifact={artifact}
+                          >
+                            <Preview
+                              key={artifact.id}
+                              artifact={artifact}
+                              readOnly
+                              hostControls
+                            />
+                          </OfficePrintPreview>
+                        ) : (
+                          <p className="df-muted">
+                            {artifact
+                              ? "正在打开文件…"
+                              : "从左侧选择一份文件。"}
+                          </p>
+                        )}
+                      </div>
+                    </section>
+                  )}
+                </div>
               )}
             </div>
           )}
