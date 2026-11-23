@@ -1,7 +1,7 @@
 const React = window.QwenPaw.host.React;
 const { useEffect, useRef, useState } = React;
 
-function FieldHelp({ field }) {
+function FieldHelp({ field, timelineLink }) {
   const [open, setOpen] = useState(false);
   const container = useRef(null);
   const trigger = useRef(null);
@@ -75,17 +75,33 @@ function FieldHelp({ field }) {
         <span
           className="df-field-help-content"
           id={helpId}
-          role="tooltip"
+          role={timelineLink ? undefined : "tooltip"}
           onMouseEnter={showHelp}
         >
-          {field.help}
+          {field.help && <span>{field.help}</span>}
+          {timelineLink && (
+            <span className="df-field-help-timeline">
+              此项也可以在
+              <a
+                href={timelineLink.href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  setOpen(false);
+                  timelineLink.open();
+                }}
+              >
+                时间轴
+              </a>
+              填写。
+            </span>
+          )}
         </span>
       )}
     </span>
   );
 }
 
-export default function FieldLabel({ field, inputId }) {
+export default function FieldLabel({ field, inputId, timelineLink }) {
   const Label = inputId ? "label" : "span";
   return (
     <div className="df-field-label">
@@ -97,7 +113,9 @@ export default function FieldLabel({ field, inputId }) {
           </span>
         )}
       </Label>
-      {field.help && <FieldHelp field={field} />}
+      {(field.help || timelineLink) && (
+        <FieldHelp field={field} timelineLink={timelineLink} />
+      )}
     </div>
   );
 }

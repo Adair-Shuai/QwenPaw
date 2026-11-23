@@ -49,9 +49,12 @@ from .backend.engine import (  # pylint: disable=relative-beyond-top-level
     export_excel,
     read_excel,
     recipient_defaults,
+    recipient_dispatch,
+    refresh_implementation_fields,
     render_template,
     template_info,
     template_metadata,
+    timeline_times,
 )
 
 app = PawApp(name="外协助手", app_id="document-forms")
@@ -92,8 +95,13 @@ def load(root, case_id):
     if not path.is_file():
         raise HTTPException(404, "填报记录不存在")
     case = json.loads(path.read_text(encoding="utf-8"))
-    case["recipients"] = recipient_defaults(case["recipients"])
+    case["recipients"] = recipient_defaults(
+        case["recipients"],
+        dispatch=recipient_dispatch(case),
+    )
     normalize_templates(case)
+    upgrade_implementation_template(root, case)
+    refresh_implementation_fields(case)
     if (
         case.get("selection_schema") == 1
         and case.get("stage_id") == "selection"
@@ -156,6 +164,11 @@ def output_name(case, template, index, recipient, recipient_index):
 
 
 def save(root, case):
+    case["recipients"] = recipient_defaults(
+        case["recipients"],
+        dispatch=recipient_dispatch(case),
+    )
+    refresh_implementation_fields(case)
     normalize_templates(case)
     path = folder(root, case["id"])
     path.mkdir(parents=True, exist_ok=True)
@@ -175,6 +188,8 @@ def public(case):
         document_date(r["start"] + " 至 " + r["end"])
         for r in case["recipients"]
     ]
+    if case.get("stage_id", "negotiation") == "negotiation":
+        result["timeline_times"] = timeline_times(case)
     return result
 
 
@@ -301,6 +316,38 @@ def default_library(root, case):
     return root / "default-templates"
 
 
+def upgrade_implementation_template(root, case):
+    if case.get("stage_id", "negotiation") != "negotiation":
+        return
+    name = builtin.NAMES[-1]
+    legacy = builtin.LEGACY_IMPLEMENTATION_WORD
+    templates = [
+        template
+        for template in case["templates"]
+        if template["name"] == name and template["sha256"] == legacy
+    ]
+    if not templates:
+        return
+    target = folder(root, case["id"]) / "templates"
+    for template in templates:
+        source = target / (template["id"] + ".docx")
+        if (
+            not source.is_file()
+            or hashlib.sha256(source.read_bytes()).hexdigest() != legacy
+        ):
+            raise HTTPException(422, "原实施方案模板缺失或已改变，请重新核对模板")
+    content = builtin.load_templates()[name]
+    digest = hashlib.sha256(content).hexdigest()
+    info = template_info(content, name)
+    for template in templates:
+        template_id = uuid.uuid4().hex
+        (target / (template_id + ".docx")).write_bytes(content)
+        template.update(info, id=template_id, sha256=digest)
+    case["revision"] += 1
+    case["review_token"] = None
+    save(root, case)
+
+
 def attach_default_templates(root, case):
     library = default_library(root, case)
     index = library / "index.json"
@@ -362,6 +409,13 @@ def attach_default_templates(root, case):
             and digest == builtin.LEGACY_PLAN_WORD
         ):
             content = builtin.load_templates("plan")[builtin.PLAN_NAMES[0]]
+            digest = hashlib.sha256(content).hexdigest()
+        if (
+            case.get("stage_id", "negotiation") == "negotiation"
+            and entry["name"] == builtin.NAMES[-1]
+            and digest == builtin.LEGACY_IMPLEMENTATION_WORD
+        ):
+            content = builtin.load_templates()[entry["name"]]
             digest = hashlib.sha256(content).hexdigest()
         info = template_info(
             content,
@@ -546,8 +600,16 @@ def apply_draft_content(case, body):
         len(v) > 20000 for v in body.values.values()
     ):
         raise HTTPException(422, "填写字段与 Excel 配置不一致或内容过长")
+    derived = {
+        field["key"]
+        for field in case["fields"]
+        if field.get("derived_from")
+        and case.get("stage_id", "negotiation") == "negotiation"
+    }
     if any(
-        field.get("read_only") and body.values[field["key"]] != field["value"]
+        field.get("read_only")
+        and field["key"] not in derived
+        and body.values[field["key"]] != field["value"]
         for field in case["fields"]
     ):
         raise HTTPException(
@@ -566,7 +628,8 @@ def apply_draft_content(case, body):
     ):
         raise HTTPException(422, "论证意见引用变量无效或内容过长")
     for field in case["fields"]:
-        field["value"] = body.values[field["key"]]
+        if field["key"] not in derived:
+            field["value"] = body.values[field["key"]]
         if field["key"] in body.opinion_templates:
             field["linked_template"] = body.opinion_templates[field["key"]]
             field["linked_rendered"] = field["value"]
@@ -577,9 +640,11 @@ def apply_draft_content(case, body):
         builtin.refresh_selection_opinions(case["fields"])
         if any(len(f["value"]) > 20000 for f in case["fields"]):
             raise HTTPException(422, "论证意见内容过长")
+    refresh_implementation_fields(case)
     case["recipients"] = recipient_defaults(
         [r.model_dump(exclude_none=True) for r in body.recipients],
         case["recipients"],
+        dispatch=recipient_dispatch(case),
     )
 
 
@@ -712,6 +777,12 @@ def validate_draft(case_id: str, body: DraftBody, root=Depends(scope)):
                 )
                 if row["status"] != "ok"
             ],
+            "derived_values": {
+                field["key"]: field["value"]
+                for field in case["fields"]
+                if field.get("derived_from")
+            },
+            "timeline_times": timeline_times(case),
         }
 
 

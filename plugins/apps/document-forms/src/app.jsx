@@ -4,6 +4,10 @@ import WorkflowTabs, { fieldTab, negotiationTabs } from "./workflow-tabs.jsx";
 import { ToolbarIcon, ToolbarMenu } from "./toolbar.jsx";
 import FieldLabel from "./field-label.jsx";
 import LinkedOpinion from "./linked-opinion.jsx";
+import NegotiationTimeline, {
+  endpoints,
+  timelineInputId,
+} from "./negotiation-timeline.jsx";
 import { refreshLinkedFields } from "./linked-fields.js";
 const Q = window.QwenPaw,
   React = Q.host.React;
@@ -98,25 +102,51 @@ const compactParagraph = (field) =>
 const recipientDate = (value) =>
   value?.match(/^\d{4}-\d{2}-\d{2}(?=[T ]|$)/)?.[0];
 
-function recipientDefaults(recipients, previous) {
+function dispatchFor(draft, times) {
+  if (!draft || (draft.stage_id && draft.stage_id !== "negotiation")) return;
+  const field = draft.fields.find(
+    (item) => item.key === "events.invitation_time",
+  );
+  if (!field) return;
+  const { start, end } = endpoints(field, times?.dispatch);
+  const pickerTime = (value) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? value + "T00:00"
+      : value.replace(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}):00$/, "$1");
+  return { start: pickerTime(start), end: pickerTime(end) };
+}
+
+function recipientDefaults(recipients, previous, dispatch) {
   const rows = recipients.map((recipient) => ({ ...recipient }));
   for (const [index, row] of rows.entries()) {
     const endWasUnspecified = typeof row.follow_end !== "boolean" && !row.end;
     for (const key of ["start", "end"]) {
       const flag = "follow_" + key;
       row[flag] =
-        index > 0 && (typeof row[flag] === "boolean" ? row[flag] : !row[key]);
-      row[key] = (row[flag] ? rows[0][key] : row[key]) || "";
+        Boolean(dispatch || index) &&
+        (typeof row[flag] === "boolean" ? row[flag] : !row[key]);
+      row[key] = (row[flag] ? (dispatch || rows[0])[key] : row[key]) || "";
     }
     const day = recipientDate(row.start);
-    const startChanged = previous && row.start !== previous[index].start;
+    const clock = row.end.match(
+      /[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?)$/,
+    )?.[1];
+    if (dispatch && row.follow_end) {
+      if (!day) row.end = "";
+      else if (!row.follow_start || !row.end)
+        row.end = day + "T" + (clock || "17:30");
+      continue;
+    }
+    const startChanged =
+      previous?.[index] &&
+      row.start !== previous[index].start &&
+      (!dispatch || !row.follow_start);
     const followsFirstClock =
       row.follow_end && row.end && day !== recipientDate(rows[0].start);
     if (
       day &&
       (startChanged || followsFirstClock || (endWasUnspecified && !row.end))
     ) {
-      const clock = row.end.match(/[T ](\d{2}:\d{2}(?::\d{2})?)$/)?.[1];
       row.end = day + "T" + (clock || "17:30");
     }
   }
@@ -184,7 +214,7 @@ function DraftConflicts({ title, issues, onFix }) {
   );
 }
 
-function Field({ field, displayValue, onChange, issue }) {
+function Field({ field, displayValue, onChange, issue, timelineLink }) {
   const inputId = "df-input-" + field.key;
   const validation = issue
     ? {
@@ -218,7 +248,7 @@ function Field({ field, displayValue, onChange, issue }) {
       }
       id={"df-" + field.key}
     >
-      <FieldLabel field={field} inputId={inputId} />
+      <FieldLabel field={field} inputId={inputId} timelineLink={timelineLink} />
       {linked ? (
         <LinkedOpinion field={field} inputId={inputId} onChange={onChange} />
       ) : field.options ? (
@@ -396,6 +426,7 @@ function Workbench({
   toolbarTarget,
   onShowForm,
   onDownloadStageMaterials,
+  onOpenApproval,
 }) {
   const [draft, setDraft] = useState(null);
   const [formTab, setFormTab] = useState("");
@@ -404,6 +435,8 @@ function Workbench({
   const [stage, setStage] = useState("import"),
     [dirty, setDirty] = useState(false);
   const [fillingIssues, setFillingIssues] = useState([]);
+  const [timelineTimes, setTimelineTimes] = useState({});
+  const [derivedValues, setDerivedValues] = useState({});
   const [ruleIssues, setRuleIssues] = useState([]);
   const [agentIssues, setAgentIssues] = useState([]);
   const [busy, setBusy] = useState(""),
@@ -415,6 +448,7 @@ function Workbench({
     wordInput = useRef(null);
   const seq = useRef(0),
     alive = useRef(true);
+  const pendingTimelineInput = useRef(null);
   const theme = Q.host.useTheme?.() || "light";
   const refresh = () => onChanged?.() || Promise.resolve();
   const compact = docked && toolbarTarget && Q.host.ReactDOM?.createPortal;
@@ -497,13 +531,19 @@ function Workbench({
     if (!alive.current) return;
     setDraft({
       ...data,
-      recipients: recipientDefaults(data.recipients),
+      recipients: recipientDefaults(
+        data.recipients,
+        undefined,
+        dispatchFor(data, data.timeline_times),
+      ),
       presentation_sources: Object.fromEntries(
         data.fields.map((f) => [f.key, f.value]),
       ),
     });
     setDirty(false);
+    setTimelineTimes(data.timeline_times || {});
     setFillingIssues([]);
+    setDerivedValues({});
     setRuleIssues([]);
     if (!retainAgent) setAgentIssues([]);
   }
@@ -517,7 +557,7 @@ function Workbench({
     setNotice("");
   }
   function editRecipient(index, key, value, follow = false) {
-    const recipients = draft.recipients.map((recipient, row) =>
+    const next = recipients.map((recipient, row) =>
       row === index
         ? {
             ...recipient,
@@ -529,8 +569,33 @@ function Workbench({
     edit({
       ...draft,
       recipients: recipientDefaults(
-        recipients,
-        key === "start" ? draft.recipients : undefined,
+        next,
+        key === "start" ? recipients : undefined,
+        dispatch,
+      ),
+    });
+  }
+  function followDispatch() {
+    edit({
+      ...draft,
+      recipients: recipients.map((r) => ({
+        ...r,
+        follow_start: true,
+        follow_end: true,
+      })),
+    });
+  }
+  function editField(key, value, template) {
+    edit({
+      ...draft,
+      fields: draft.fields.map((field) =>
+        field.key === key
+          ? {
+              ...field,
+              value,
+              ...(template !== undefined ? { linked_template: template } : {}),
+            }
+          : field,
       ),
     });
   }
@@ -539,7 +604,7 @@ function Workbench({
       revision: draft.revision,
       name: draft.name.trim() || "未命名填报",
       values: Object.fromEntries(draft.fields.map((f) => [f.key, f.value])),
-      recipients: draft.recipients,
+      recipients,
       opinion_templates: Object.fromEntries(
         draft.fields
           .filter((f) => f.linked_template !== undefined)
@@ -574,11 +639,18 @@ function Workbench({
   const tabFor = (field) =>
     fieldTab(field, isNegotiation ? "negotiation" : undefined);
   const recipientsTab = isNegotiation ? negotiationTabs[2] : "recipients";
+  const hasTimeline = docked && isNegotiation;
+  const dispatch = dispatchFor(draft, timelineTimes);
+  const recipients = recipientDefaults(
+    draft?.recipients || [],
+    undefined,
+    dispatch,
+  );
   const hasSharedReferences = isPlan || isSelection || isContract;
   const templateLabel = hasSharedReferences ? "文书模板" : "Word 模板";
-  const editableFields = hasSharedReferences
-    ? draft.fields.filter((f) => f.scope !== "shared")
-    : draft?.fields || [];
+  const editableFields = (draft?.fields || []).filter(
+    (f) => !f.hidden && (!hasSharedReferences || f.scope !== "shared"),
+  );
   const fieldTabs = [
     ...new Set([
       ...(isNegotiation ? negotiationTabs : []),
@@ -603,6 +675,7 @@ function Workbench({
   }
   const formTabs = [
     ...fieldTabs.map((label) => ({ id: label, label })),
+    ...(hasTimeline ? [{ id: "timeline", label: "时间轴", align: "end" }] : []),
     ...(!hasSharedReferences && !isNegotiation
       ? [{ id: "recipients", label: "受邀单位" }]
       : []),
@@ -611,6 +684,13 @@ function Workbench({
   const activeFormTab = formTabs.some((item) => item.id === formTab)
     ? formTab
     : formTabs[0]?.id;
+  useLayoutEffect(() => {
+    if (activeFormTab !== "timeline" || !pendingTimelineInput.current) return;
+    const input = document.getElementById(pendingTimelineInput.current);
+    pendingTimelineInput.current = null;
+    input?.scrollIntoView?.({ block: "center" });
+    input?.focus({ preventScroll: true });
+  }, [activeFormTab]);
   const templates = draft?.templates || [];
   const outputCount = templates.reduce(
     (n, t) => n + (t.per_recipient ? draft.recipients.length : 1),
@@ -646,7 +726,11 @@ function Workbench({
           ...json(draftContent()),
           signal: controller.signal,
         });
-        if (!controller.signal.aborted) setFillingIssues(result.issues);
+        if (!controller.signal.aborted) {
+          setFillingIssues(result.issues);
+          setDerivedValues(result.derived_values || {});
+          if (result.timeline_times) setTimelineTimes(result.timeline_times);
+        }
       } catch {
         // Generation validates again even if live validation is unavailable.
         if (!controller.signal.aborted) setFillingIssues([]);
@@ -759,7 +843,16 @@ function Workbench({
     });
   }
   function focusField(key) {
-    const field = draft.fields.find((item) => item.key === key);
+    let field = draft.fields.find((item) => item.key === key);
+    if (field?.derived_from) {
+      const source = draft.fields.find(
+        (item) => item.key === field.derived_from,
+      );
+      if (source) {
+        field = source;
+        key = source.key;
+      }
+    }
     if (field?.scope === "shared" && hasSharedReferences && onEditBasics) {
       onEditBasics();
       return;
@@ -780,6 +873,16 @@ function Workbench({
       const input = el?.matches(controls) ? el : el?.querySelector(controls);
       input?.focus();
     });
+  }
+  function timelineLinkFor(key) {
+    const id = timelineInputId(key);
+    return {
+      href: "#" + id,
+      open() {
+        pendingTimelineInput.current = id;
+        setFormTab("timeline");
+      },
+    };
   }
   const filePath = (caseId, batch, filename) =>
     `/cases/${caseId}/outputs/${batch.id}/${encodeURIComponent(filename)}`;
@@ -909,10 +1012,11 @@ function Workbench({
           onClick={() =>
             edit({
               ...draft,
-              recipients: recipientDefaults([
-                ...draft.recipients,
-                { name: "", start: "", end: "" },
-              ]),
+              recipients: recipientDefaults(
+                [...recipients, { name: "", start: "", end: "" }],
+                undefined,
+                dispatch,
+              ),
             })
           }
           disabled={draft.recipients.length >= 200}
@@ -920,7 +1024,7 @@ function Workbench({
           ＋ 添加单位
         </button>
       </div>
-      {draft.recipients.map((r, i) => (
+      {recipients.map((r, i) => (
         <div className="df-recipient" key={i} id={"df-recipient-" + i}>
           <div className="df-recipient-title">
             <b>{String(i + 1).padStart(2, "0")}</b>
@@ -930,7 +1034,9 @@ function Workbench({
                 edit({
                   ...draft,
                   recipients: recipientDefaults(
-                    draft.recipients.filter((_, j) => j !== i),
+                    recipients.filter((_, j) => j !== i),
+                    undefined,
+                    dispatch,
                   ),
                 })
               }
@@ -967,7 +1073,15 @@ function Workbench({
                   className={"df-field " + (key === "name" ? "df-span" : "")}
                   key={key}
                 >
-                  <label htmlFor={id}>{label}</label>
+                  {hasTimeline && key !== "name" ? (
+                    <FieldLabel
+                      field={{ key: `recipient-${i}-${key}`, label }}
+                      inputId={id}
+                      timelineLink={timelineLinkFor(`recipient-${i}-${key}`)}
+                    />
+                  ) : (
+                    <label htmlFor={id}>{label}</label>
+                  )}
                   <input
                     id={id}
                     aria-label={`第${i + 1}家${label}`}
@@ -989,10 +1103,12 @@ function Workbench({
                       ))}
                     </ul>
                   )}
-                  {i > 0 && key !== "name" && (
+                  {(dispatch || i > 0) && key !== "name" && (
                     <small className="df-follow-state">
                       {r["follow_" + key]
-                        ? key === "end"
+                        ? dispatch
+                          ? "跟随发放时间"
+                          : key === "end"
                           ? "时刻跟随第1家"
                           : "跟随第1家"
                         : "已单独设置"}
@@ -1002,12 +1118,7 @@ function Workbench({
                           aria-label={`第${i + 1}家${label}恢复跟随`}
                           onClick={(e) => {
                             e.preventDefault();
-                            editRecipient(
-                              i,
-                              key,
-                              draft.recipients[0][key],
-                              true,
-                            );
+                            editRecipient(i, key, recipients[0][key], true);
                           }}
                         >
                           恢复跟随
@@ -1511,6 +1622,15 @@ function Workbench({
                             <Field
                               key={field.key}
                               field={field}
+                              timelineLink={
+                                hasTimeline &&
+                                !field.read_only &&
+                                Object.values(timelineTimes).some(
+                                  (binding) => binding.key === field.key,
+                                )
+                                  ? timelineLinkFor(field.key)
+                                  : undefined
+                              }
                               issue={fillingIssues.find(
                                 (item) =>
                                   item.field === field.key &&
@@ -1519,26 +1639,14 @@ function Workbench({
                                       field.value),
                               )}
                               displayValue={
-                                draft.presentation_sources?.[field.key] ===
+                                derivedValues[field.key] ??
+                                (draft.presentation_sources?.[field.key] ===
                                 field.value
                                   ? draft.document_values?.[field.key]
-                                  : undefined
+                                  : undefined)
                               }
                               onChange={(value, template) =>
-                                edit({
-                                  ...draft,
-                                  fields: draft.fields.map((f) =>
-                                    f.key === field.key
-                                      ? {
-                                          ...f,
-                                          value,
-                                          ...(template !== undefined
-                                            ? { linked_template: template }
-                                            : {}),
-                                        }
-                                      : f,
-                                  ),
-                                })
+                                editField(field.key, value, template)
                               }
                             />
                           ))}
@@ -1561,6 +1669,34 @@ function Workbench({
                   )}
                 </section>
               ))}
+              {hasTimeline && (
+                <section
+                  className="df-paper df-timeline-panel"
+                  role="tabpanel"
+                  id="df-form-panel-timeline"
+                  aria-labelledby="df-form-tab-timeline"
+                  hidden={activeFormTab !== "timeline"}
+                >
+                  {activeFormTab === "timeline" && (
+                    <NegotiationTimeline
+                      project={project}
+                      draft={{ ...draft, recipients }}
+                      times={timelineTimes}
+                      issues={fillingIssues}
+                      onEdit={editField}
+                      onEditRecipient={editRecipient}
+                      onFollowDispatch={
+                        dispatch?.start &&
+                        recipients.some((r) => !r.follow_start || !r.follow_end)
+                          ? followDispatch
+                          : undefined
+                      }
+                      onOpenRecipients={() => setFormTab(recipientsTab)}
+                      onOpenApproval={onOpenApproval}
+                    />
+                  )}
+                </section>
+              )}
               {!isNegotiation && recipientsPanel}
               {!docked && (
                 <div

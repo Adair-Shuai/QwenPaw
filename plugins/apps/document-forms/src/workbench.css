@@ -2108,6 +2108,86 @@
   max-height: 360px;
   overflow-y: auto;
 }
+.df-workflow-tabs > #df-form-tab-timeline:not([aria-selected="true"]) {
+  border-color: var(--df-line);
+}
+.df-timeline-panel h2 {
+  margin: 0 0 18px;
+}
+.df-negotiation-timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.df-timeline-step {
+  position: relative;
+  margin-left: 6px;
+  padding: 0 0 20px 20px;
+  border-left: 1px solid var(--df-line);
+}
+.df-timeline-step:last-child {
+  padding-bottom: 0;
+  border-left-color: transparent;
+}
+.df-timeline-step::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: -6px;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--df-muted);
+  border-radius: 50%;
+  background: var(--df-paper);
+}
+.df-timeline-step[data-state="set"]::before {
+  border-color: var(--df-accent);
+  background: var(--df-accent);
+}
+.df-timeline-step[data-state="error"]::before {
+  border-color: var(--app-error-text, #b42318);
+  background: var(--app-error-text, #b42318);
+}
+.df-timeline-step h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.df-timeline-approval {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.df-timeline-approval button {
+  padding: 4px 8px;
+}
+.df-timeline-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 185px), 1fr));
+  gap: 8px 12px;
+}
+.df-timeline-recipients {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.df-timeline-recipient {
+  padding: 10px;
+  border: 1px solid var(--df-line);
+  border-radius: 6px;
+}
+.df-timeline-recipient > strong {
+  display: block;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+.df-timeline-issues {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--app-error-text, #b42318);
+}
 .df-field-help {
   position: relative;
   display: inline-flex;
@@ -2163,6 +2243,17 @@
   line-height: 1.65;
   white-space: pre-line;
   overflow-wrap: anywhere;
+}
+.df-field-help-timeline {
+  display: block;
+}
+.df-field-help-content > span + .df-field-help-timeline {
+  margin-top: 6px;
+}
+.df-field-help-timeline a {
+  color: var(--df-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .df-profile-import-list {

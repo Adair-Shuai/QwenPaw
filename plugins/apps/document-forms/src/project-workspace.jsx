@@ -459,10 +459,10 @@ export default function ProjectWorkspace({ Editor, services }) {
       setTab("overview");
     });
   }
-  async function changeTab(id) {
+  async function changeTab(id, targetNodeTab = "form") {
     if (!canLeave()) return;
     setTab(id);
-    setNodeTab("form");
+    setNodeTab(targetNodeTab);
     setEditor(null);
     setEditorDirty(false);
     setProfileDirty(false);
@@ -1186,6 +1186,7 @@ export default function ProjectWorkspace({ Editor, services }) {
                           }}
                           toolbarTarget={toolbarTarget}
                           onShowForm={() => setNodeTab("form")}
+                          onOpenApproval={(id) => changeTab(id, "materials")}
                           onDownloadStageMaterials={() =>
                             bundledDownload(stage.id)
                           }

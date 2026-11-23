@@ -883,6 +883,7 @@ another copy."""
     def prepare_implementation(self, root, project, case):
         """Extend bundled negotiation pages while retaining custom \
 templates."""
+        self.host.upgrade_implementation_template(root, case)
         if case.get("implementation_schema") == 1:
             return
         existing = {field["key"] for field in case["fields"]}

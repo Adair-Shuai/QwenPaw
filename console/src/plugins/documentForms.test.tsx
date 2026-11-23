@@ -3781,7 +3781,7 @@ it("deletes only the confirmed approval version, preserves numbering and preview
   await exerciseApprovalViewer(true);
 }, 30000);
 
-it("groups negotiation content into five ordered tabs without duplicating fields and keeps recipients, drafts and issue navigation", async () => {
+it("keeps five negotiation groups and edits the shared timeline without losing drafts or issue navigation", async () => {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;
   const definitions = [
@@ -3800,20 +3800,71 @@ it("groups negotiation content into five ordered tabs without duplicating fields
     ["contact.name", "联系人", "单位与联系"],
     ["budget.ceiling_number", "最高限价", "费用信息"],
     ["implementation.year", "实施年度", "服务选商实施方案"],
+    ["implementation.service_period", "服务周期", "服务选商实施方案"],
+    ["dates.issue", "文件落款日期", "日期安排"],
+    ["events.invitation_time", "总体发放时段", "日期安排"],
+    ["events.questions_time", "答疑时间段", "日期安排"],
+    ["submission.deadline", "响应文件提交截止时间", "日期安排"],
   ];
+  const timelineTimes = {
+    issue: {
+      key: "dates.issue",
+      value: "2026-11-06",
+      start: "2026-11-06",
+      end: "",
+    },
+    dispatch: {
+      key: "events.invitation_time",
+      value: "2026年11月6日下午14:00至17:30",
+      start: "2026-11-06T14:00",
+      end: "2026-11-06T17:30",
+    },
+    qa: {
+      key: "events.questions_time",
+      value: "2026年11月10日",
+      start: "2026-11-10T00:00",
+      end: "",
+    },
+    response: {
+      key: "submission.deadline",
+      value: "2026-11-16T17:00",
+      start: "2026-11-16T17:00",
+      end: "",
+    },
+    negotiation: {
+      key: "events.negotiation_time",
+      value: "2026年11月20日下午14:30至17:30",
+      start: "2026-11-20T14:30",
+      end: "2026-11-20T17:30",
+    },
+  };
   const state = {
     id: "grouped-case",
     name: "商务谈判",
     stage_id: "negotiation",
     revision: 1,
     updated_at: "2026-11-02T10:00:00Z",
+    timeline_times: timelineTimes,
     fields: definitions.map(([key, label, group]) => ({
       key,
       label,
       group,
-      kind: "text",
-      value: key === "qualification.start_year" ? "2020" : label + "原文",
+      kind:
+        key === "dates.issue"
+          ? "date"
+          : key === "submission.deadline"
+          ? "datetime-local"
+          : "text",
+      value:
+        Object.values(timelineTimes).find((time) => time.key === key)?.value ??
+        (key === "qualification.start_year"
+          ? "2020"
+          : key === "implementation.year"
+          ? "2026"
+          : label + "原文"),
       required: true,
+      read_only: key.startsWith("implementation."),
+      hidden: false,
     })),
     recipients: [
       { name: "甲单位", start: "2026-11-03T09:00", end: "", follow_end: false },
@@ -3824,6 +3875,16 @@ it("groups negotiation content into five ordered tabs without duplicating fields
     generations: [],
     rules: [],
   };
+  state.fields.push({
+    key: "implementation.expert_group",
+    label: "谈判专家组组成",
+    group: "服务选商实施方案",
+    kind: "textarea",
+    value: "历史说明",
+    required: true,
+    read_only: false,
+    hidden: true,
+  });
   const project = {
     id: "grouped-project",
     name: "分组项目",
@@ -3837,8 +3898,13 @@ it("groups negotiation content into five ordered tabs without duplicating fields
     stages: stageIds.map((id, i) => ({
       id,
       title: stageNames[i],
-      status: id === "selection" ? "completed" : "pending",
-      approval_date: id === "selection" ? "2026-11-06" : undefined,
+      status: ["plan", "selection"].includes(id) ? "completed" : "pending",
+      approval_date:
+        id === "selection"
+          ? "2026-11-06"
+          : id === "plan"
+          ? "2026-08-06"
+          : undefined,
       purpose: "",
       materials: [],
       upstream_changed: [],
@@ -3874,6 +3940,13 @@ it("groups negotiation content into five ordered tabs without duplicating fields
       const body = JSON.parse(String(init?.body));
       const firstEnd = body.recipients[0]?.end;
       return reply({
+        derived_values: {
+          "implementation.service_period": body.values[
+            "milestones.schedule"
+          ].includes("2027")
+            ? "2026年11月至2027年3月"
+            : "2026年11月",
+        },
         issues: [
           ...(body.values["project.background"].includes("追加原句")
             ? [
@@ -3954,13 +4027,14 @@ it("groups negotiation content into five ordered tabs without duplicating fields
     "受邀单位与资格要求",
     "谈判要求",
     "实施方案",
+    "时间轴",
   ]);
   const expected = [
     ["项目研究内容", definitions.slice(0, 5)],
     ["考核指标与进度安排", definitions.slice(5, 9)],
     ["受邀单位与资格要求", definitions.slice(9, 10)],
-    ["谈判要求", definitions.slice(10, 14)],
-    ["实施方案", definitions.slice(14)],
+    ["谈判要求", [...definitions.slice(10, 14), ...definitions.slice(16)]],
+    ["实施方案", definitions.slice(14, 16)],
   ] as const;
   const controls = new Map(
     definitions.map(([key, label]) => {
@@ -3982,6 +4056,11 @@ it("groups negotiation content into five ordered tabs without duplicating fields
       expect(screen.getByLabelText("第1家单位名称")).toBeVisible();
       const start = screen.getByLabelText("第1家领取开始时间");
       const end = screen.getByLabelText("第1家领取结束时间");
+      expect(
+        within(start.parentElement!).getByRole("button", {
+          name: "领取开始时间：填写说明",
+        }),
+      ).toBeVisible();
       expect(start).toHaveAccessibleDescription(/审批日期（2026-11-06）/);
       fireEvent.change(start, { target: { value: "2026-11-06T09:00" } });
       expect(start).toHaveAttribute("aria-invalid", "true");
@@ -4011,10 +4090,125 @@ it("groups negotiation content into five ordered tabs without duplicating fields
       fireEvent.change(start, { target: { value: "2026-11-08T09:00" } });
       expect(end).toHaveValue("2026-11-08T18:10");
       expect(screen.getByLabelText("第2家领取结束时间")).toHaveValue(
-        "2026-11-09T18:10",
+        "2026-11-09T17:30",
       );
+      await user.click(screen.getByRole("button", { name: "＋ 添加单位" }));
+      fireEvent.change(screen.getByLabelText("第3家单位名称"), {
+        target: { value: "丙单位" },
+      });
     }
   }
+  fireEvent.click(
+    within(tabs).getByRole("tab", { name: "考核指标与进度安排" }),
+  );
+  fireEvent.change(controls.get("milestones.schedule")!, {
+    target: { value: "2026.11：调研\n2027年3月：验收" },
+  });
+  fireEvent.click(within(tabs).getByRole("tab", { name: "实施方案" }));
+  expect(screen.getByLabelText("实施年度")).toHaveValue("2026");
+  expect(screen.getByLabelText("实施年度")).toHaveAttribute("readonly");
+  expect(screen.queryByLabelText("谈判专家组组成")).toBeNull();
+  await waitFor(() => {
+    expect(screen.getByLabelText("服务周期")).toHaveValue(
+      "2026年11月至2027年3月",
+    );
+  });
+  await user.click(
+    within(tabs).getByRole("tab", { name: "受邀单位与资格要求" }),
+  );
+  const recipientField = within(
+    screen.getByLabelText("第2家领取结束时间").parentElement!,
+  );
+  expect(
+    recipientField.getByRole("button", { name: "领取结束时间：填写说明" }),
+  ).toBeVisible();
+  await user.click(
+    recipientField.getByRole("button", { name: "领取结束时间：填写说明" }),
+  );
+  const recipientJump = recipientField.getByRole("link", { name: "时间轴" });
+  expect(recipientJump).toHaveAttribute("href", "#df-timeline-recipient-1-end");
+  await user.click(recipientJump);
+  const timeline = within(screen.getByRole("tabpanel", { name: "时间轴" }));
+  expect(timeline.getByLabelText("第2家领取结束时间")).toHaveFocus();
+  expect(timeline.getByText("2026-08-06")).toBeVisible();
+  expect(timeline.getByText("2026-11-06")).toBeVisible();
+  expect(
+    timeline.getByRole("button", { name: "查看论证意见审批资料" }),
+  ).toBeVisible();
+  expect(
+    timeline.getByRole("heading", { name: "邀请函发放时间" }),
+  ).toBeVisible();
+  expect(timeline.getByLabelText("邀请函发放开始时间")).toHaveValue(
+    "2026-11-06T14:00",
+  );
+  const dispatchEnd = timeline.getByLabelText("邀请函发放结束时间（可选）");
+  expect(dispatchEnd).toHaveValue("2026-11-06T17:30");
+  await user.click(timeline.getByRole("button", { name: "全部跟随发放时间" }));
+  const dispatch = timeline.getByLabelText("邀请函发放开始时间");
+  fireEvent.change(dispatch, { target: { value: "2026-11-06T15:00" } });
+  expect(dispatch).toHaveValue("2026-11-06T15:00");
+  fireEvent.change(dispatchEnd, { target: { value: "2026-11-06T18:00" } });
+  for (const index of [1, 2, 3]) {
+    expect(timeline.getByLabelText(`第${index}家领取开始时间`)).toHaveValue(
+      "2026-11-06T15:00",
+    );
+    expect(timeline.getByLabelText(`第${index}家领取结束时间`)).toHaveValue(
+      "2026-11-06T18:00",
+    );
+  }
+  fireEvent.change(dispatchEnd, { target: { value: "" } });
+  expect(timeline.getByLabelText("第3家领取结束时间")).toHaveValue(
+    "2026-11-06T17:30",
+  );
+  fireEvent.change(dispatchEnd, { target: { value: "2026-11-06T17:30" } });
+  const deadline = timeline.getByLabelText("响应文件提交截止时间");
+  fireEvent.change(deadline, { target: { value: "2026-11-17T17:30" } });
+  fireEvent.change(timeline.getByLabelText("商务谈判开始时间"), {
+    target: { value: "2026-11-20T15:00" },
+  });
+  fireEvent.change(timeline.getByLabelText("第1家领取开始时间"), {
+    target: { value: "2026-11-07T09:00" },
+  });
+  expect(timeline.getByLabelText("第1家领取结束时间")).toHaveValue(
+    "2026-11-07T17:30",
+  );
+  expect(timeline.getByLabelText("第2家领取开始时间")).toHaveValue(
+    "2026-11-06T15:00",
+  );
+  await user.click(within(tabs).getByRole("tab", { name: "谈判要求" }));
+  expect(screen.getByLabelText("响应文件提交截止时间")).toHaveValue(
+    "2026-11-17T17:30",
+  );
+  expect(screen.getByLabelText("总体发放时段")).toHaveValue(
+    "2026-11-06T15:00 ~ 2026-11-06T17:30",
+  );
+  fireEvent.change(screen.getByLabelText("响应文件提交截止时间"), {
+    target: { value: "2026-11-18T17:30" },
+  });
+  for (const label of [
+    "文件落款日期",
+    "总体发放时段",
+    "答疑时间段",
+    "响应文件提交截止时间",
+    "谈判时间",
+  ]) {
+    expect(
+      screen.getByRole("button", { name: `${label}：填写说明` }),
+    ).toBeVisible();
+  }
+  expect(
+    screen.queryByRole("button", { name: "谈判地点：填写说明" }),
+  ).toBeNull();
+  await user.click(
+    screen.getByRole("button", { name: "响应文件提交截止时间：填写说明" }),
+  );
+  await user.tab();
+  expect(screen.getByRole("link", { name: "时间轴" })).toHaveFocus();
+  await user.keyboard("{Enter}");
+  expect(timeline.getByLabelText("响应文件提交截止时间")).toHaveFocus();
+  expect(timeline.getByLabelText("响应文件提交截止时间")).toHaveValue(
+    "2026-11-18T17:30",
+  );
   await user.click(within(tabs).getByRole("tab", { name: "项目研究内容" }));
   fireEvent.change(screen.getByLabelText("项目背景"), {
     target: { value: "项目背景原文追加原句。" },
@@ -4046,9 +4240,15 @@ it("groups negotiation content into five ordered tabs without duplicating fields
   expect(saves).toHaveLength(1);
   expect(saves[0].values["project.background"]).toBe("项目背景原文追加原句。");
   expect(saves[0].values["workload.items"]).toBe("实物工作量原文新增工作量。");
+  expect(saves[0].values["submission.deadline"]).toBe("2026-11-18T17:30");
+  expect(saves[0].values["events.negotiation_time"]).toBe(
+    "2026-11-20T15:00 ~ 2026-11-20T17:30",
+  );
+  expect(saves[0].recipients![0].start).toBe("2026-11-07T09:00");
   expect(saves[0].recipients!.map((r) => r.name)).toEqual([
     "甲单位（保留）",
     "乙单位",
+    "丙单位",
   ]);
   await user.click(screen.getByRole("button", { name: "修改" }));
   expect(
@@ -4059,5 +4259,16 @@ it("groups negotiation content into five ordered tabs without duplicating fields
   ).toHaveAttribute("aria-selected", "true");
   await waitFor(() =>
     expect(screen.getByLabelText("实物工作量")).toHaveFocus(),
+  );
+  await user.click(within(tabs).getByRole("tab", { name: "时间轴" }));
+  await user.click(
+    timeline.getByRole("button", { name: "查看论证意见审批资料" }),
+  );
+  expect(
+    await screen.findByRole("heading", { name: "选商论证" }),
+  ).toBeVisible();
+  expect(screen.getByRole("tab", { name: "审批资料" })).toHaveAttribute(
+    "aria-selected",
+    "true",
   );
 }, 30000);

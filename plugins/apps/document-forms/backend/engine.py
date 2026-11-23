@@ -11,7 +11,7 @@ from datetime import date, datetime
 from zipfile import ZipFile, BadZipFile
 
 from docx.oxml import parse_xml
-from docx.oxml.ns import qn
+from docx.oxml.ns import nsmap, qn
 from docxtpl import DocxTemplate
 from jinja2 import StrictUndefined, nodes
 from jinja2.sandbox import SandboxedEnvironment
@@ -159,12 +159,12 @@ def recipient_end_on_start_date(start, end):
     day = re.match(r"\d{4}-\d{2}-\d{2}(?=[T ]|$)", start)
     if not day:
         return end
-    clock = re.search(r"[T ](\d{2}:\d{2}(?::\d{2})?)$", end)
+    clock = re.search(r"[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?)$", end)
     return day[0] + "T" + (clock[1] if clock else "17:30")
 
 
-def recipient_defaults(recipients, previous=()):
-    """Resolve linked clocks and carry the end date when the start changes."""
+def recipient_defaults(recipients, previous=(), dispatch=None):
+    """Resolve shared dispatch times or the first-unit defaults when absent."""
     result = [dict(recipient) for recipient in recipients]
     if not result:
         return result
@@ -177,16 +177,24 @@ def recipient_defaults(recipients, previous=()):
             follow = recipient.get(flag)
             if follow is None:
                 follow = not bool(recipient.get(key, "").strip())
-            recipient[flag] = bool(index and follow)
+            recipient[flag] = bool(follow and (dispatch is not None or index))
             if recipient[flag]:
-                recipient[key] = result[0].get(key, "")
+                shared = dispatch if dispatch is not None else result[0]
+                recipient[key] = shared.get(key, "")
         start = recipient.get("start", "")
         end = recipient.get("end", "")
+        if dispatch is not None and recipient["follow_end"]:
+            if not start:
+                recipient["end"] = ""
+            elif not recipient["follow_start"] or not end:
+                recipient["end"] = recipient_end_on_start_date(start, end)
+            continue
         prior = previous[index] if index < len(previous) else None
         follows_start_change = (
             prior
             and prior.get("name") == recipient.get("name")
             and prior.get("start") != start
+            and (dispatch is None or not recipient["follow_start"])
             and (recipient["follow_end"] or prior.get("end") == end)
         )
         if follows_start_change or (end_was_unspecified and not end):
@@ -330,6 +338,13 @@ def read_excel(content: bytes):
             }
             if not any(n in headers for n in aliases["name"]):
                 raise ValueError("受邀单位工作表缺少“单位名称”列")
+            follow_columns = {
+                key: (name + "发放" if name + "发放" in headers else name + "首家")
+                for key, name in (
+                    ("start", "开始时间跟随"),
+                    ("end", "结束时间跟随"),
+                )
+            }
             for row_number, row in enumerate(data[1:], 2):
                 if not any(c.value is not None for c in row):
                     continue
@@ -345,22 +360,18 @@ def read_excel(content: bytes):
                             raise ValueError(
                                 f"受邀单位第 {row_number} 行的领取时间无法识别，请填写明确的日期时间",
                             )
-                        record[key] = parsed.strftime("%Y-%m-%dT%H:%M")
+                        record[key] = picker_time(parsed)
                 # Keep numbered empty slots for later completion, but not a
                 # trailing note stored outside the mapped input columns.
                 if not (
                     any(record.values())
                     or ("序号" in headers and cell(row, "序号").isdigit())
                     or any(
-                        cell(row, column)
-                        for column in ("开始时间跟随首家", "结束时间跟随首家")
+                        cell(row, column) for column in follow_columns.values()
                     )
                 ):
                     continue
-                for key, column in [
-                    ("start", "开始时间跟随首家"),
-                    ("end", "结束时间跟随首家"),
-                ]:
+                for key, column in follow_columns.items():
                     flag = cell(row, column).lower()
                     if flag:
                         if flag not in {
@@ -403,7 +414,10 @@ def read_excel(content: bytes):
         # from editable source values instead of trusting stale cached results.
         return {
             "fields": fields,
-            "recipients": recipient_defaults(recipients),
+            "recipients": recipient_defaults(
+                recipients,
+                dispatch=recipient_dispatch({"fields": fields}),
+            ),
             "rules": rules,
         }
     finally:
@@ -681,12 +695,103 @@ def date_roles(fields):
     return result
 
 
+def timeline_times(case):
+    if case.get("stage_id", "negotiation") != "negotiation":
+        return {}
+    fields = {field["key"]: field for field in case["fields"]}
+    roles = date_roles(case["fields"])
+    if "events.invitation_time" in fields:
+        roles["dispatch"] = "events.invitation_time"
+    result = {}
+    for role, key in roles.items():
+        field = fields[key]
+        value = field["value"]
+        interval = parsed_interval(value)
+        start = end = ""
+        if interval:
+            start, end = (point.isoformat() for point in interval)
+            if field["kind"] == "date":
+                start = interval[0].date().isoformat()
+            if not re.search(r"~|～|至|到|—|–", value):
+                end = ""
+        result[role] = {"key": key, "value": value, "start": start, "end": end}
+    return result
+
+
+def picker_time(point):
+    return point.isoformat(
+        timespec="auto" if point.second or point.microsecond else "minutes",
+    )
+
+
+def recipient_dispatch(case):
+    binding = timeline_times(case).get("dispatch")
+    if binding is None:
+        return None
+    return {
+        key: picker_time(datetime.fromisoformat(binding[key]))
+        if binding[key]
+        else ""
+        for key in ("start", "end")
+    }
+
+
+def refresh_implementation_fields(case):
+    if case.get("stage_id", "negotiation") != "negotiation":
+        return
+    fields = {field["key"]: field for field in case["fields"]}
+    year = fields.get("implementation.year")
+    period = fields.get("implementation.service_period")
+    experts = fields.get("implementation.expert_group")
+    if experts:
+        experts["hidden"] = not any(
+            experts["key"] in template["keys"]
+            for template in case["templates"]
+        )
+    if year:
+        roles = date_roles(case["fields"])
+        source = roles.get("negotiation", roles.get("issue", ""))
+        appointment = parsed_interval(fields.get(source, {}).get("value", ""))
+        if not appointment and "issue" in roles:
+            source = roles["issue"]
+            appointment = parsed_interval(fields[source]["value"])
+        year.update(
+            value=str(appointment[0].year) if appointment else "",
+            derived_from=source or "events.negotiation_time",
+            read_only=True,
+            help="自动引用商务谈判时间的年份，未安排谈判时采用文件落款年份。",
+        )
+    if period:
+        source = "milestones.schedule"
+        schedule = fields.get(source, {}).get("value", "")
+        months = []
+        for y, m, next_year, last_month in re.findall(
+            r"(?<!\d)([12]\d{3})\s*(?:年|[./-])\s*(1[0-2]|0?[1-9])(?!\d)"
+            r"\s*月?(?:\s*(?:至|到|[~～—–-])\s*(次年|翌年)?\s*"
+            r"(1[0-2]|0?[1-9])\s*月)?",
+            schedule,
+        ):
+            months.append((int(y), int(m)))
+            if last_month:
+                months.append((int(y) + bool(next_year), int(last_month)))
+        ends = sorted({min(months), max(months)}) if months else []
+        period.update(
+            value="至".join(f"{y}年{m}月" for y, m in ends),
+            derived_from=source,
+            read_only=True,
+            help="自动引用进度安排中最早和最晚的年月。",
+        )
+
+
 def checks(case, selection_approval_date=None):
     # Required fields, templates, shared dates and budgets each add rules.
     # pylint: disable=too-many-branches,too-many-statements
     fields, recipients = case["fields"], case["recipients"]
     values = {f["key"]: f["value"] for f in fields}
     field_labels = {f["key"]: f["label"] for f in fields}
+    template_keys = {
+        key for template in case["templates"] for key in template["keys"]
+    }
     results = []
 
     def add(label, status, detail, field=""):
@@ -700,6 +805,10 @@ def checks(case, selection_approval_date=None):
         )
 
     for f in fields:
+        if f.get("hidden") or (
+            f.get("derived_from") and f["key"] not in template_keys
+        ):
+            continue
         if f.get("opinion_required") and (
             f.get("opinion_empty") or not f["value"].strip()
         ):
@@ -735,14 +844,19 @@ def checks(case, selection_approval_date=None):
         ):
             add(f["label"], "error", "请填写四位计划年度", f["key"])
         if f["required"] and not str(f["value"]).strip():
-            add(f["label"], "missing", "尚未填写", f["key"])
+            add(
+                f["label"],
+                "missing",
+                f["help"] if f.get("derived_from") else "尚未填写",
+                f["key"],
+            )
         elif (
             f["value"]
             and f["kind"] in {"date", "datetime-local"}
             and not parsed_date(f["value"])
         ):
             add(f["label"], "error", "日期格式无法识别", f["key"])
-    for key in {k for t in case["templates"] for k in t["keys"]}:
+    for key in template_keys:
         if (
             key not in INVITATION_KEYS | PARTICIPANT_KEYS
             and key not in values
@@ -974,23 +1088,13 @@ def check_recipients(
         if overall_interval:
             overall_label = field_labels["events.invitation_time"]
             compare(
-                f"{title} · 领取开始处于总体发放期",
+                f"{title} · 总体发放开始至领取开始",
                 overall_interval[0].isoformat(),
                 r["start"],
                 field=start_field,
                 timing_labels=(
                     overall_label + "的开始时间",
                     "领取开始时间",
-                ),
-            )
-            compare(
-                f"{title} · 领取结束处于总体发放期",
-                r["end"],
-                overall_interval[1].isoformat(),
-                field=end_field,
-                timing_labels=(
-                    "领取结束时间",
-                    overall_label + "的结束时间",
                 ),
             )
 
@@ -1018,9 +1122,8 @@ def _anchor_selection_signatures(document):
     width = (
         section.page_width - section.left_margin - section.right_margin
     ) // 635
-    wordml = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     table = parse_xml(
-        f"""<w:tbl xmlns:w="{wordml}">
+        f"""<w:tbl xmlns:w="{nsmap['w']}">
         <w:tblPr>
           <w:tblpPr w:vertAnchor="margin" w:horzAnchor="margin"
             w:tblpXSpec="left" w:tblpYSpec="bottom" w:topFromText="160"/>
@@ -1032,7 +1135,8 @@ def _anchor_selection_signatures(document):
           </w:tblBorders>
           <w:tblLayout w:type="fixed"/>
           <w:tblCellMar>
-            <w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
+            <w:left w:w="0" w:type="dxa"/>
+            <w:right w:w="0" w:type="dxa"/>
           </w:tblCellMar>
         </w:tblPr>
         <w:tblGrid><w:gridCol w:w="{width}"/></w:tblGrid>
@@ -1128,6 +1232,8 @@ def export_excel(case, selection_approval_date=None):
         ["变量名称", "中文名称", "值", "分组", "类型", "必填", "文书显示"],
     )
     for f in case["fields"]:
+        if f.get("hidden"):
+            continue
         sheet.append(
             [
                 f["key"],
@@ -1139,18 +1245,20 @@ def export_excel(case, selection_approval_date=None):
                 document_field_value(f),
             ],
         )
+    dispatch = recipient_dispatch(case)
+    source = "发放" if dispatch is not None else "首家"
     recipients = book.create_sheet("受邀单位")
     recipients.append(
         [
             "单位名称",
             "领取开始时间",
             "领取结束时间",
-            "开始时间跟随首家",
-            "结束时间跟随首家",
+            "开始时间跟随" + source,
+            "结束时间跟随" + source,
             "领取时段（文书）",
         ],
     )
-    for r in recipient_defaults(case["recipients"]):
+    for r in recipient_defaults(case["recipients"], dispatch=dispatch):
         recipients.append(
             [
                 r["name"],

@@ -121,6 +121,7 @@ def bundled_workbook(client, filled=False):
     values = {
         "project.name": "测试项目 A & B <参数>",
         "dates.issue": "2026-11-01",
+        "milestones.schedule": "2026.11：调研\n2027年1月至2027年3月：成果验收",
         "events.invitation_time": "2026-11-02 09:00 ~ 2026-11-03 17:00",
         "events.questions_time": "2026-11-04 09:00 ~ 2026-11-04 11:00",
         "submission.deadline": "2026-11-06T17:00",
@@ -2074,7 +2075,7 @@ def test_bundled_templates_are_portable_blank_and_generate_nine_documents(
 ):
     blank = bundled_workbook(client)
     data = engine.read_excel(blank)
-    assert len(data["fields"]) == 28 and all(
+    assert len(data["fields"]) == 27 and all(
         not f["value"] for f in data["fields"]
     )
     assert all(
@@ -2121,6 +2122,9 @@ def test_bundled_templates_are_portable_blank_and_generate_nine_documents(
             assert not any(s in text for s in ("{{", "{%", "驴驹河", "郑帅"))
             if "服务选商实施方案" in file["name"]:
                 assert all(name in text for name in ("甲单位", "乙单位", "丙单位"))
+                assert "2026年度" in text
+                assert "服务周期为2026年11月至2027年3月" in text
+                assert "谈判专家组共7人" in text
                 assert "国内外新型电力储能" not in text
                 assert "西南石油大学" not in text
                 assert "综合评分法" in text
@@ -2135,6 +2139,90 @@ def test_bundled_templates_are_portable_blank_and_generate_nine_documents(
     assert {t["id"] for t in case["templates"]}.isdisjoint(
         t["id"] for t in other["templates"]
     )
+
+
+def test_implementation_derives_values_and_upgrades_legacy_templates(
+    client,
+    monkeypatch,
+):
+    workbook = bundled_workbook(client, filled=True)
+    response = client.post(
+        "/api/document-forms/cases",
+        files={"workbook": ("配套.xlsx", workbook)},
+    )
+    assert response.status_code == 200, response.text
+    case = response.json()
+    route = f"/api/document-forms/cases/{case['id']}"
+    assert values_for(case)["implementation.year"] == "2026"
+    assert (
+        values_for(case)["implementation.service_period"] == "2026年11月至2027年3月"
+    )
+    option = next(
+        t for t in case["templates"] if t["name"] == main.builtin.NAMES[-1]
+    )
+    path = next(main.ROOT.rglob(option["id"] + ".docx"))
+    doc = Document()
+    doc.add_paragraph("{{ implementation.expert_group }}")
+    doc.save(path)
+    old_content = path.read_bytes()
+    digest = hashlib.sha256(old_content).hexdigest()
+    monkeypatch.setattr(main.builtin, "LEGACY_IMPLEMENTATION_WORD", digest)
+    option.update(sha256=digest, keys=["implementation.expert_group"])
+    case["fields"].append(
+        {
+            "key": "implementation.expert_group",
+            "label": "谈判专家组组成",
+            "value": "已保存的历史说明",
+            "group": "服务选商实施方案",
+            "kind": "textarea",
+            "required": True,
+        },
+    )
+    main.save(path.parent.parent.parent, case)
+    updated = client.get(route).json()
+    assert updated["revision"] == case["revision"] + 1
+    assert client.get(route).json() == updated
+    assert path.read_bytes() == old_content
+    assert values_for(updated)["implementation.expert_group"] == "已保存的历史说明"
+    assert next(
+        f
+        for f in updated["fields"]
+        if f["key"] == "implementation.expert_group"
+    )["hidden"]
+    asset = next(
+        t for t in updated["templates"] if t["name"] == option["name"]
+    )
+    assert (
+        asset["id"] != option["id"]
+        and "implementation.expert_group" not in asset["keys"]
+    )
+
+    payload = {
+        "revision": updated["revision"],
+        "name": updated["name"],
+        "values": dict(
+            values_for(updated),
+            **{
+                "dates.issue": "2027-11-01",
+                "events.negotiation_time": "",
+                "milestones.schedule": "2027年11月至次年3月：研究与验收",
+                "implementation.year": "2099",
+                "implementation.service_period": "不应使用的值",
+            },
+        ),
+        "recipients": updated["recipients"],
+    }
+    expected = {
+        "implementation.year": "2027",
+        "implementation.service_period": "2027年11月至2028年3月",
+    }
+    preview = client.post(route + "/validate", json=payload)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["derived_values"] == expected
+    assert client.get(route).json() == updated
+    saved = client.put(route, json=payload)
+    assert saved.status_code == 200, saved.text
+    assert {key: values_for(saved.json())[key] for key in expected} == expected
 
 
 def test_personal_defaults_override_bundled_without_changing_old_records(
@@ -2898,8 +2986,17 @@ def test_draft_checks_without_saving_and_direct_generation(
         "recipients": case["recipients"],
     }
     payload["values"]["dates.issue"] = ""
+    payload["values"]["events.negotiation_time"] = "2026年11月7日上午9:00"
     checked = client.post(route + "/validate", json=payload)
     assert checked.status_code == 200, checked.text
+    assert before["timeline_times"]["issue"]["start"] == "2026-11-01"
+    assert checked.json()["timeline_times"]["issue"]["start"] == ""
+    assert checked.json()["timeline_times"]["negotiation"] == {
+        "key": "events.negotiation_time",
+        "value": "2026年11月7日上午9:00",
+        "start": "2026-11-07T09:00:00",
+        "end": "",
+    }
     issues = checked.json()["issues"]
     assert any(
         row["field"] == "dates.issue" and row["status"] == "missing"
@@ -3084,7 +3181,7 @@ def test_missing_or_stale_dimensions_annotated_headers_and_sparse_rows(stale):
     assert data["recipients"][1] == {
         "name": "",
         "start": "2026-07-02T09:00",
-        "end": "2026-07-02T10:00",
+        "end": "2026-07-02T17:00",
         "follow_start": True,
         "follow_end": True,
     }
@@ -3103,6 +3200,13 @@ def test_reported_workbook_layout_review_edit_generate_and_roundtrip(client):
     )
     assert response.status_code == 200, response.text
     case = response.json()
+    assert case["timeline_times"]["dispatch"] == {
+        "key": "events.invitation_time",
+        "value": "2026-07-02 09:00 ~ 2026-07-02 17:00",
+        "start": "2026-07-02T09:00:00",
+        "end": "2026-07-02T17:00:00",
+    }
+    assert case["timeline_times"]["response"]["key"] == "submission.deadline"
     base = f"/api/document-forms/cases/{case['id']}"
     templates = []
     for name, paragraph in [
@@ -3141,23 +3245,27 @@ def test_reported_workbook_layout_review_edit_generate_and_roundtrip(client):
     recipients = [
         {
             "name": name,
-            "start": f"2026-07-02T{hour}:00",
-            "end": f"2026-07-02T{hour}:30",
+            "start": f"2026-07-{day}T{hour}:00",
+            "end": f"2026-07-{day}T{hour}:30",
         }
-        for name, hour in [
-            ("甲单位", "09"),
-            ("乙单位", "11"),
-            ("丙单位", "13"),
+        for name, day, hour in [
+            ("甲单位", "02", "09"),
+            ("乙单位", "02", "11"),
+            ("丙单位", "03", "07"),
         ]
     ]
+    payload = {
+        "revision": case["revision"],
+        "name": "复核测试",
+        "values": values,
+        "recipients": recipients,
+    }
+    checked = client.post(base + "/validate", json=payload)
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["issues"] == []
     case = client.put(
         base,
-        json={
-            "revision": case["revision"],
-            "name": "复核测试",
-            "values": values,
-            "recipients": recipients,
-        },
+        json=payload,
     ).json()
     review = client.post(
         base + "/review",
@@ -3258,7 +3366,7 @@ def test_empty_unsized_input_sections_have_clear_errors(sheet_name):
         engine.read_excel(output.getvalue())
 
 
-def test_recipients_stay_in_overall_window_and_response_precedes_negotiation():
+def test_recipient_pickup_follows_dispatch_and_precedes_later_events():
     data = engine.read_excel(unsized_workbook())
     data["recipients"] = data["recipients"][:1]
     data["recipients"][0]["start"] = "2026-07-02T08:30"
@@ -3269,11 +3377,9 @@ def test_recipients_stay_in_overall_window_and_response_precedes_negotiation():
         if field["key"] == "submission.deadline":
             field["value"] = "2026-07-05T09:00"
     results = engine.checks(dict(data, templates=[]))
-    assert (
-        sum(
-            r["status"] == "error" and "处于总体发放期" in r["label"] for r in results
-        )
-        == 2
+    assert not any(
+        r["status"] == "error" and r["field"] == "recipient-0-end"
+        for r in results
     )
     assert any(
         r["status"] == "error" and r["field"] == "events.negotiation_time"
@@ -3303,12 +3409,10 @@ def test_recipients_stay_in_overall_window_and_response_precedes_negotiation():
         "当前领取结束时间为 2026-11-07 17:30。",
         "领取结束时间不能晚于商务谈判时间段的开始时间（2026-07-05 09:00）。"
         "当前领取结束时间为 2026-11-07 17:30。",
-        "领取结束时间不能晚于总体邀请函发放时段的结束时间（2026-07-02 17:00）。"
-        "当前领取结束时间为 2026-11-07 17:30。",
     ]
 
 
-def test_followed_times_manual_override_save_reload_and_excel_roundtrip(
+def test_recipient_times_follow_dispatch_and_keep_roundtrip_overrides(
     client,
 ):
     response = client.post(
@@ -3333,6 +3437,7 @@ def test_followed_times_manual_override_save_reload_and_excel_roundtrip(
 
     assert case["recipients"][1]["follow_start"]
     assert case["recipients"][2]["start"] == case["recipients"][0]["start"]
+    assert case["recipients"][2]["end"] == "2026-07-02T17:00"
     case["recipients"][1].update(start="2026-07-02T10:00", follow_start=False)
     case["recipients"][0].update(
         start="2026-07-02T09:30",
@@ -3340,8 +3445,8 @@ def test_followed_times_manual_override_save_reload_and_excel_roundtrip(
     )
     case = persist()
     assert case["recipients"][1]["start"] == "2026-07-02T10:00"
-    assert case["recipients"][1]["end"] == "2026-07-02T11:00"
-    assert case["recipients"][2]["start"] == "2026-07-02T09:30"
+    assert case["recipients"][1]["end"] == "2026-07-02T17:00"
+    assert case["recipients"][2]["start"] == "2026-07-02T09:00"
     case["recipients"][1].update(end="", follow_end=False)
     case["recipients"][0]["end"] = "2026-07-02T12:00"
     case = persist()
@@ -3351,7 +3456,39 @@ def test_followed_times_manual_override_save_reload_and_excel_roundtrip(
     assert exported["recipients"] == case["recipients"]
     case["recipients"][1]["follow_start"] = True
     case = persist()
-    assert case["recipients"][1]["start"] == case["recipients"][0]["start"]
+    assert case["recipients"][1]["start"] == "2026-07-02T09:00"
+    for recipient, name in zip(case["recipients"], ("甲", "乙", "丙")):
+        recipient.update(name=name, follow_start=True, follow_end=True)
+    fields = {field["key"]: field for field in case["fields"]}
+    fields["dates.issue"]["value"] = "2026-07-01"
+    fields["events.invitation_time"][
+        "value"
+    ] = "2026-07-02 14:30 ~ 2026-07-02 18:00"
+    case = persist()
+    assert {(r["start"], r["end"]) for r in case["recipients"]} == {
+        ("2026-07-02T14:30", "2026-07-02T18:00"),
+    }
+    checked = client.post(
+        base + "/validate",
+        json={
+            "revision": case["revision"],
+            "name": case["name"],
+            "values": values_for(case),
+            "recipients": case["recipients"],
+        },
+    )
+    assert checked.status_code == 200, checked.text
+    assert not any(
+        r["field"].startswith("recipient-") for r in checked.json()["issues"]
+    )
+    fields = {field["key"]: field for field in case["fields"]}
+    fields["events.invitation_time"]["value"] = "2026-07-02T14:30"
+    case = persist()
+    assert {r["end"] for r in case["recipients"]} == {"2026-07-02T17:30"}
+    assert (
+        engine.read_excel(client.get(base + "/excel").content)["recipients"]
+        == case["recipients"]
+    )
 
 
 def test_legacy_explicit_times_are_preserved_and_empty_slots_can_follow():
@@ -3377,6 +3514,7 @@ def test_empty_follow_modes_survive_excel_export_without_unit_names():
     data = engine.read_excel(unsized_workbook())
     data["recipients"] = engine.recipient_defaults(
         [{"name": "", "start": "", "end": ""}] * 3,
+        dispatch=engine.recipient_dispatch(data),
     )
     result = engine.read_excel(engine.export_excel(dict(data, templates=[])))
     assert result["recipients"] == data["recipients"]

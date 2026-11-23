@@ -704,7 +704,7 @@ const documentFormsTests = readFileSync(
   "utf8",
 );
 for (const title of [
-  "imports Excel, edits the real form, requires review and confirmation, then previews generated Word with the host Office component",
+  "imports Excel, edits the real form, generates without manual confirmation, then previews generated Word with the host Office component",
   "automatically loads the five bundled templates and downloads their blank Excel kit",
   "organizes projects into seven stages and keeps material versions and submission details on the packaged page",
   "reviews shared project differences before selectively updating a stage form and protects unsaved edits",
@@ -714,7 +714,7 @@ for (const title of [
   "fills selection opinion and upload fields with shared project references and previews generated files",
   "links selection opinion facts to approval and candidate fields while preserving authored findings",
   "edits inline opinion prose and pastes plain text without detached reference blocks or HTML",
-  "groups negotiation content into five ordered tabs without duplicating fields and keeps recipients, drafts and issue navigation",
+  "keeps five negotiation groups and edits the shared timeline without losing drafts or issue navigation",
   "uses workflow tabs in %s without shared reference blocks and preserves drafts through validation and attachments",
   "keeps template management, Excel transfers and saving in the live stage toolbar without losing drafts",
   "restores the live stage header and its actions after returning from overview and basic information",

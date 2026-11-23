@@ -29,6 +29,9 @@ ALL_NAMES = NAMES + PLAN_NAMES + SELECTION_NAMES + ACCEPTANCE_NAMES
 LEGACY_PLAN_WORD = (
     "64492548958b8ae57d825be95d6a5ae6469b0adbd26a89e0efa64c1d8f8e3e0a"
 )
+LEGACY_IMPLEMENTATION_WORD = (
+    "c849448820f1fa6a592241f0b69f0a0df4efddf29b9db6be7d93fdcc8299bc3a"
+)
 
 
 SELECTION_CHOICES = {
@@ -727,30 +730,31 @@ def implementation_fields():
             "key": "implementation." + key,
             "label": label,
             "group": "服务选商实施方案",
-            "kind": kind,
+            "kind": "text",
             "required": True,
             "value": "",
             "help": help_text,
         }
-        for key, label, kind, help_text in (
-            ("year", "实施方案年度", "text", "填写四位年份。"),
+        for key, label, help_text in (
             (
-                "expert_group",
-                "谈判专家组组成",
-                "textarea",
-                "填写人数、成员来源及组成。",
+                "year",
+                "实施方案年度",
+                "自动引用商务谈判时间的年份，未安排谈判时采用文件落款年份。",
             ),
-            ("service_period", "服务周期", "text", "例如：2026年11月至2027年3月。"),
+            (
+                "service_period",
+                "服务周期",
+                "自动引用进度安排中最早和最晚的年月。",
+            ),
         )
     ]
 
 
 def starter_files():
     # The host loads backend as a subpackage of the dynamic plugin root.
-    from .engine import (  # pylint: disable=relative-beyond-top-level
+    from .engine import (
         export_excel,
-        recipient_defaults,
-    )
+    )  # pylint: disable=relative-beyond-top-level
 
     files = load_templates()
     files.update(
@@ -798,9 +802,9 @@ def starter_files():
     files["变量管理表.xlsx"] = export_excel(
         {
             "fields": blank_fields(),
-            "recipients": recipient_defaults(
-                [{"name": "", "start": "", "end": ""} for _ in range(3)],
-            ),
+            "recipients": [
+                {"name": "", "start": "", "end": ""} for _ in range(3)
+            ],
             "rules": [],
             "templates": [],
         },
