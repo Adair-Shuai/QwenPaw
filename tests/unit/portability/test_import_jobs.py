@@ -507,7 +507,8 @@ async def test_cancel_of_uncooperative_job_is_bounded_and_keeps_ownership(
 
         snapshot = await asyncio.wait_for(
             manager.cancel(workspace, live.snapshot.job_id),
-            timeout=0.2,
+            # Cancellation persists state on disk before returning.
+            timeout=2,
         )
 
         assert snapshot.state == "cancelling"

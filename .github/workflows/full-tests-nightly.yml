@@ -199,7 +199,9 @@ jobs:
           # the install: a separate `pip install "setuptools<82"` step
           # beforehand gets upgraded away by this resolution again
           # (reproduced with pip 26.2.1; see CI run 31571533395).
-          pip install -e ".[dev,test,full]" "setuptools<82"
+          # Unit tests call the legacy wheel backend directly and load the
+          # independently shipped Storage Ledger workbook reader.
+          pip install -e ".[dev,test,full]" "setuptools<82" wheel "xlrd>=2.0"
 
       - name: Install locked native icon renderer
         shell: bash

@@ -125,6 +125,7 @@ jobs:
                 tests/unit/routers/test_desktop_delivery.py|\
                 tests/channel_support/process.py|\
                 tests/unit/plugins/test_plugin_lifecycle_lock.py|\
+                tests/unit/portability/test_import_jobs.py|\
                 tests/unit/tauri/test_entry.py|\
                 tests/unit/app/test_expert_packages.py|\
                 tests/unit/scripts/test_macos_packaging.py|\
