@@ -706,6 +706,18 @@ class CronManager(ManagerBase):
             else:
                 logger.info("heartbeat disabled, job removed")
 
+    def run_heartbeat_now(self) -> None:
+        """Admit a manual heartbeat as work owned by this workspace."""
+        if self._successor is not None:
+            self._successor.run_heartbeat_now()
+            return
+        task = asyncio.create_task(
+            self._heartbeat_callback(),
+            name="cron-run-heartbeat",
+        )
+        self._manual_tasks.add(task)
+        task.add_done_callback(self._manual_tasks.discard)
+
     def _register_memory_jobs(self) -> None:
         memory_manager = getattr(self._workspace, "memory_manager", None)
         if memory_manager is None:

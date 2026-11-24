@@ -12,6 +12,7 @@ import pytest
 from apscheduler.events import EVENT_JOB_MAX_INSTANCES
 from apscheduler.schedulers.base import STATE_PAUSED
 
+from qwenpaw.app.crons import manager as cron_module
 from qwenpaw.app.crons.contracts import ServiceCronJob
 
 from qwenpaw.app.crons.manager import CronManager
@@ -686,6 +687,42 @@ async def test_manual_request_crossing_handoff_runs_on_new_workspace(
         run_release.set()
         if request is not None:
             await asyncio.gather(request, return_exceptions=True)
+        await manager.stop_all()
+
+
+@pytest.mark.asyncio
+async def test_manual_heartbeat_remains_admitted_during_workspace_reload(
+    reload_pair,
+    monkeypatch,
+):
+    manager, old, new, _, _ = reload_pair
+    release = asyncio.Event()
+    finished = []
+
+    async def heartbeat(*, workspace, **_):
+        await release.wait()
+        await manager.wait_workspace_ready(workspace)
+        finished.append(workspace)
+
+    monkeypatch.setattr(cron_module, "run_heartbeat_once", heartbeat)
+    try:
+        await old.start()
+        old_cron = old.cron_manager
+        old_cron.run_heartbeat_now()
+        (outgoing,) = old_cron.snapshot_active_tasks().values()
+
+        assert await manager.reload_agent("agent-1")
+        assert manager.is_workspace_draining(old)
+        assert old._started
+
+        old_cron.run_heartbeat_now()
+        (incoming,) = new.cron_manager.snapshot_active_tasks().values()
+        assert set(old_cron.snapshot_active_tasks().values()) == {outgoing}
+        release.set()
+        await asyncio.wait_for(asyncio.gather(outgoing, incoming), 5)
+        assert finished.count(old) == finished.count(new) == 1
+    finally:
+        release.set()
         await manager.stop_all()
 
 

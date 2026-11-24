@@ -431,6 +431,9 @@
       "test_updates_are_atomic_and_stale_review_does_not_overwrite_changes",
       "test_real_message_contract_and_image_payload"
     ],
+    "tests/unit/app/test_cron_reload.py": [
+      "test_manual_heartbeat_remains_admitted_during_workspace_reload"
+    ],
     "tests/unit/app/test_expert_repair.py": [
       "test_repair_retains_instance_files_policy_and_recovers_committed_switch",
       "test_repair_failure_or_race_never_replaces_current_environment",

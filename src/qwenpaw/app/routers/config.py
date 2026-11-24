@@ -1159,28 +1159,13 @@ async def put_heartbeat(
 )
 async def run_heartbeat_now(request: Request) -> Any:
     """Trigger one heartbeat run in background for quick testing."""
-    import logging
-
     from ..agent_context import get_agent_for_request
-    from ..crons.heartbeat import run_heartbeat_once
 
     workspace = await get_agent_for_request(request)
-
-    async def _run_once_bg() -> None:
-        try:
-            await run_heartbeat_once(
-                workspace=workspace,
-                channel_manager=workspace.channel_manager,
-                agent_id=workspace.agent_id,
-                workspace_dir=workspace.workspace_dir,
-            )
-        except Exception as e:  # pylint: disable=broad-except
-            logging.getLogger(__name__).exception(
-                "manual heartbeat run failed: %s",
-                e,
-            )
-
-    asyncio.create_task(_run_once_bg())
+    cron_manager = workspace.cron_manager
+    if cron_manager is None:
+        raise HTTPException(status_code=503, detail="Heartbeat is unavailable")
+    cron_manager.run_heartbeat_now()
     return {"started": True}
 
 

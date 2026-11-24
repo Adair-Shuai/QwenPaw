@@ -397,18 +397,11 @@ class TestRunHeartbeatNow:
         patch_get_agent,
         fake_agent_workspace,
     ):
-        created: list = []
-
-        def fake_create_task(coro):
-            created.append(coro)
-            coro.close()  # avoid RuntimeWarning; we do not run it
-            return MagicMock()
-
-        with patch("asyncio.create_task", side_effect=fake_create_task):
-            response = client.post("/api/config/heartbeat/run")
+        response = client.post("/api/config/heartbeat/run")
         assert response.status_code == 200
         assert response.json() == {"started": True}
-        assert len(created) == 1
+        cron_manager = fake_agent_workspace.cron_manager
+        cron_manager.run_heartbeat_now.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
