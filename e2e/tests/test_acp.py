@@ -21,6 +21,7 @@ import logging
 import re
 import pytest
 from playwright.sync_api import Page, expect
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from config.settings import config
 from utils.helpers import log_test_step, log_test_result
@@ -39,15 +40,21 @@ ACP_DIALOG_SELECTOR = '[role="dialog"]:visible'
 
 def navigate_to_acp_config(page: Page):
     """Dismiss the MCP prompt before testing ACP configuration controls."""
-    with page.expect_response(lambda response: response.url.endswith("/api/mcp-plugin")) as status:
-        page.goto(f"{config.base_url}/acp", wait_until="domcontentloaded")
-    response = status.value
+    response = page.request.get(f"{config.base_url}/api/mcp-plugin")
     assert response.ok, f"MCP status returned HTTP {response.status}"
-    if not response.json()["available"]:
+    available = response.json()["available"]
+    page.goto(f"{config.base_url}/acp", wait_until="domcontentloaded")
+    if not available:
         prompt = page.get_by_role("dialog").filter(
             has_text=re.compile(r"MCP plugin required|需要 MCP 插件"),
         )
-        prompt.get_by_role("button", name=re.compile(r"^(Later|稍后)$")).click()
+        later = prompt.get_by_role("button", name=re.compile(r"^(Later|稍后)$"))
+        try:
+            later.click(timeout=5000)
+        except PlaywrightTimeoutError:
+            # The prompt can close during the initial plugin refresh.
+            if prompt.is_visible():
+                raise
         expect(prompt).to_be_hidden()
 
 

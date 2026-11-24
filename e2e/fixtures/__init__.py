@@ -145,9 +145,7 @@ def browser_context(browser: Browser, request: pytest.FixtureRequest) -> Generat
             "height": config.browser.viewport_height,
         },
         user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        # Use en-US locale to match the system under test (English-only UI),
-        # preventing Chrome from showing a translation popup that would
-        # obscure page elements on a locale mismatch.
+        # Match the English labels used by the E2E page objects.
         locale="en-US",
         timezone_id="Asia/Shanghai",
         record_video_dir=video_dir,
@@ -165,6 +163,9 @@ def browser_context(browser: Browser, request: pytest.FixtureRequest) -> Generat
         """
         try {
             localStorage.setItem('qwenpaw.desktop-mode-hint.dismissed', '1');
+            if (!localStorage.getItem('language')) {
+                localStorage.setItem('language', 'en');
+            }
         } catch (e) {}
         """
     )
