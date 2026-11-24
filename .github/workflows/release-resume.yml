@@ -117,6 +117,7 @@ jobs:
                 scripts/fork_backend_suites.json|\
                 scripts/verify_update_regressions.py|\
                 console/src/plugins/hostSdk/hooks.host.test.ts|\
+                console/src/plugins/expertFilesWorkspace.test.tsx|\
                 console/src/plugins/flowForgeWorkbench.test.tsx|\
                 console/src/plugins/marketLoading.test.tsx|\
                 console/src/features/files-workspace/FilesDrawer.test.tsx|\
@@ -124,6 +125,7 @@ jobs:
                 console/src/pages/Settings/PluginManager/components/InstalledPluginList.coverage.test.tsx|\
                 tests/unit/routers/test_desktop_delivery.py|\
                 tests/channel_support/process.py|\
+                tests/unit/plugins/test_driver_host.py|\
                 tests/unit/plugins/test_plugin_lifecycle_lock.py|\
                 tests/unit/tauri/test_entry.py|\
                 tests/unit/app/test_expert_packages.py|\

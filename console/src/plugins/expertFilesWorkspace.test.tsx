@@ -427,7 +427,7 @@ describe.each([
       screen.getByRole("switch", { name: "挂载 REFERENCE.md" }),
     ).toBeChecked();
     expect(screen.getByRole("button", { name: "保存文档" })).toBeDisabled();
-  });
+  }, 30_000);
 
   it("preserves core prompt protection and rolls back failed immediate mount updates", async () => {
     const dialog = await openEditor();

@@ -3,10 +3,12 @@
 
 # pylint: disable=protected-access
 from dataclasses import replace
+from functools import partial
 
 from agentscope.message import TextBlock, ToolResultState
 from agentscope.tool import Toolkit
 
+from qwenpaw.agents.builtin_mcp import neqsim, neqsim_runtime
 from qwenpaw.app.workspace.service_factories import create_driver_service
 from qwenpaw.drivers.adapters.agentscope_tool import build_driver_agent_tools
 from qwenpaw.drivers.contracts import DriverCard
@@ -22,7 +24,15 @@ async def start_driver_service(workspace):
     return await create_driver_service(workspace, None, publish)
 
 
-async def test_empty_workspace_keeps_driver_runtime_lazy(tmp_path):
+async def test_empty_workspace_keeps_driver_runtime_lazy(
+    tmp_path,
+    monkeypatch,
+):
+    discover_uninstalled = partial(
+        neqsim_runtime.discover_runtime,
+        tmp_path / "uninstalled-neqsim",
+    )
+    monkeypatch.setattr(neqsim, "discover_runtime", discover_uninstalled)
     async with PluginTestHost(tmp_path / "host") as host:
         await host.load(
             driver_plugin(tmp_path),
@@ -32,7 +42,10 @@ async def test_empty_workspace_keeps_driver_runtime_lazy(tmp_path):
         runtime = await start_driver_service(workspace)
         try:
             assert await runtime.list_capabilities() == []
-            assert await runtime.list_drivers() == []
+            (builtin_driver,) = await runtime.list_drivers()
+            assert builtin_driver.name == neqsim.NEQSIM_CLIENT_KEY
+            assert builtin_driver.enabled is False
+            assert builtin_driver.status == "disabled"
             assert runtime.manager is None and runtime.watcher is None
         finally:
             await runtime.shutdown_all()
