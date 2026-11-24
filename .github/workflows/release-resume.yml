@@ -125,7 +125,6 @@ jobs:
                 tests/unit/routers/test_desktop_delivery.py|\
                 tests/channel_support/process.py|\
                 tests/unit/plugins/test_plugin_lifecycle_lock.py|\
-                tests/unit/portability/test_import_jobs.py|\
                 tests/unit/tauri/test_entry.py|\
                 tests/unit/app/test_expert_packages.py|\
                 tests/unit/scripts/test_macos_packaging.py|\
@@ -155,7 +154,6 @@ jobs:
                 tests/integration/test_fork_project_paths.py|\
                 tests/integration/test_contract_batch_misc.py|\
                 tests/integration/test_git_router.py|\
-                tests/integration/test_settings_envs.py|\
                 tests/integration/test_workspace_project_git.py|\
                 tests/integration/conftest.py|\
                 e2e/tests/test_agent_stats.py)

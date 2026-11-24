@@ -47,11 +47,7 @@ pub fn run() {
     #[cfg(all(target_os = "macos", debug_assertions))]
     if let Err(error) = macos_dev_bundle::relaunch_if_needed(
         &context.config().identifier,
-        context
-            .config()
-            .product_name
-            .as_deref()
-            .unwrap_or("UGSci"),
+        context.config().product_name.as_deref().unwrap_or("UGSci"),
         env!("CARGO_PKG_VERSION"),
     ) {
         startup_diagnostics::report_fatal("Prepare macOS development bundle", &error);
@@ -271,19 +267,27 @@ pub fn run_agent_host() -> Result<(), String> {
 mod tests {
     #[test]
     fn main_window_is_created_only_by_our_setup() {
-        let config: tauri::Config =
-            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
-        let main: Vec<_> = config
-            .app
-            .windows
-            .iter()
-            .filter(|w| w.label == "main")
-            .collect();
-        assert_eq!(main.len(), 1);
-        assert!(
-            !main[0].create,
-            "Automatic creation bypasses startup diagnostics"
-        );
+        // The platform override replaces the base windows array.
+        for (filename, source) in [
+            ("tauri.conf.json", include_str!("../tauri.conf.json")),
+            (
+                "tauri.macos.conf.json",
+                include_str!("../tauri.macos.conf.json"),
+            ),
+        ] {
+            let config: serde_json::Value = serde_json::from_str(source).unwrap();
+            let windows: Vec<tauri::utils::config::WindowConfig> =
+                serde_json::from_value(config["app"]["windows"].clone()).unwrap();
+            let main: Vec<_> = windows
+                .iter()
+                .filter(|window| window.label == "main")
+                .collect();
+            assert_eq!(main.len(), 1, "{filename}");
+            assert!(
+                !main[0].create,
+                "{filename}: automatic creation bypasses startup diagnostics"
+            );
+        }
     }
 }
 
