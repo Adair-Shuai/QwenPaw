@@ -17,7 +17,7 @@ from qwenpaw.drivers.manager import DriverManager
 
 
 def tool(name):
-    return dict(name=name, description=name, inputSchema={})
+    return {"name": name, "description": name, "inputSchema": {}}
 
 
 def handler():
@@ -104,12 +104,12 @@ async def test_config_change_discards_refresh_and_revokes_execution(tmp_path):
     async with local_peer(tmp_path / "peer", "stdio") as endpoint:
         async with PluginTestHost(tmp_path / "host") as host:
             await host.load(PLUGIN)
-            source = dict(
-                name="docs",
-                protocol="mcp",
-                endpoint=endpoint,
-                policy={"default_effect": "allow"},
-            )
+            source = {
+                "name": "docs",
+                "protocol": "mcp",
+                "endpoint": endpoint,
+                "policy": {"default_effect": "allow"},
+            }
             await host.open_driver(source)
             assert all(
                 tool["enabled"]
@@ -150,8 +150,10 @@ async def test_background_prefetch_notification_and_shutdown(monkeypatch):
             # pylint: disable=unused-argument
             return None
 
-    monkeypatch.setattr(
-        "plugins.protocol.mcp.connection.StdIOStatefulClient",
+    # Patch the module instance used by the connection captured at collection.
+    monkeypatch.setitem(
+        MCPConnection.open.__globals__,
+        "StdIOStatefulClient",
         Client,
     )
     owner = handler()
@@ -243,7 +245,7 @@ async def test_shutdown_cancels_inflight_directory_refresh():
     assert task.cancelled()
 
 
-async def test_manager_bounds_background_discovery_across_servers(tmp_path):
+async def test_manager_bounds_background_discovery_across_servers():
     owners = [handler() for _ in range(10)]
     gate, filled = asyncio.Event(), asyncio.Event()
     active = maximum = 0

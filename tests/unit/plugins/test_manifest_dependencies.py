@@ -899,12 +899,23 @@ async def test_manifest_unsupported_syntax_is_not_silently_ignored(
 async def test_both_constraints_apply_when_same_package_is_declared_twice(
     tmp_path,
     installer,
+    monkeypatch,
     sdk,
 ):
+    installed = tmp_path / "installed"
+    metadata = installed / "manifest_dependency_probe-1.0.dist-info"
+    metadata.mkdir(parents=True)
+    (metadata / "METADATA").write_text(
+        "Metadata-Version: 2.1\n"
+        "Name: manifest-dependency-probe\n"
+        "Version: 1.0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(installed))
     source = package(
         tmp_path,
-        ["httpx==0.0.1"],
-        f"httpx=={version('httpx')}\n",
+        ["manifest-dependency-probe==0.0.1"],
+        "manifest-dependency-probe==1.0\n",
         sdk=sdk,
     )
     from qwenpaw.plugins.dependency_gate import (
@@ -919,7 +930,7 @@ async def test_both_constraints_apply_when_same_package_is_declared_twice(
             plugin_id="extension-contract",
         )
     assert decision.allow_install
-    assert decision.missing == ["httpx==0.0.1"]
+    assert decision.missing == ["manifest-dependency-probe==0.0.1"]
     assert installer == []
 
 
