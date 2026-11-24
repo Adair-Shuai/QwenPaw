@@ -7,20 +7,20 @@ import pytest
 
 @pytest.mark.integration
 @pytest.mark.p1
-def test_settings_language_default_en(app_server) -> None:
+def test_settings_language_default_zh(app_server) -> None:
     """Test purpose:
     - Verify the default language value in a fresh workspace.
 
     Test flow:
     1. Read language settings.
-    2. Assert status is 200 and value is ``en``.
+    2. Assert status is 200 and value is ``zh``.
 
     API endpoints:
     - GET /api/settings/language
     """
     response = app_server.api_request("GET", "/api/settings/language")
     assert response.status_code == 200, app_server.logs_tail()
-    assert response.json() == {"language": "en"}
+    assert response.json() == {"language": "zh"}
 
 
 @pytest.mark.integration
@@ -30,9 +30,9 @@ def test_settings_language_put_get_roundtrip(app_server) -> None:
     - Verify language updates persist and can be read back.
 
     Test flow:
-    1. PUT language=zh.
-    2. Assert PUT returns 200 and ``{"language": "zh"}``.
-    3. GET again and verify value is still ``zh``.
+    1. PUT language=en.
+    2. Assert PUT returns 200 and ``{"language": "en"}``.
+    3. GET again and verify value is still ``en``.
 
     API endpoints:
     - PUT /api/settings/language
@@ -41,14 +41,14 @@ def test_settings_language_put_get_roundtrip(app_server) -> None:
     put_response = app_server.api_request(
         "PUT",
         "/api/settings/language",
-        json={"language": "zh"},
+        json={"language": "en"},
     )
     assert put_response.status_code == 200, app_server.logs_tail()
-    assert put_response.json() == {"language": "zh"}
+    assert put_response.json() == {"language": "en"}
 
     get_response = app_server.api_request("GET", "/api/settings/language")
     assert get_response.status_code == 200, app_server.logs_tail()
-    assert get_response.json() == {"language": "zh"}
+    assert get_response.json() == {"language": "en"}
 
 
 @pytest.mark.integration

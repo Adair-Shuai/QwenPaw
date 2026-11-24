@@ -155,6 +155,7 @@ jobs:
                 tests/integration/test_fork_project_paths.py|\
                 tests/integration/test_contract_batch_misc.py|\
                 tests/integration/test_git_router.py|\
+                tests/integration/test_settings_envs.py|\
                 tests/integration/test_workspace_project_git.py|\
                 tests/integration/conftest.py|\
                 e2e/tests/test_agent_stats.py)
